@@ -198,6 +198,11 @@ impl Flywheel {
         }
     }
 
+    /// Flush pending aggregates on shutdown.
+    pub fn flush(&self) {
+        self.save();
+    }
+
     /// Telemetry view consumed by the decision engine.
     pub fn telemetry_snapshot(&self) -> mr_core::types::TelemetrySnapshot {
         use mr_core::types::{ModelTelemetry, TelemetrySnapshot};

@@ -165,6 +165,7 @@ fn serve(config_path: Option<PathBuf>, port_override: Option<u16>) -> anyhow::Re
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         tracing::info!("modelroute gateway listening on http://{addr}");
         axum::serve(listener, app).await?;
+        state.flywheel.flush();
         anyhow::Ok(())
     })?;
     Ok(())

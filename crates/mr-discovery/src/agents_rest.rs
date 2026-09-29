@@ -31,6 +31,19 @@ pub fn discover_default() -> Vec<ModelRecord> {
             }
         }
     }
+    // pi: optional ~/.pi/models.json with {providers:{id:{baseUrl,models}}}
+    if let Ok(home) = std::env::var("HOME") {
+        let pi = PathBuf::from(&home).join(".pi").join("models.json");
+        if pi.is_file() {
+            match std::fs::read_to_string(&pi).map_err(anyhow::Error::from).and_then(|t| {
+                let v: Value = serde_json::from_str(&t)?;
+                Ok(extract_openclaw(&v)) // same tolerant baseUrl+models shape
+            }) {
+                Ok(mut models) => out.append(&mut models),
+                Err(e) => tracing::debug!(error = %e, "pi discovery skipped"),
+            }
+        }
+    }
     // dsh: env-based configuration
     if let (Ok(base), Ok(model)) = (std::env::var("DEEPSEEK_BASE_URL"), std::env::var("DSH_MODEL"))
         && !base.is_empty() && !model.is_empty() {

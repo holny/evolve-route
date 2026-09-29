@@ -49,6 +49,7 @@ impl Engine {
                 .map(|m| {
                     scoring::context_fits(m, est, max_output).is_ok()
                         && input.health.get(&sticky.chosen).map(|h| h.available(now)).unwrap_or(true)
+                        && input.quota.get(&sticky.chosen).map(|r| *r >= est).unwrap_or(true)
                 })
                 .unwrap_or(false);
             let band_close = (sticky.est_tokens_band - band).abs() <= 1;

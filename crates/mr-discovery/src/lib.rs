@@ -20,7 +20,7 @@ pub fn discover(agents: &[String]) -> Vec<mr_core::types::ModelRecord> {
         match a.as_str() {
             "opencode" => out.extend(opencode::discover_default()),
             "codex" => out.extend(codex::discover_default()),
-            "openclaw" | "hermes" | "dsh" => {
+            "openclaw" | "hermes" | "dsh" | "pi" => {
                 if !rest_done.replace(true).unwrap_or(false) {
                     out.extend(agents_rest::discover_default());
                 }

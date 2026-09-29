@@ -43,6 +43,10 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
       <h2>模型健康</h2>
       <table id="health"><thead><tr><th>模型</th><th>状态</th><th>详情</th></tr></thead><tbody></tbody></table>
     </div>
+    <div class="card">
+      <h2>配额窗口（上游限额头学习）</h2>
+      <table id="quota"><thead><tr><th>模型×key</th><th>窗口</th><th>剩余</th><th>重置</th></tr></thead><tbody></tbody></table>
+    </div>
   </div>
   <div>
     <div class="card">
@@ -87,9 +91,17 @@ es.onmessage = ev => { try { addRow(JSON.parse(ev.data)); } catch(_){} };
 
 async function refresh(){
   try {
-    const [statsR, healthR] = await Promise.all([fetch('/api/stats'), fetch('/api/health')]);
+    const [statsR, healthR, quotaR] = await Promise.all([fetch('/api/stats'), fetch('/api/health'), fetch('/api/quota')]);
     const stats = (await statsR.json()).models || {};
     const health = (await healthR.json()).models || {};
+    const qwin = (await quotaR.json()).windows || {};
+    const qb = document.querySelector('#quota tbody');
+    const qrows = Object.entries(qwin).flatMap(([id, ws]) => (ws||[]).map(w => {
+      const human = id.split('\u001f')[0] + (id.includes('\u001f') ? '['+id.split('\u001f')[1]+']' : '');
+      const reset = w.reset_epoch_ms ? new Date(w.reset_epoch_ms).toLocaleTimeString('zh-CN',{hour12:false}) : '-';
+      return `<tr><td>${esc(human)}</td><td>${esc(w.scope)}</td><td class="num">${fmt(w.remaining)}</td><td class="num">${reset}</td></tr>`;
+    }));
+    qb.innerHTML = qrows.length ? qrows.join('') : '<tr><td colspan="4" style="color:var(--dim)">尚未观测到限额头</td></tr>';
     const tb = document.querySelector('#stats tbody');
     tb.innerHTML = Object.entries(stats).sort((a,b)=>b[1].requests-a[1].requests).map(([id,s]) => {
       const t = s.telemetry||{};

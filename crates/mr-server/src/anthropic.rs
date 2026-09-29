@@ -196,6 +196,9 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
 
         // success
         st.health.mark_ok(cand);
+        // quota-window learning from success headers (pre-body consumption)
+        let windows = mr_memory::QuotaLedger::parse_headers(resp.headers());
+        st.quota.observe(cand, windows);
         decision.chosen = cand.clone();
         decision.upstream_model = record.upstream_model.clone();
         decision.id = format!("{}-{}", decision.id, skipped.len());
