@@ -23,6 +23,60 @@ pub struct Inner {
 
 pub type AppState = Arc<Inner>;
 
+/// Benchmark feed refresh (decision record #23): fetch configured sources →
+/// parse → blend → apply capability-tier overlay. Failures keep last-good
+/// tiers; a snapshot lands in the data dir for the dashboard.
+pub fn start_benchmarks(st: &AppState) {
+    if !st.config.benchmarks.enabled || st.config.benchmarks.sources.is_empty() {
+        return;
+    }
+    let sources = st.config.benchmarks.sources.clone();
+    let interval = Duration::from_secs(st.config.benchmarks.interval_hours.max(1) * 3600);
+    let data_dir = st.config.data.dir.clone();
+    let st_owned = st.clone();
+    tokio::spawn(async move {
+        loop {
+            let mut fetched: Vec<(String, Vec<mr_discovery::benchmarks::BenchScore>)> = Vec::new();
+            let mut report = serde_json::Map::new();
+            for src in &sources {
+                match mr_discovery::benchmarks::fetch_source(&st_owned.http, src).await {
+                    Ok(scores) => {
+                        report.insert(
+                            src.name.clone(),
+                            serde_json::json!({ "fetched_at_ms": mr_memory::quota::now_ms(), "count": scores.len() }),
+                        );
+                        fetched.push((src.name.clone(), scores));
+                    }
+                    Err(e) => {
+                        tracing::warn!(source = %src.name, error = %e, "benchmark fetch failed");
+                        report.insert(
+                            src.name.clone(),
+                            serde_json::json!({ "error": e.to_string(), "fetched_at_ms": mr_memory::quota::now_ms() }),
+                        );
+                    }
+                }
+            }
+            if !fetched.is_empty() {
+                let applied =
+                    mr_discovery::benchmarks::apply_to_engine(&st_owned.engine, &fetched);
+                report.insert("__applied__".into(), serde_json::json!({ "models": applied }));
+                tracing::info!(applied, "benchmark tier overlay refreshed");
+                let path = std::path::Path::new(&data_dir).join("benchmarks.json");
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(
+                    &path,
+                    serde_json::to_vec(&serde_json::Value::Object(report)).unwrap_or_default(),
+                );
+            }
+            tokio::time::sleep(interval).await;
+        }
+    });
+}
+
+
+
 pub fn build_state(config: FileConfig) -> AppState {
     let mut discovered = mr_discovery::discover(&config.discovery.agents);
     if config.catalog.modelsdev_reference {
@@ -71,6 +125,7 @@ impl Inner {
         v
     }
 
+
     /// Must be called inside the tokio runtime: periodic flywheel persistence.
     pub fn start_background(&self) {
         let flywheel = self.flywheel.clone();
@@ -94,6 +149,7 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/api/stats", axum::routing::get(crate::meta::api_stats))
         .route("/api/feedback", axum::routing::post(crate::meta::api_feedback))
         .route("/api/quota", axum::routing::get(crate::meta::api_quota))
+        .route("/api/benchmarks", axum::routing::get(crate::meta::api_benchmarks))
         .route("/api/stream", axum::routing::get(crate::meta::api_stream))
         .route("/", axum::routing::get(crate::meta::dashboard))
         .route("/v1/messages", axum::routing::post(crate::anthropic::messages))

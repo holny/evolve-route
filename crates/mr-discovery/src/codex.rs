@@ -67,6 +67,7 @@ pub fn discover_from_text(text: &str) -> anyhow::Result<Vec<ModelRecord>> {
                 max_output: 8192,
                 cost: None,
                 tiers: Tiers::default(),
+                tiers_explicit: false,
                 speed_tier: 0.6,
                 weight: None,
                 source: Source::Discovered,

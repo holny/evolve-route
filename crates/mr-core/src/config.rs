@@ -1,5 +1,6 @@
 use crate::types::*;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -48,6 +49,34 @@ pub struct CatalogCfg {
 #[serde(default)]
 pub struct QuotaCfg {
     pub learn_from_headers: bool,
+}
+
+/// External benchmark feed source (decision record #23).
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct BenchSourceCfg {
+    pub name: String,
+    pub url: String,
+    pub format: String,
+    pub interval_hours: Option<u64>,
+    pub headers: Option<HashMap<String, String>>,
+    pub alias_key: Option<String>,
+    pub score_key: Option<String>,
+    pub max_score: Option<f32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct BenchmarksCfg {
+    pub enabled: bool,
+    pub interval_hours: u64,
+    pub sources: Vec<BenchSourceCfg>,
+}
+
+impl Default for BenchmarksCfg {
+    fn default() -> Self {
+        Self { enabled: false, interval_hours: 24, sources: Vec::new() }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -119,6 +148,7 @@ pub struct FileConfig {
     pub quota: QuotaCfg,
     pub data: DataCfg,
     pub discovery: DiscoveryCfg,
+    pub benchmarks: BenchmarksCfg,
     pub models: Vec<ModelEntry>,
 }
 
@@ -171,6 +201,7 @@ impl FileConfig {
             max_output: entry.max_output,
             cost: entry.cost,
             tiers: entry.tiers,
+            tiers_explicit: entry.tiers != Tiers::default(),
             speed_tier: entry.speed_tier,
             weight: entry.weight,
             source: Source::User,

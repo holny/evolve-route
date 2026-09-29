@@ -100,6 +100,22 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
     (axum::Json(json!({"models": models}))).into_response()
 }
 
+/// Benchmark feed status + currently applied tier overlay.
+pub async fn api_benchmarks(State(st): State<AppState>) -> Response {
+    let overlay = st.engine.tier_overrides();
+    let snapshot = std::fs::read_to_string(
+        std::path::Path::new(&st.config.data.dir).join("benchmarks.json"),
+    )
+    .ok()
+    .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+    .unwrap_or(serde_json::json!({}));
+    let mut models = serde_json::Map::new();
+    for (id, (tiers, conf)) in overlay {
+        models.insert(id, json!({ "tiers": tiers, "confidence": conf }));
+    }
+    (axum::Json(json!({ "sources": snapshot, "applied": models }))).into_response()
+}
+
 /// Quota windows learned from upstream rate-limit headers.
 pub async fn api_quota(State(st): State<AppState>) -> Response {
     (axum::Json(json!({ "windows": st.quota.snapshot() }))).into_response()

@@ -160,6 +160,7 @@ fn serve(config_path: Option<PathBuf>, port_override: Option<u16>) -> anyhow::Re
 
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     runtime.block_on(async move {
+        mr_server::state::start_benchmarks(&state);
         state.start_background();
         let addr = format!("{host}:{port}");
         let listener = tokio::net::TcpListener::bind(&addr).await?;

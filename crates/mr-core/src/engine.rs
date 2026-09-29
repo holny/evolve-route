@@ -2,7 +2,7 @@ use crate::catalog::Catalog;
 use crate::config::PolicyCfg;
 use crate::scoring;
 use crate::types::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 pub struct RoutingInput<'a> {
     pub session_key: &'a str,
@@ -17,6 +17,17 @@ pub struct RoutingInput<'a> {
     pub quota: &'a QuotaView,
 }
 
+/// Linear blend of tier fields: conf 1.0 -> new, 0.0 -> base.
+fn blend_tiers(base: &Tiers, new: &Tiers, conf: f32) -> Tiers {
+    let lerp = |b: f32, n: f32| b + (n - b) * conf;
+    Tiers {
+        reasoning: lerp(base.reasoning, new.reasoning),
+        coding: lerp(base.coding, new.coding),
+        vision: lerp(base.vision, new.vision),
+        agentic: lerp(base.agentic, new.agentic),
+    }
+}
+
 pub fn now_epoch_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -28,12 +39,30 @@ pub struct Engine {
     pub catalog: Catalog,
     pub policy: PolicyCfg,
     judge: Box<dyn Judge>,
+    tiers_overlay: std::sync::RwLock<HashMap<String, (Tiers, f32)>>,
     counter: std::sync::atomic::AtomicU64,
 }
 
 impl Engine {
     pub fn new(catalog: Catalog, policy: PolicyCfg, judge: Box<dyn Judge>) -> Self {
-        Self { catalog, policy, judge, counter: std::sync::atomic::AtomicU64::new(0) }
+        Self {
+            catalog,
+            policy,
+            judge,
+            tiers_overlay: std::sync::RwLock::new(HashMap::new()),
+            counter: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    /// Benchmark layer (decision record #23): refresh capability priors for
+    /// alias-matched models; catalog tiers remain the fallback.
+    pub fn apply_tier_updates(&self, updates: HashMap<String, (Tiers, f32)>) {
+        let Ok(mut o) = self.tiers_overlay.write() else { return };
+        o.extend(updates);
+    }
+
+    pub fn tier_overrides(&self) -> HashMap<String, (Tiers, f32)> {
+        self.tiers_overlay.read().map(|o| o.clone()).unwrap_or_default()
     }
 
     pub fn decide(&self, input: RoutingInput<'_>) -> Decision {
@@ -82,7 +111,7 @@ impl Engine {
             .weights();
 
         let mut filtered: Vec<FilteredOut> = Vec::new();
-        let mut candidates: Vec<&ModelRecord> = Vec::new();
+        let mut candidates: Vec<ModelRecord> = Vec::new();
         let now = now_epoch_ms();
         for m in &self.catalog.models {
             let calib = input
@@ -128,7 +157,11 @@ impl Engine {
                 filtered.push(FilteredOut { model: m.id.clone(), cause: cause.into() });
                 continue;
             }
-            candidates.push(m);
+            let mut rec = m.clone();
+            if let Some((new_tiers, conf)) = self.tiers_overlay.read().ok().and_then(|o| o.get(&m.id).cloned()) {
+                rec.tiers = blend_tiers(&m.tiers, &new_tiers, conf.clamp(0.0, 1.0));
+            }
+            candidates.push(rec);
         }
 
         if candidates.is_empty() {
@@ -152,16 +185,17 @@ impl Engine {
         // Two-phase scoring: quality floor first ("good enough" set), then
         // composite weights (cost/speed) decide among the eligible.
         let floor = scoring::quality_floor(difficulty_eff);
-        let mut eligible: Vec<&ModelRecord> = Vec::new();
+        let mut eligible: Vec<ModelRecord> = Vec::new();
         for m in &candidates {
             if scoring::quality(m, &j, difficulty_eff) >= floor {
-                eligible.push(m);
+                eligible.push(m.clone());
             }
         }
         if eligible.is_empty() {
-            eligible = candidates.to_vec();
+            eligible = candidates.clone();
         }
-        let mut scores = scoring::score_all(&eligible, &j, difficulty_eff, est, est_output, &weights, input.telemetry);
+        let mut scores = scoring::score_all(
+            &eligible.iter().collect::<Vec<_>>(), &j, difficulty_eff, est, est_output, &weights, input.telemetry);
         scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut chosen = scores[0].clone();

@@ -74,6 +74,8 @@ pub struct ModelRecord {
     pub max_output: u64,
     pub cost: Option<Cost>,
     pub tiers: Tiers,
+    /// True when the user explicitly declared tiers (benchmarks blend at 0.3)
+    pub tiers_explicit: bool,
     pub speed_tier: f32,
     /// User bias weight (participates in scoring, never decisive).
     pub weight: Option<f32>,
@@ -96,6 +98,7 @@ impl Default for ModelRecord {
             max_output: 8192,
             cost: None,
             tiers: Tiers::default(),
+            tiers_explicit: false,
             speed_tier: 0.6,
             weight: None,
             source: Source::User,

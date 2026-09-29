@@ -212,6 +212,7 @@ fn extract_models(root: &Value) -> Vec<ModelRecord> {
                     vision: if vision { 0.85 } else { 0.0 },
                     agentic: if tool_call { 0.7 } else { 0.4 },
                 },
+                tiers_explicit: false,
                 speed_tier: 0.6,
                 weight: None,
                 source: Source::Discovered,
