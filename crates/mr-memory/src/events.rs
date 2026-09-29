@@ -43,15 +43,14 @@ impl EventLog {
             && meta.len() > ROTATE_BYTES
             && let Some(path) = &self.inner.path
         {
-                let rotated = path.with_extension("jsonl.1");
-                let _ = std::fs::rename(path, &rotated);
-                if let Ok(nf) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)
-                {
-                    *f.lock().unwrap_or_else(|p| p.into_inner()) = nf;
-                }
+            let rotated = path.with_extension("jsonl.1");
+            let _ = std::fs::rename(path, &rotated);
+            if let Ok(nf) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                *f.lock().unwrap_or_else(|p| p.into_inner()) = nf;
             }
         }
         if let Some(ts) = now_millis() {
