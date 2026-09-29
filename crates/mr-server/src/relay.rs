@@ -16,6 +16,9 @@ use std::time::Instant;
 
 const MAX_ERROR_BODY: usize = 8 * 1024;
 
+/// Health-map key separator: model id + unit-sep + key index.
+const KEY_SEP: char = '\u{1f}';
+
 pub async fn chat_completions(
     State(st): State<AppState>,
     headers: HeaderMap,
@@ -49,6 +52,7 @@ pub async fn chat_completions(
             let sticky = st.sessions.get(&session_key);
             let health = st.health.snapshot();
             let telemetry = st.flywheel.telemetry_snapshot();
+            let quota_view = st.quota.best_remaining_by_models();
 
             // L3 session-loop: did the previous turn's tool calls come back
             // executed as role=tool messages? (gateway-side semantic signal)
@@ -84,6 +88,7 @@ pub async fn chat_completions(
                 sticky,
                 health: &health,
                 telemetry: &telemetry,
+                quota: &quota_view,
             };
             let d = st.engine.decide(input);
             st.sessions.put(
@@ -130,7 +135,31 @@ pub async fn chat_completions(
     for cand in &attempts {
         let Some(record) = st.engine.catalog.get(cand).cloned() else { continue };
         let to_anthropic = record.protocol == Protocol::Anthropic;
+        let keys = record.key_values();
+        let key_len = keys.len().max(1);
+        let key_start = st.key_start(cand, key_len);
+        let health_snap = st.health.snapshot();
+        let now_ms = mr_memory::health::now();
 
+        // multi-key pool: try each key in rotation before falling to the
+        // next candidate (per model×key health bookkeeping)
+        for key_off in 0..key_len {
+        let key_idx = (key_start + key_off) % key_len;
+        let key_value = keys.get(key_idx).cloned();
+        let health_id = if keys.is_empty() {
+            cand.clone()
+        } else {
+            format!("{cand}{KEY_SEP}{key_idx}")
+        };
+        if let Some(h) = health_snap.get(&health_id)
+            && !h.available(now_ms) {
+                let remaining = h
+                    .cooldown_remaining_ms(now_ms)
+                    .map(|ms| format!(" for {}s", ms / 1000))
+                    .unwrap_or_default();
+                skipped.push(format!("{cand}[{key_idx}]({}){remaining}", h.kind.label()));
+                continue;
+            }
         let (fwd_body, url) = if to_anthropic {
             let mut openai_value: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
             if let Some(obj) = openai_value.as_object_mut() {
@@ -157,7 +186,7 @@ pub async fn chat_completions(
         let mut req = st.http.post(&url).header("content-type", "application/json");
         if to_anthropic {
             req = req.header("anthropic-version", "2023-06-01");
-            if let Some(key) = record.api_key.as_deref().filter(|k| !k.is_empty()) {
+            if let Some(key) = key_value.as_deref() {
                 req = req.header("x-api-key", key);
             }
         } else {
@@ -165,7 +194,7 @@ pub async fn chat_completions(
             if record.base_url.contains("opencode.ai/zen") {
                 req = req.header("x-opencode-session", &session_key);
             }
-            if let Some(key) = record.api_key.as_deref().filter(|k| !k.is_empty()) {
+            if let Some(key) = key_value.as_deref() {
                 req = req.bearer_auth(key);
             }
         }
@@ -208,18 +237,31 @@ pub async fn chat_completions(
                 "message": failure.message,
                 "session": session_key,
             }));
-            st.health.mark_failure(cand, failure);
+            let health_id = if keys.is_empty() {
+                cand.clone()
+            } else {
+                format!("{cand}{KEY_SEP}{key_idx}")
+            };
+            st.health.mark_failure(&health_id, failure);
             let kind_label = {
                 let snap = st.health.snapshot();
-                snap.get(cand).map(|h| h.kind.label().to_string()).unwrap_or_default()
+                snap.get(&health_id).map(|h| h.kind.label().to_string()).unwrap_or_default()
             };
-            skipped.push(format!("{cand}({kind_label})"));
+            skipped.push(format!("{cand}[{key_idx}]({kind_label})"));
             last_error = Some((map_status(status), err_body));
-            continue;
+            continue; // next key in pool, then next candidate
         }
 
+        // quota window learning from success headers (before body consumed)
+        let windows = mr_memory::QuotaLedger::parse_headers(resp.headers());
+        st.quota.observe(&format!("{cand}{KEY_SEP}{key_idx}"), windows);
         // success path
-        st.health.mark_ok(cand);
+        let success_health_id = if keys.is_empty() {
+            cand.clone()
+        } else {
+            format!("{cand}{KEY_SEP}{key_idx}")
+        };
+        st.health.mark_ok(&success_health_id);
         decision.chosen = cand.clone();
         decision.upstream_model = record.upstream_model.clone();
         decision.id = format!("{}-{}", decision.id, skipped.len());
@@ -357,7 +399,8 @@ pub async fn chat_completions(
         crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.bus, &telem.lock().unwrap());
         h.insert("content-type", "application/json".parse().unwrap());
         return out.body(axum::body::Body::from(bytes)).unwrap();
-    }
+        } // key_off loop (keys exhausted for this candidate)
+    } // candidate loop
 
     // every candidate failed: explicit selections get the raw upstream
     // error back; auto routing gets a summary of what was skipped and why

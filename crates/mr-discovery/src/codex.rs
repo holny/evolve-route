@@ -60,6 +60,8 @@ pub fn discover_from_text(text: &str) -> anyhow::Result<Vec<ModelRecord>> {
                 base_url,
                 api_key_env: None,
                 api_key,
+                keys: vec![],
+
                 upstream_model: model,
                 context_window: None,
                 max_output: 8192,

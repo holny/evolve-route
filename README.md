@@ -16,7 +16,8 @@
 - ✅ M2：飞轮（token 校准/实测可靠性/决策回填，snapshot 持久化）+ TypeSafe Jev / laya 决策后端 + Web 面板（/ 内嵌，SSE 实时）+ stats CLI
 - ✅ M3（提前）：discovery（opencode/codex）+ 死模型侦测（402/404/429/配额冷却）+ 同请求降级链 + opencode 原生插件 + 用户权重/学习偏置
 - ✅ M3：Anthropic 入口（/v1/messages + count_tokens 实装）+ **Switchyard 跨协议双向翻译**（OpenAI↔Anthropic，含流式事件映射与确定性 ID）——claude-code 已可接入，7 家 Agent 全通
-- ⏳ M4：其余 Agent 原生插件（pi/dsh/openclaw/hermes）+ 多 key 池化 + 配额窗口 UI
+- ✅ M4：**多 key 池化**（model×key 记账，402/配额自动轮换）+ **配额窗口账本**（成功响应头学习，`/api/quota`，引擎余量预判拦截）+ **models.dev 参考元数据**（仅补缺失字段）+ discovery 补齐（openclaw/hermes/dsh）
+- ⏳ M4 余项：pi/dsh/openclaw/hermes 原生插件（当前为配置发现接入）
 
 ## claude-code 接入
 
@@ -31,6 +32,17 @@ claude
 
 零依赖 drop-in：`cp adapters/opencode/dropin/modelroute.ts <项目>/.opencode/plugins/`
 网关自动获得精确会话粘性 + 工具成败真值上报（飞轮 L4 信号）。`MODELROUTE_FEEDBACK=0` 可关。
+
+## 多 key 池化与配额窗口
+
+```toml
+[[models]]
+id = "claude"
+api_keys_env = ["ANTHROPIC_KEY_1", "ANTHROPIC_KEY_2"]   # 轮换池
+```
+某 key 余额不足/配额耗尽 → 网关按 model×key 记账冷却并自动轮换下一把；
+成功响应的限额头（anthropic unified 5h/7d、openai ratelimit）持续校准窗口余量，
+余量 < 请求预估时该模型在硬约束层被预判拦截。`/api/quota` 查看窗口账本。
 
 ## 决策后端
 

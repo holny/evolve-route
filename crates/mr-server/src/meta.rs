@@ -100,6 +100,11 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
     (axum::Json(json!({"models": models}))).into_response()
 }
 
+/// Quota windows learned from upstream rate-limit headers.
+pub async fn api_quota(State(st): State<AppState>) -> Response {
+    (axum::Json(json!({ "windows": st.quota.snapshot() }))).into_response()
+}
+
 /// Plugin-reported explicit feedback (L4 ground truth from agents that
 /// run the modelroute adapter).
 pub async fn api_feedback(

@@ -4,7 +4,9 @@
 //! always come from user configuration. External catalogs (models.dev) are
 //! reference-only metadata and never override user values.
 
+pub mod agents_rest;
 pub mod codex;
+pub mod modelsdev;
 pub mod opencode;
 
 pub const SUPPORTED_AGENTS: &[&str] =
@@ -13,13 +15,22 @@ pub const SUPPORTED_AGENTS: &[&str] =
 /// Discover models from the configured agent sources.
 pub fn discover(agents: &[String]) -> Vec<mr_core::types::ModelRecord> {
     let mut out = Vec::new();
+    let mut rest_done: Option<bool> = None;
     for a in agents {
         match a.as_str() {
             "opencode" => out.extend(opencode::discover_default()),
             "codex" => out.extend(codex::discover_default()),
+            "openclaw" | "hermes" | "dsh" => {
+                if !rest_done.replace(true).unwrap_or(false) {
+                    out.extend(agents_rest::discover_default());
+                }
+            }
             other => tracing::debug!(agent = other, "discovery not implemented yet"),
         }
     }
+    // defensive dedupe (agents may list overlapping sources)
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|m| seen.insert(m.id.clone()));
     out
 }
 

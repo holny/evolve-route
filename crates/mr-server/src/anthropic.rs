@@ -50,6 +50,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             let sticky = st.sessions.get(&session_key);
             let health = st.health.snapshot();
             let telemetry = st.flywheel.telemetry_snapshot();
+            let quota_view = st.quota.best_remaining_by_models();
             if let Some(pending) = st.sessions.take_pending(&session_key) {
                 let returned = returned_tool_result_ids(&parsed);
                 let total = pending.call_ids.len() as u64;
@@ -72,6 +73,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                 sticky,
                 health: &health,
                 telemetry: &telemetry,
+                quota: &quota_view,
             };
             let d = st.engine.decide(input);
             st.sessions.put(

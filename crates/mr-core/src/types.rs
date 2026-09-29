@@ -51,6 +51,13 @@ impl Default for Tiers {
     }
 }
 
+/// One credential slot for a model (multi-key pool, decision record #12).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeySlot {
+    pub label: String,
+    pub value: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModelRecord {
@@ -60,6 +67,8 @@ pub struct ModelRecord {
     pub base_url: String,
     pub api_key_env: Option<String>,
     pub api_key: Option<String>,
+    /// Resolved key pool: first = primary, rest rotate on quota/auth errors.
+    pub keys: Vec<KeySlot>,
     pub upstream_model: String,
     pub context_window: Option<u64>,
     pub max_output: u64,
@@ -81,6 +90,7 @@ impl Default for ModelRecord {
             base_url: String::new(),
             api_key_env: None,
             api_key: None,
+            keys: Vec::new(),
             upstream_model: String::new(),
             context_window: None,
             max_output: 8192,
@@ -96,9 +106,21 @@ impl Default for ModelRecord {
 
 impl ModelRecord {
     pub fn has_credential(&self) -> bool {
-        self.api_key.as_deref().map(|k| !k.is_empty()).unwrap_or(false)
+        !self.keys.is_empty()
+            || self.api_key.as_deref().map(|k| !k.is_empty()).unwrap_or(false)
             || self.base_url.contains("127.0.0.1")
             || self.base_url.contains("localhost")
+    }
+
+    /// Resolved key values in rotation order (api_keys_env first, then the
+    /// legacy single api_key so old configs keep working).
+    pub fn key_values(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.keys.iter().map(|k| k.value.clone()).collect();
+        if v.is_empty()
+            && let Some(k) = self.api_key.as_deref().filter(|k| !k.is_empty()) {
+                v.push(k.to_string());
+            }
+        v
     }
 }
 
@@ -326,6 +348,9 @@ pub struct ModelTelemetry {
 }
 
 pub type TelemetrySnapshot = std::collections::HashMap<String, ModelTelemetry>;
+
+/// Learned quota remaining (tokens) per model, best key across pool.
+pub type QuotaView = std::collections::HashMap<String, u64>;
 
 /// Gateway-side response quality analysis (L2 signals, no plugin needed).
 #[derive(Debug, Clone, Default, Serialize)]

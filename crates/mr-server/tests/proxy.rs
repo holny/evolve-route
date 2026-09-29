@@ -344,6 +344,7 @@ async fn openai_ingress_routes_to_anthropic_upstream_translated() {
         protocol: mr_core::types::Protocol::Anthropic,
         base_url: format!("http://127.0.0.1:{port}/v1"),
         api_key_env: Some("MR_TEST_ANTHROPIC_KEY".into()),
+        api_keys_env: None,
         upstream_model: Some("claude-sonnet".into()),
         context_window: Some(200_000),
         max_output: 4096,
@@ -413,6 +414,7 @@ async fn anthropic_ingress_same_protocol_relays() {
         protocol: mr_core::types::Protocol::Anthropic,
         base_url: format!("http://127.0.0.1:{port}/v1"),
         api_key_env: Some("MR_TEST_ANTHROPIC_KEY2".into()),
+        api_keys_env: None,
         upstream_model: Some("claude-sonnet".into()),
         context_window: Some(200_000),
         max_output: 4096,
@@ -502,6 +504,7 @@ async fn openai_streaming_to_anthropic_upstream_translated() {
         protocol: mr_core::types::Protocol::Anthropic,
         base_url: format!("http://127.0.0.1:{port}/v1"),
         api_key_env: Some("MR_TEST_ANTHROPIC_KEY3".into()),
+        api_keys_env: None,
         upstream_model: Some("claude-sonnet".into()),
         context_window: Some(200_000),
         max_output: 4096,
@@ -525,4 +528,64 @@ async fn openai_streaming_to_anthropic_upstream_translated() {
     assert!(text.contains("hello from claude"), "content mapped: {text}");
     assert!(text.contains("finish_reason"), "finish mapped");
     assert!(text.contains("data: [DONE]"), "terminated: {text}");
+}
+
+async fn spawn_key_pool_mock() -> u16 {
+    let app = axum::Router::new().route(
+        "/v1/chat/completions",
+        axum::routing::post(|headers: axum::http::HeaderMap, body: axum::body::Bytes| async move {
+            let auth = headers.get("authorization").and_then(|a| a.to_str().ok()).unwrap_or("");
+            if auth.contains("sk-dead") {
+                return axum::http::Response::builder()
+                    .status(402)
+                    .body(Body::from(r#"{"error":{"message":"Insufficient Balance"}}"#))
+                    .unwrap();
+            }
+            let v: Value = serde_json::from_slice(&body).unwrap();
+            let model = v["model"].as_str().unwrap_or("?").to_string();
+            axum::http::Response::builder()
+                .status(200)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"model": model, "choices": [{"message": {"role": "assistant", "content": format!("ok with {auth}")}}],
+                           "usage": {"prompt_tokens": 3, "completion_tokens": 1}})
+                        .to_string(),
+                ))
+                .unwrap()
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    port
+}
+
+#[tokio::test]
+async fn dead_key_rotates_within_pool() {
+    unsafe { std::env::set_var("MR_TEST_POOL_KEY1", "sk-dead") };
+    unsafe { std::env::set_var("MR_TEST_POOL_KEY2", "sk-alive") };
+    let port = spawn_key_pool_mock().await;
+    let mut cfg = test_config(port);
+    cfg.data.dir = std::env::temp_dir().join(format!("mr-test-pool-{}", std::process::id())).to_string_lossy().into_owned();
+    cfg.models[0].api_key_env = None;
+    cfg.models[0].api_keys_env = Some(vec!["MR_TEST_POOL_KEY1".into(), "MR_TEST_POOL_KEY2".into()]);
+    let app = build_router(build_state(cfg));
+
+    let (status, headers, raw) = send(app.clone(), chat_request("auto", json!("你好"), json!({}))).await;
+    assert_eq!(status, StatusCode::OK, "body: {}", String::from_utf8_lossy(&raw));
+    assert_eq!(headers["x-mr-model"], "mini");
+    let skipped = headers["x-mr-skipped"].to_str().unwrap_or("");
+    assert!(skipped.contains("[0]") && skipped.contains("no credit"), "dead key skipped first: {skipped}");
+
+    // health ledger marks model×key0 dead, key1 alive
+    let req = Request::builder().method("GET").uri("/api/health").body(Body::empty()).unwrap();
+    let (_, _, raw) = send(app, req).await;
+    let v = json_body(&raw);
+    let keys = v["models"].as_object().unwrap();
+    let dead_id = keys.keys().find(|k| k.contains('\u{1f}') && k.ends_with('\u{0}')).cloned();
+    let mini_entries: Vec<&Value> = keys.iter().filter(|(k, _)| k.starts_with("mini")).map(|(_, v)| v).collect();
+    assert!(!mini_entries.is_empty(), "per-key health present: {keys:?}");
+    assert!(mini_entries.iter().any(|h| h["kind"] == "payment_required"), "dead key marked");
 }

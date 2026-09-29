@@ -14,6 +14,7 @@ pub struct RoutingInput<'a> {
     pub sticky: Option<StickyState>,
     pub health: &'a HealthMap,
     pub telemetry: &'a TelemetrySnapshot,
+    pub quota: &'a QuotaView,
 }
 
 pub fn now_epoch_ms() -> u64 {
@@ -114,6 +115,14 @@ impl Engine {
                 filtered.push(FilteredOut { model: m.id.clone(), cause: "unknown context window".into() });
                 continue;
             }
+            if let Some(remaining) = input.quota.get(&m.id)
+                && *remaining < m_est {
+                    filtered.push(FilteredOut {
+                        model: m.id.clone(),
+                        cause: format!("quota remaining {remaining} < est {m_est}"),
+                    });
+                    continue;
+                }
             if let Err(cause) = scoring::context_fits(m, m_est, max_output) {
                 filtered.push(FilteredOut { model: m.id.clone(), cause: cause.into() });
                 continue;
@@ -256,6 +265,7 @@ mod tests {
     }
 
     static EMPTY_TELEM: std::sync::LazyLock<TelemetrySnapshot> = std::sync::LazyLock::new(TelemetrySnapshot::new);
+    static EMPTY_QUOTA: std::sync::LazyLock<QuotaView> = std::sync::LazyLock::new(QuotaView::new);
 
     fn model(id: &str, window: u64, in_price: f32, out_price: f32, coding: f32, speed: f32) -> ModelRecord {
         ModelRecord {
@@ -304,6 +314,7 @@ mod tests {
             sticky,
             health,
             telemetry: &EMPTY_TELEM,
+            quota: &EMPTY_QUOTA,
         }
     }
 

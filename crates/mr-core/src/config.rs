@@ -40,6 +40,8 @@ pub struct DecisionCfg {
 #[serde(default)]
 pub struct CatalogCfg {
     pub remote_fetch: bool,
+    /// models.dev as reference-only metadata (never overrides user values)
+    pub modelsdev_reference: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -74,6 +76,7 @@ pub struct ModelEntry {
     pub protocol: Protocol,
     pub base_url: String,
     pub api_key_env: Option<String>,
+    pub api_keys_env: Option<Vec<String>>,
     pub upstream_model: Option<String>,
     pub context_window: Option<u64>,
     pub max_output: u64,
@@ -93,6 +96,7 @@ impl Default for ModelEntry {
             protocol: d.protocol,
             base_url: d.base_url.clone(),
             api_key_env: None,
+            api_keys_env: None,
             upstream_model: None,
             context_window: d.context_window,
             max_output: d.max_output,
@@ -138,6 +142,21 @@ impl FileConfig {
             .upstream_model
             .clone()
             .unwrap_or_else(|| entry.id.clone());
+        let mut keys: Vec<KeySlot> = Vec::new();
+        if let Some(envs) = &entry.api_keys_env {
+            for (i, env) in envs.iter().enumerate() {
+                if let Ok(v) = std::env::var(env)
+                    && !v.is_empty() {
+                        keys.push(KeySlot { label: format!("{env}[{i}]"), value: v });
+                    }
+            }
+        }
+        if keys.is_empty()
+            && let Some(env) = &entry.api_key_env
+                && let Ok(v) = std::env::var(env)
+                    && !v.is_empty() {
+                        keys.push(KeySlot { label: env.clone(), value: v });
+                    }
         let api_key = entry.api_key_env.as_ref().map(|env| std::env::var(env).unwrap_or_default());
         ModelRecord {
             id: entry.id.clone(),
@@ -146,6 +165,7 @@ impl FileConfig {
             base_url: entry.base_url.trim_end_matches('/').to_string(),
             api_key_env: entry.api_key_env.clone(),
             api_key,
+            keys,
             upstream_model,
             context_window: entry.context_window,
             max_output: entry.max_output,

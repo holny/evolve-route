@@ -201,6 +201,7 @@ fn extract_models(root: &Value) -> Vec<ModelRecord> {
                 base_url: base_url.clone().unwrap_or_default(),
                 api_key_env: None,
                 api_key: api_key.clone(),
+                keys: api_key.clone().map(|k| vec![KeySlot { label: "inline".into(), value: k }]).unwrap_or_default(),
                 upstream_model,
                 context_window,
                 max_output,
