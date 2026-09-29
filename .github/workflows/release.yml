@@ -1,0 +1,95 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,     target: aarch64-apple-darwin,      cross: false }
+          - { os: macos-13,     target: x86_64-apple-darwin,       cross: false }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-musl, cross: true }
+          - { os: ubuntu-22.04, target: aarch64-unknown-linux-musl, cross: true }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc,   cross: false }
+          - { os: windows-latest, target: aarch64-pc-windows-msvc,  cross: false }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: install cross (linux cross-compilation)
+        if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: build
+        run: >
+          cargo build --release --target ${{ matrix.target }} -p mr-server
+        # cross builds musl static binaries (ring's C code needs the musl
+        # toolchain from the cross container); msvc handles arm64 natively
+        # on windows runners via the installed VS ARM64 tools.
+
+      - name: package (unix)
+        if: runner.os != 'Windows'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAGE="modelroute-$VERSION-${{ matrix.target }}"
+          mkdir "$STAGE"
+          cp "target/${{ matrix.target }}/release/modelroute" "$STAGE/"
+          cp README.md LICENSE THIRD-PARTY-NOTICES.md "$STAGE/" 2>/dev/null || true
+          cp config/modelroute.default.toml "$STAGE/modelroute.default.toml" 2>/dev/null || true
+          tar -czf "$STAGE.tar.gz" "$STAGE"
+          shasum -a 256 "$STAGE.tar.gz" > "$STAGE.tar.gz.sha256"
+
+      - name: package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $VERSION = "$env:GITHUB_REF_NAME" -replace '^v',''
+          $STAGE = "modelroute-$VERSION-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force "$STAGE" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/modelroute.exe" "$STAGE/"
+          Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md "$STAGE/" -ErrorAction SilentlyContinue
+          Copy-Item config/modelroute.default.toml "$STAGE/modelroute.default.toml" -ErrorAction SilentlyContinue
+          Compress-Archive -Path "$STAGE" -DestinationPath "$STAGE.zip"
+          (Get-FileHash "$STAGE.zip" -Algorithm SHA256).Hash + "  $STAGE.zip" | Out-File "$STAGE.zip.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            modelroute-*.tar.gz
+            modelroute-*.tar.gz.sha256
+            modelroute-*.zip
+            modelroute-*.zip.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: create github release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            modelroute-*.tar.gz
+            modelroute-*.tar.gz.sha256
+            modelroute-*.zip
+            modelroute-*.zip.sha256
+          generate_release_notes: true

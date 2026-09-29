@@ -53,32 +53,6 @@ backend = "laya"      # 本地 laya sidecar（scripts/laya_server.py，uvicorn -
 ```
 判定失败自动回退 heuristic，永不阻塞请求。
 
-## 编译与分发
-
-```bash
-cargo build --release -p mr-server
-# 产物: target/release/modelroute（单二进制，~6MB）
-```
-
-一键打包（macOS universal: arm64+x86_64 合并）:
-
-```bash
-./scripts/dist.sh    # 产出 dist/modelroute-<ver>-macos-universal.tar.gz + sha256
-```
-
-全平台发布（打 tag `v*` 触发 GitHub Actions，产出 6 目标产物 + SHA256 + Release）:
-
-| 目标 | Runner | 产物 |
-|---|---|---|
-| aarch64-apple-darwin | macos-14 | macOS Apple Silicon |
-| x86_64-apple-darwin | macos-13 | macOS Intel |
-| x86_64-unknown-linux-musl | ubuntu + cross | Linux x64 **静态二进制**（任意发行版免依赖） |
-| aarch64-unknown-linux-musl | ubuntu + cross | Linux ARM64（云服务器/树莓派级）静态 |
-| x86_64-pc-windows-msvc | windows | Windows x64 |
-| aarch64-pc-windows-msvc | windows | Windows ARM64 |
-
-TLS 走 rustls（纯 Rust + ring），全目标无 OpenSSL 依赖；musl 目标全静态链接。
-
 ## 快速开始
 
 ```bash
