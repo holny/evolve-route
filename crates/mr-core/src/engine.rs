@@ -84,7 +84,20 @@ impl Engine {
             let band_close = (sticky.est_tokens_band - band).abs() <= 1;
             let tools_same = sticky.tools_sig == input.tools_sig;
             if still_fits && band_close && tools_same && sticky.turns_left > 0 {
-                let j = self.judge.judge(&input.features, input.digest);
+                // zero external calls on the sticky fast path: reuse the
+                // sticky judgment snapshot instead of invoking the backend
+                let j = JudgmentSet {
+                    domain: sticky.domain,
+                    domain_confidence: 1.0,
+                    difficulty: 0.0,
+                    difficulty_confidence: 1.0,
+                    needs_vision: 0.0,
+                    is_trivial: 0.0,
+                    tool_heavy: 0.0,
+                    high_stakes: 0.0,
+                    session_relevance: 1.0,
+                    session_depth: 0.0,
+                };
                 return self.finish(
                     sticky.chosen.clone(),
                     vec![sticky.chosen.clone()],

@@ -9,7 +9,7 @@ use mr_core::features as feat;
 use mr_core::tokens as tok;
 use mr_core::types::*;
 use mr_memory::health::{classify_failure, Failure};
-use futures::TryStreamExt;
+use futures::StreamExt;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::Instant;
@@ -310,20 +310,23 @@ pub async fn chat_completions(
                 .unwrap_or_else(|| "text/event-stream".parse().unwrap());
             h.insert("content-type", ct);
             if cross {
-                // anthropic SSE -> openai SSE, then telemetry/quality stages
-                let translated = crate::translate::AnthropicToOpenaiStream::new(
-                    resp.bytes_stream().map_err(axum::Error::new),
-                );
-                let stream = crate::stream::telemetry_body(
-                    translated,
+                // telemetry sees the RAW anthropic stream (parser has an
+                // anthropic mode); translation wraps telemetry output so the
+                // client still receives openai chunks. Order matters: parse
+                // pre-translation or quality/usage signals are lost.
+                let telem_body = crate::stream::telemetry_body(
+                    resp.bytes_stream(),
                     telem,
                     st.events.clone(),
                     st.flywheel.clone(),
                     st.sessions.clone(),
                     st.bus.clone(),
                     parsed.clone(),
+                    true,
                 );
-                return out.body(stream).unwrap();
+                let translated =
+                    crate::translate::AnthropicToOpenaiStream::new(telem_body).boxed();
+                return out.body(axum::body::Body::from_stream(translated)).unwrap();
             }
             let stream = crate::stream::telemetry_body(
                 resp.bytes_stream(),
@@ -333,8 +336,9 @@ pub async fn chat_completions(
                 st.sessions.clone(),
                 st.bus.clone(),
                 parsed.clone(),
+                false,
             );
-            return out.body(stream).unwrap();
+            return out.body(axum::body::Body::from_stream(stream)).unwrap();
         }
 
         let bytes = resp.bytes().await.unwrap_or_default();
@@ -424,7 +428,7 @@ pub async fn chat_completions(
 }
 
 fn fallback_eligible(status: u16) -> bool {
-    matches!(status, 401 | 402 | 403 | 404 | 429) || status >= 500
+    matches!(status, 401 | 402 | 403 | 404 | 408 | 429) || status >= 500
 }
 
 fn insert_header(h: &mut axum::http::HeaderMap, k: &'static str, v: &str) {

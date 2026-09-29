@@ -58,7 +58,7 @@ export const ModelroutePlugin: Plugin = async ({ project }) => {
     "chat.headers": async (input, output) => {
       output.headers["x-mr-session"] = input.sessionID
       if (input.agent) output.headers["x-mr-agent"] = input.agent
-      if (cwd) output.headers["x-mr-cwd-hash"] = String(cwd.length)
+      if (cwd) output.headers["x-mr-cwd-len"] = String(cwd.length)
     },
 
     "tool.execute.after": async (input, output) => {

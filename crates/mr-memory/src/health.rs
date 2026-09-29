@@ -26,12 +26,15 @@ impl HealthRegistry {
     pub fn mark_ok(&self, model_id: &str) {
         if let Ok(mut m) = self.inner.lock()
             && let Some(e) = m.get_mut(model_id)
-                && e.kind != HealthKind::Ok {
-                    e.kind = HealthKind::Ok;
-                    e.until_epoch_ms = None;
-                    e.message.clear();
-                    e.updated_at = now();
-                }
+        {
+            // success resets the escalation counter so a recovered model
+            // doesn't inherit multiplied cooldowns from its outage
+            e.hits = 0;
+            e.kind = HealthKind::Ok;
+            e.until_epoch_ms = None;
+            e.message.clear();
+            e.updated_at = now();
+        }
     }
 
     pub fn mark_failure(&self, model_id: &str, f: Failure) {

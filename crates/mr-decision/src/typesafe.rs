@@ -19,6 +19,7 @@ pub struct TypesafeBackend {
     api_key: String,
     model: String,
     endpoint: String,
+    pub redact: bool,
 }
 
 #[async_trait]
@@ -63,10 +64,18 @@ impl TypesafeBackend {
             api_key,
             model: std::env::var("TYPESAFE_MODEL").unwrap_or_else(|_| "jev-latest".into()),
             endpoint: "https://api.typesafe.ai/v1/systemone".into(),
+            // privacy default: only bucketed features cross the wire
+            redact: std::env::var("TYPESAFE_REDACT").map(|v| v != "0").unwrap_or(true),
         })
     }
 
     fn build_payload(&self, features: &RequestFeatures, digest: &DigestSignals) -> serde_json::Value {
+        let (first_head, current_head) = if self.redact {
+            // bucketed placeholder: no user text leaves the machine
+            ("[text]".to_string(), "[text]".to_string())
+        } else {
+            (head(&digest.first_user_text, 200), head(&digest.last_user_text, 400))
+        };
         let state = json!({
             "task": {
                 "length_bucket": bucket(features.user_text_chars, &[30, 100, 400, 1500]),
@@ -77,8 +86,8 @@ impl TypesafeBackend {
                 "est_tokens": features.est_input_tokens,
             },
             "session": {
-                "first_task_head": head(&digest.first_user_text, 200),
-                "current_head": head(&digest.last_user_text, 400),
+                "first_task_head": first_head,
+                "current_head": current_head,
                 "continues_topic": digest.has_deixis || digest.overlap_ratio > 0.15,
                 "topic_shift": digest.topic_shift_marker,
                 "tools_seen": digest.session_tools_seen.min(999),

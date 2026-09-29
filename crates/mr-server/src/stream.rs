@@ -1,5 +1,4 @@
-use axum::body::Body;
-use futures::stream::Stream;
+use futures::stream::{Stream, StreamExt};
 use mr_core::types::ResponseQuality;
 use mr_memory::{EventLog, Flywheel, SessionStore};
 use serde_json::{json, Map, Value};
@@ -73,6 +72,7 @@ pub fn finalize_event(events: &EventLog, flywheel: &Flywheel, bus: &tokio::sync:
 /// calls while forwarding chunks untouched. At stream end (or drop) runs
 /// response-quality analysis, feeds the flywheel, and records pending tool
 /// calls for L3 session-loop matching.
+#[allow(clippy::too_many_arguments)]
 pub fn telemetry_body<E>(
     inner: impl Stream<Item = Result<bytes::Bytes, E>> + Send + 'static,
     telem: SharedTelem,
@@ -81,7 +81,8 @@ pub fn telemetry_body<E>(
     sessions: SessionStore,
     bus: tokio::sync::broadcast::Sender<Value>,
     request: Value,
-) -> Body
+    anthropic_mode: bool,
+) -> futures::stream::BoxStream<'static, Result<bytes::Bytes, axum::Error>>
 where
     E: std::error::Error + Send + Sync + 'static,
 {
@@ -96,10 +97,10 @@ where
             sessions: Some(sessions),
             bus: Some(bus),
             request,
-            acc: StreamAcc::default(),
+            acc: StreamAcc::new(anthropic_mode),
         }),
     );
-    Body::from_stream(TelemetryStream { inner: Box::new(state) })
+    TelemetryStream { inner: Box::new(state) }.boxed()
 }
 
 #[derive(Default)]
@@ -109,21 +110,120 @@ struct StreamAcc {
     tool_calls: BTreeMap<u32, (String, String, String)>, // idx -> (id, name, args)
     finish_reason: Option<String>,
     usage: Option<Value>,
-    line_buf: String,
+    // byte-level line buffer: decode only complete lines so multi-byte
+    // UTF-8 chars split across HTTP chunks survive (BUG-6)
+    byte_buf: Vec<u8>,
+    /// true when accumulating upstream anthropic SSE (cross-protocol)
+    anthropic_mode: bool,
+    // anthropic accumulation
+    ant_tool_ids: BTreeMap<u32, String>,
+    ant_tool_names: BTreeMap<u32, String>,
+    ant_tool_args: BTreeMap<u32, String>,
 }
 
 const CONTENT_CAP: usize = 64 * 1024;
 
 impl StreamAcc {
+    fn new(anthropic_mode: bool) -> Self {
+        Self {
+            anthropic_mode,
+            ..Default::default()
+        }
+    }
+
     fn push_chunk(&mut self, chunk: &[u8]) {
-        self.line_buf.push_str(&String::from_utf8_lossy(chunk));
-        while let Some(pos) = self.line_buf.find('\n') {
-            let line: String = self.line_buf.drain(..=pos).collect();
+        self.byte_buf.extend_from_slice(chunk);
+        while let Some(pos) = self.byte_buf.iter().position(|&b| b == b'\n') {
+            let line_bytes: Vec<u8> = self.byte_buf.drain(..=pos).collect();
+            let line = String::from_utf8_lossy(&line_bytes);
             self.process_line(line.trim_end());
         }
     }
 
     fn process_line(&mut self, line: &str) {
+        if self.anthropic_mode {
+            self.process_anthropic_line(line);
+        } else {
+            self.process_openai_line(line);
+        }
+    }
+
+    fn process_anthropic_line(&mut self, line: &str) {
+        let Some(data) = line.strip_prefix("data:") else { return };
+        let data = data.trim();
+        if data.is_empty() {
+            return;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(data) else { return };
+        match v.get("type").and_then(|t| t.as_str()) {
+            Some("message_start") => {
+                if let Some(u) = v.pointer("/message/usage").filter(|u| u.is_object()) {
+                    self.usage = Some(u.clone());
+                }
+            }
+            Some("content_block_start") => {
+                let idx = v.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as u32;
+                if let Some(block) = v.get("content_block")
+                    && block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                        if let Some(id) = block.get("id").and_then(|i| i.as_str()) {
+                            self.ant_tool_ids.insert(idx, id.to_string());
+                        }
+                        if let Some(n) = block.get("name").and_then(|n| n.as_str()) {
+                            self.ant_tool_names.insert(idx, n.to_string());
+                        }
+                    }
+            }
+            Some("content_block_delta") => {
+                let idx = v.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as u32;
+                if let Some(delta) = v.get("delta") {
+                    match delta.get("type").and_then(|t| t.as_str()) {
+                        Some("text_delta") => {
+                            if let Some(t) = delta.get("text").and_then(|t| t.as_str())
+                                && self.content.len() < CONTENT_CAP
+                            {
+                                self.content.push_str(t);
+                            }
+                        }
+                        Some("input_json_delta") => {
+                            if let Some(a) = delta.get("partial_json").and_then(|a| a.as_str())
+                                && self.ant_tool_args.entry(idx).or_default().len() < CONTENT_CAP
+                            {
+                                self.ant_tool_args.get_mut(&idx).unwrap().push_str(a);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Some("message_delta") => {
+                if let Some(u) = v.get("usage").filter(|u| u.is_object()) {
+                    let merged = match &mut self.usage {
+                        Some(prev) => {
+                            if let (Some(p), Some(n)) = (prev.as_object_mut(), u.as_object()) {
+                                for (k, val) in n {
+                                    p.insert(k.clone(), val.clone());
+                                }
+                            }
+                            prev.clone()
+                        }
+                        None => u.clone(),
+                    };
+                    self.usage = Some(merged);
+                }
+                if let Some(sr) = v.pointer("/delta/stop_reason").and_then(|s| s.as_str()) {
+                    self.finish_reason = Some(match sr {
+                        "end_turn" => "stop".into(),
+                        "max_tokens" => "length".into(),
+                        "tool_use" => "tool_calls".into(),
+                        other => other.to_string(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn process_openai_line(&mut self, line: &str) {
         let Some(data) = line.strip_prefix("data:") else { return };
         let data = data.trim();
         if data.is_empty() || data == "[DONE]" {
@@ -175,9 +275,20 @@ impl StreamAcc {
     }
 
     fn build_response(&self) -> Value {
-        let tool_calls: Vec<Value> = self
+        let mut source: Vec<(String, String, String)> = self
             .tool_calls
             .values()
+            .cloned()
+            .collect();
+        for (idx, id) in &self.ant_tool_ids {
+            source.push((
+                id.clone(),
+                self.ant_tool_names.get(idx).cloned().unwrap_or_default(),
+                self.ant_tool_args.get(idx).cloned().unwrap_or_default(),
+            ));
+        }
+        let tool_calls: Vec<Value> = source
+            .iter()
             .map(|(id, name, args)| {
                 json!({"id": id, "type": "function",
                        "function": {"name": name, "arguments": args}})
@@ -213,8 +324,8 @@ const TAIL_CAP: usize = 16 * 1024;
 impl Finalizer {
     fn push_chunk(&mut self, chunk: &[u8]) {
         self.acc.push_chunk(chunk);
-        if self.acc.line_buf.len() > TAIL_CAP {
-            self.acc.line_buf.clear();
+        if self.acc.byte_buf.len() > TAIL_CAP {
+            self.acc.byte_buf.clear();
         }
     }
 }

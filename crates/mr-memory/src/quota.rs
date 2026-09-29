@@ -140,16 +140,29 @@ impl QuotaLedger {
         let m = self.inner.lock();
         let Ok(m) = m else { return out };
         let now = now_ms();
+        // stale-window guards: a window older than 24h is garbage; a
+        // zero-remaining window with unknown reset only blocks for 30min
+        // (otherwise a header-parse miss locks the model until restart)
+        const MAX_WINDOW_AGE_MS: u64 = 24 * 3600 * 1000;
+        const UNKNOWN_RESET_BLOCK_MS: u64 = 30 * 60 * 1000;
         for (k, slots) in m.iter() {
             let model_id = health_model_id(k);
             for w in slots {
                 if w.scope == "requests" {
                     continue;
                 }
-                if let Some(r) = w.reset_epoch_ms
-                    && r <= now {
-                        continue;
+                if now.saturating_sub(w.updated_epoch_ms) > MAX_WINDOW_AGE_MS {
+                    continue;
+                }
+                match w.reset_epoch_ms {
+                    Some(r) if r <= now => continue,
+                    None if w.remaining == Some(0)
+                        && now.saturating_sub(w.updated_epoch_ms) > UNKNOWN_RESET_BLOCK_MS =>
+                    {
+                        continue
                     }
+                    _ => {}
+                }
                 if let Some(rem) = w.remaining {
                     let e = out.entry(model_id.to_string()).or_insert(0);
                     *e = (*e).max(rem);
@@ -175,11 +188,36 @@ pub fn health_model_id(health_id: &str) -> &str {
 
 /// RFC3339 (Z suffix) -> epoch ms. Minimal parser: 2026-09-29T12:34:56Z.
 fn parse_rfc3339_ms(s: &str) -> Option<u64> {
-    let bytes = s.as_bytes();
-    if bytes.len() < 20 || bytes[19] != b'Z' {
-        return None;
-    }
-    let num = |a: usize, b: usize| s.get(a..b)?.parse::<i64>().ok();
+    // Tolerant RFC3339: accepts fractional seconds and +HH:MM/-HH:MM/Z offsets.
+    let (main, offset_ms) = match s.find(['+', '-']) {
+        // skip the leading sign position of the date itself (index 4 is '-')
+        Some(pos) if pos > 10 => {
+            let (m, off) = s.split_at(pos);
+            // off: +HH:MM or -HH:MM
+            let sign = if off.starts_with('-') { -1i64 } else { 1i64 };
+            let h: i64 = off.get(1..3)?.parse().ok()?;
+            let mi: i64 = off.get(4..6).unwrap_or("00").parse().ok()?;
+            (m.to_string(), sign * (h * 3600 + mi * 60) * 1000)
+        }
+        _ => (s.to_string(), 0),
+    };
+    let bytes = main.as_bytes();
+    // find 'Z' or strip fractional seconds before it
+    let main = if bytes.len() > 19 && bytes[19] == b'Z' {
+        main[..19].to_string()
+    } else if bytes.len() > 19 && bytes[19] == b'.' {
+        // fractional seconds: find terminator
+        let z = main[19..].find(['Z', '+', '-'])? + 19;
+        main[..z].to_string()
+    } else {
+        main
+    };
+    let bytes = main.as_bytes();
+    if (bytes.len() < 19 || (bytes.len() == 20 && bytes[19] != b'Z'))
+        && bytes.len() < 19 {
+            return None;
+        }
+    let num = |a: usize, b: usize| main.get(a..b)?.parse::<i64>().ok();
     let year = num(0, 4)?;
     let month = num(5, 7)?;
     let day = num(8, 10)?;
@@ -196,7 +234,8 @@ fn parse_rfc3339_ms(s: &str) -> Option<u64> {
         era * 146_097 + doe - 719_468
     };
     let epoch = days(year, month, day) * 86_400 + hour * 3600 + min * 60 + sec;
-    Some((epoch.max(0) as u64).saturating_mul(1000))
+    let base = (epoch.max(0) as u64).saturating_mul(1000);
+    Some(base.saturating_add_signed(-offset_ms))
 }
 
 /// OpenAI reset duration ("1s", "6m0s", "1h2m3s") -> ms.

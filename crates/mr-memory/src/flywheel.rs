@@ -185,10 +185,11 @@ impl Flywheel {
     }
 
     pub fn save(&self) {
-        let Ok(inner) = self.inner.lock() else { return };
+        let Ok(mut inner) = self.inner.lock() else { return };
         if !inner.dirty {
             return;
         }
+        inner.dirty = false;
         if let Some(path) = &self.path {
             let tmp = path.with_extension("json.tmp");
             if let Ok(text) = serde_json::to_string_pretty(&*inner)
@@ -213,9 +214,9 @@ impl Flywheel {
         for (id, s) in &inner.models {
             let reliability = Self::reliability_of(s);
             let speed_obs = if s.total_ms_n >= MIN_RELIABILITY_SAMPLES {
-                let avg_ms = s.total_ms_sum as f32 / s.total_ms_n as f32;
-                // 1s -> 0.95, 10s -> 0.67, 30s -> 0.0 (log-ish falloff)
-                Some((1.0 - (avg_ms / 30_000.0).ln().max(0.0) / 30_000f32.ln()).clamp(0.0, 1.0))
+                let avg_ms = (s.total_ms_sum as f32 / s.total_ms_n as f32).max(1.0);
+                // Monotonic log falloff: 1s -> ~0.79, 5s -> ~0.55, 30s -> ~0.22, 100s -> ~0.0
+                Some((1.0 - (avg_ms.ln() / 100_000.0f32.ln())).clamp(0.0, 1.0))
             } else {
                 None
             };

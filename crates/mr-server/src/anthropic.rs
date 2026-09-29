@@ -113,6 +113,30 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
     for cand in &attempts {
         let Some(record) = st.engine.catalog.get(cand).cloned() else { continue };
         let to_openai = record.protocol == Protocol::OpenAI;
+        // multi-key pool: rotate through keys (mirrors relay.rs); on auth/
+        // quota failure the health ledger marks model⟨sep⟩keyidx and the
+        // next key — then the next candidate — gets tried
+        let keys = record.key_values();
+        let key_len = keys.len().max(1);
+        let key_start = st.key_start(cand, key_len);
+        let health_snap = st.health.snapshot();
+        let now_ms_v = mr_memory::health::now();
+        let _key_exhausted = false;
+
+        for key_off in 0..key_len {
+        let key_idx = (key_start + key_off) % key_len;
+        let key_value = keys.get(key_idx).cloned();
+        let health_id = if keys.is_empty() {
+            cand.clone()
+        } else {
+            format!("{cand}\u{1f}{key_idx}")
+        };
+        if let Some(h) = health_snap.get(&health_id)
+            && !h.available(now_ms_v)
+        {
+            skipped.push(format!("{cand}[{key_idx}] cooldown"));
+            continue;
+        }
 
         let (fwd_body, url) = if to_openai {
             let translated = crate::translate::Translator::global()
@@ -141,12 +165,12 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             if record.base_url.contains("opencode.ai/zen") {
                 req = req.header("x-opencode-session", &session_key);
             }
-            if let Some(key) = record.api_key.as_deref().filter(|k| !k.is_empty()) {
+            if let Some(key) = key_value.as_deref() {
                 req = req.bearer_auth(key);
             }
         } else {
             req = req.header("anthropic-version", "2023-06-01");
-            if let Some(key) = record.api_key.as_deref().filter(|k| !k.is_empty()) {
+            if let Some(key) = key_value.as_deref() {
                 req = req.header("x-api-key", key);
             }
         }
@@ -184,21 +208,26 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                 "status": status.as_u16(), "health": failure.kind.label(),
                 "message": failure.message, "session": session_key,
             }));
-            st.health.mark_failure(cand, failure);
+            st.health.mark_failure(&health_id, failure);
             let kind_label = {
                 let snap = st.health.snapshot();
-                snap.get(cand).map(|h| h.kind.label().to_string()).unwrap_or_default()
+                snap.get(&health_id).map(|h| h.kind.label().to_string()).unwrap_or_default()
             };
-            skipped.push(format!("{cand}({kind_label})"));
+            skipped.push(format!("{cand}[{key_idx}]({kind_label})"));
             last_error = Some((map_status(status), err_body));
-            continue;
+            continue; // next key in pool, then next candidate
         }
 
-        // success
-        st.health.mark_ok(cand);
+        // success: mark per-key when pooled
+        let success_health_id = if keys.is_empty() {
+            cand.clone()
+        } else {
+            format!("{cand}\u{1f}{key_idx}")
+        };
+        st.health.mark_ok(&success_health_id);
         // quota-window learning from success headers (pre-body consumption)
         let windows = mr_memory::QuotaLedger::parse_headers(resp.headers());
-        st.quota.observe(cand, windows);
+        st.quota.observe(&success_health_id, windows);
         decision.chosen = cand.clone();
         decision.upstream_model = record.upstream_model.clone();
         decision.id = format!("{}-{}", decision.id, skipped.len());
@@ -246,25 +275,26 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                 .cloned()
                 .unwrap_or_else(|| "text/event-stream".parse().unwrap());
             h.insert("content-type", ct);
-            let upstream_bytes: futures::stream::BoxStream<'static, Result<bytes::Bytes, axum::Error>> = if to_openai {
-                // openai chunks -> anthropic SSE for the claude-code client
-                crate::translate::OpenaiToAnthropicStream::new(
-                    resp.bytes_stream().map_err(axum::Error::new),
-                )
-                .boxed()
-            } else {
-                resp.bytes_stream().map_err(axum::Error::new).boxed()
-            };
-            let stream = crate::stream::telemetry_body(
-                upstream_bytes,
+            let raw = resp.bytes_stream().map_err(axum::Error::new).boxed();
+            // telemetry sees the RAW upstream (openai chunks parse natively);
+            // translation wraps telemetry output for the claude-code client
+            let telem_body = crate::stream::telemetry_body(
+                raw,
                 telem,
                 st.events.clone(),
                 st.flywheel.clone(),
                 st.sessions.clone(),
                 st.bus.clone(),
                 parsed.clone(),
+                false,
             );
-            return out.body(stream).unwrap();
+            let client_stream: futures::stream::BoxStream<'static, Result<bytes::Bytes, axum::Error>> =
+                if to_openai {
+                    crate::translate::OpenaiToAnthropicStream::new(telem_body).boxed()
+                } else {
+                    telem_body
+                };
+            return out.body(axum::body::Body::from_stream(client_stream)).unwrap();
         }
 
         let bytes = resp.bytes().await.unwrap_or_default();
@@ -347,6 +377,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
         crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.bus, &telem.lock().unwrap());
         h.insert("content-type", "application/json".parse().unwrap());
         return out.body(axum::body::Body::from(client_body)).unwrap();
+        } // key_off loop (keys exhausted for this candidate)
     }
 
     let direct_raw = matches!(target, Target::Direct(_)) && last_error.is_some();
@@ -431,7 +462,7 @@ fn resolve_target(st: &AppState, model_field: &str) -> Result<Target, Response> 
 }
 
 fn fallback_eligible(status: u16) -> bool {
-    matches!(status, 401 | 402 | 403 | 404 | 429) || status >= 500
+    matches!(status, 401 | 402 | 403 | 404 | 408 | 429) || status >= 500
 }
 
 fn map_status(s: reqwest::StatusCode) -> StatusCode {
@@ -535,8 +566,8 @@ fn anthropic_text(parsed: &Value) -> (String, String, bool) {
 }
 
 fn estimate_anthropic(parsed: &Value) -> u64 {
-    let (system, last_user, _) = anthropic_text(parsed);
-    let mut total = tok::estimate_text(&system) + tok::estimate_text(&last_user);
+    let (system, _, _) = anthropic_text(parsed);
+    let mut total = tok::estimate_text(&system);
     if let Some(msgs) = parsed.get("messages").and_then(|m| m.as_array()) {
         for m in msgs {
             total += 4;
