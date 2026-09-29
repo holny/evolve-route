@@ -1,0 +1,45 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mr-core",
+    "crates/mr-decision",
+    "crates/mr-memory",
+    "crates/mr-discovery",
+    "crates/mr-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/your-org/model-route"
+
+[workspace.dependencies]
+mr-core = { path = "crates/mr-core" }
+mr-decision = { path = "crates/mr-decision" }
+mr-memory = { path = "crates/mr-memory" }
+mr-discovery = { path = "crates/mr-discovery" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+toml = "0.9"
+thiserror = "2"
+anyhow = "1"
+sha2 = "0.10"
+hex = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+futures = "0.3"
+async-trait = "0.1"
+rand = "0.9"
+clap = { version = "4", features = ["derive"] }
+tokio-stream = { version = "0.1", default-features = false, features = ["sync"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

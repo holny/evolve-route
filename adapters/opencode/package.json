@@ -1,0 +1,17 @@
+{
+  "name": "opencode-modelroute",
+  "version": "0.2.0",
+  "description": "ModelRoute adapter for opencode: session stamping, tool outcome feedback, error reporting",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "*",
+    "typescript": "^5.6.0"
+  },
+  "keywords": ["opencode", "llm", "routing", "modelroute"]
+}

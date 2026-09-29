@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>ModelRoute 面板</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --bg:#0d1117; --card:#161b22; --border:#30363d; --fg:#c9d1d9; --dim:#8b949e;
+        --green:#3fb950; --red:#f85149; --amber:#d29922; --blue:#58a6ff; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--bg); color:var(--fg); font:13px/1.5 -apple-system,"PingFang SC",sans-serif; padding:16px; }
+h1 { font-size:16px; margin-bottom:4px; }
+.sub { color:var(--dim); font-size:12px; margin-bottom:14px; }
+.grid { display:grid; grid-template-columns: 1.2fr 1fr; gap:14px; align-items:start; }
+.card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px; }
+.card h2 { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+th { color:var(--dim); text-align:left; font-weight:normal; padding:3px 6px; border-bottom:1px solid var(--border); }
+td { padding:3px 6px; border-bottom:1px solid #21262d; }
+td.num { text-align:right; font-variant-numeric:tabular-nums; }
+.badge { display:inline-block; padding:0 6px; border-radius:4px; font-size:11px; }
+.badge.dead { background:#3d1618; color:var(--red); }
+.badge.ok   { background:#12261e; color:var(--green); }
+#feed { max-height:420px; overflow-y:auto; }
+.feed-row { display:flex; gap:8px; padding:4px 0; border-bottom:1px solid #21262d; font-variant-numeric:tabular-nums; }
+.feed-row .t { color:var(--dim); min-width:64px; }
+.feed-row .m { color:var(--blue); min-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.feed-row .ms { margin-left:auto; color:var(--dim); }
+.feed-row .sk { color:var(--amber); font-size:11px; }
+.pill { border-radius:10px; padding:0 8px; font-size:11px; }
+</style>
+</head>
+<body>
+<h1>ModelRoute 路由面板</h1>
+<div class="sub">本地智能路由网关 · <span id="sse-status">SSE 连接中…</span></div>
+<div class="grid">
+  <div>
+    <div class="card">
+      <h2>实时决策流</h2>
+      <div id="feed"></div>
+    </div>
+    <div class="card">
+      <h2>模型健康</h2>
+      <table id="health"><thead><tr><th>模型</th><th>状态</th><th>详情</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <h2>模型统计（飞轮）</h2>
+      <table id="stats"><thead>
+        <tr><th>模型</th><th>请求</th><th>成功</th><th>TTFT</th><th>耗时</th><th>tokens</th><th>缓存</th><th>工具</th><th>权重</th></tr>
+      </thead><tbody></tbody></table>
+    </div>
+    <div class="card">
+      <h2>图例</h2>
+      <div style="color:var(--dim);font-size:12px">
+        工具 = 有效调用率 (合法JSON·已知工具) · 权重 = user_weight × learned_bias<br>
+        学习项：reliability / speed / calibration 随流量自动修正，source 参见 /v1/models
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const feed = document.getElementById('feed');
+function fmt(n){ return n==null ? '-' : n; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function addRow(e){
+  if (e.kind !== 'chat') return;
+  const row = document.createElement('div');
+  row.className = 'feed-row';
+  const time = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+  const badge = (200<=e.status && e.status<300) ? 'ok' : 'dead';
+  row.innerHTML = `<span class="t">${time}</span>
+    <span class="pill badge ${badge}">${e.status}</span>
+    <span class="m" title="${esc(e.chosen)}">${esc(e.chosen)}</span>
+    <span>${fmt(e.est_tokens)}tok</span>
+    ${e.cached_tokens ? `<span title="缓存命中">⚡${e.cached_tokens}</span>` : ''}
+    <span class="sk">${e.skipped ? 'fallback' : ''}</span>
+    <span class="ms">${fmt(e.total_ms)}ms</span>`;
+  feed.prepend(row);
+  while (feed.children.length > 200) feed.lastChild.remove();
+}
+const es = new EventSource('/api/stream');
+es.onopen = () => document.getElementById('sse-status').textContent = 'SSE 已连接';
+es.onerror = () => document.getElementById('sse-status').textContent = 'SSE 重连中…';
+es.onmessage = ev => { try { addRow(JSON.parse(ev.data)); } catch(_){} };
+
+async function refresh(){
+  try {
+    const [statsR, healthR] = await Promise.all([fetch('/api/stats'), fetch('/api/health')]);
+    const stats = (await statsR.json()).models || {};
+    const health = (await healthR.json()).models || {};
+    const tb = document.querySelector('#stats tbody');
+    tb.innerHTML = Object.entries(stats).sort((a,b)=>b[1].requests-a[1].requests).map(([id,s]) => {
+      const t = s.telemetry||{};
+      const tc = s.tool_calls||{};
+      const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total)) : null;
+      const w = (s.user_weight ?? 1) + '×' + (t.learned_bias ? t.learned_bias.toFixed(2) : '1.00');
+      return `<tr><td title="${esc(id)}">${esc(id.length>28?id.slice(0,27)+'…':id)}</td>
+        <td class="num">${s.requests}</td>
+        <td class="num">${s.success}</td>
+        <td class="num">${fmt(s.avg_ttft_ms)}</td>
+        <td class="num">${fmt(s.avg_total_ms)}</td>
+        <td class="num">${s.prompt_tokens??0}/${s.completion_tokens??0}</td>
+        <td class="num">${s.cached_tokens||0}</td>
+        <td class="num">${toolRate==null?'-':toolRate+'%'}</td>
+        <td class="num" title="reliability=${fmt(t.reliability)} calibration=${fmt(t.calibration)}">${w}</td></tr>`;
+    }).join('') || '<tr><td colspan="9" style="color:var(--dim)">暂无流量</td></tr>';
+    const hb = document.querySelector('#health tbody');
+    const entries = Object.entries(health);
+    hb.innerHTML = entries.length ? entries.map(([id,h]) => `<tr>
+      <td>${esc(id)}</td>
+      <td><span class="pill badge ${h.available?'ok':'dead'}">${h.available?'可用':esc(h.kind)}</span></td>
+      <td style="color:var(--dim)">${esc(h.message||'')}${h.cooldown_remaining_ms?` (${Math.round(h.cooldown_remaining_ms/1000)}s)`:''}</td></tr>`).join('')
+      : '<tr><td colspan="3" style="color:var(--dim)">全部正常（无异常记录）</td></tr>';
+  } catch(_){}
+}
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

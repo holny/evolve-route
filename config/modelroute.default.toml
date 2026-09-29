@@ -1,0 +1,69 @@
+# ModelRoute default configuration (M1)
+# Copy to modelroute.toml next to the binary or ~/.modelroute/modelroute.toml
+
+[server]
+host = "127.0.0.1"
+port = 8787
+
+[policy]
+default = "balanced"
+weights = { quality = 0.35, speed = 0.15, cost = 0.25, stability = 0.15, headroom = 0.10 }
+sticky_turns = 6
+confidence_gate = 0.35
+
+[decision]
+backend = "auto"            # auto | heuristic | typesafe | laya
+redact = true
+
+[catalog]
+remote_fetch = false        # M3
+
+[quota]
+learn_from_headers = true   # M2
+
+[data]
+dir = "~/.modelroute"
+
+# ---------------------------------------------------------------------------
+# Models: declare every upstream model the router may pick.
+# M1: user-declared entries only (builtin catalog merges as priors).
+# ---------------------------------------------------------------------------
+[[models]]
+id = "mini"
+provider = "mock"
+protocol = "openai"
+base_url = "http://127.0.0.1:9101/v1"
+api_key_env = "MOCK_MINI_KEY"
+upstream_model = "mock-mini"
+context_window = 32000
+max_output = 4096
+cost = { input = 0.10, output = 0.40 }   # USD per Mtok
+tiers = { reasoning = 0.25, coding = 0.45, vision = 0.0, agentic = 0.5 }
+speed_tier = 0.95
+source_note = "cheap fast worker"
+
+[[models]]
+id = "standard"
+provider = "mock"
+protocol = "openai"
+base_url = "http://127.0.0.1:9101/v1"
+api_key_env = "MOCK_STD_KEY"
+upstream_model = "mock-standard"
+context_window = 128000
+max_output = 8192
+cost = { input = 0.60, output = 2.40 }
+tiers = { reasoning = 0.65, coding = 0.75, vision = 0.5, agentic = 0.8 }
+speed_tier = 0.7
+
+[[models]]
+id = "frontier"
+provider = "mock"
+protocol = "openai"
+base_url = "http://127.0.0.1:9101/v1"
+api_key_env = "MOCK_FRONTIER_KEY"
+upstream_model = "mock-frontier"
+context_window = 200000
+max_output = 16384
+cost = { input = 3.00, output = 15.00 }
+tiers = { reasoning = 0.97, coding = 0.95, vision = 0.95, agentic = 0.95 }
+speed_tier = 0.4
