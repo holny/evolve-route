@@ -1,7 +1,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
-use mr_core::config::{CatalogCfg, DataCfg, DecisionCfg, DiscoveryCfg, FileConfig, ModelEntry, PolicyCfg, QuotaCfg, ServerCfg};
+use mr_core::config::{BenchmarksCfg, CatalogCfg, DataCfg, DecisionCfg, DiscoveryCfg, FileConfig, ModelEntry, PolicyCfg, QuotaCfg, ServerCfg};
 use mr_core::types::{Cost, Tiers};
 use mr_server::state::{build_router, build_state};
 use serde_json::{json, Value};
@@ -68,6 +68,7 @@ fn test_config(upstream_port: u16) -> FileConfig {
         quota: QuotaCfg::default(),
         data: DataCfg { dir: std::env::temp_dir().join(format!("mr-test-{}", std::process::id())) .to_string_lossy().into_owned() },
         discovery: DiscoveryCfg { agents: vec![] },
+        benchmarks: BenchmarksCfg { enabled: false, interval_hours: 24, sources: vec![] },
         models: vec![
             mk("mini", "mock-mini", 32_000, 0.1, 0.4, 0.45, 0.95),
             mk("standard", "mock-standard", 128_000, 0.6, 2.4, 0.75, 0.7),
@@ -584,7 +585,7 @@ async fn dead_key_rotates_within_pool() {
     let (_, _, raw) = send(app, req).await;
     let v = json_body(&raw);
     let keys = v["models"].as_object().unwrap();
-    let dead_id = keys.keys().find(|k| k.contains('\u{1f}') && k.ends_with('\u{0}')).cloned();
+    let _dead_id = keys.keys().find(|k| k.contains('\u{1f}') && k.ends_with('\u{0}')).cloned();
     let mini_entries: Vec<&Value> = keys.iter().filter(|(k, _)| k.starts_with("mini")).map(|(_, v)| v).collect();
     assert!(!mini_entries.is_empty(), "per-key health present: {keys:?}");
     assert!(mini_entries.iter().any(|h| h["kind"] == "payment_required"), "dead key marked");
