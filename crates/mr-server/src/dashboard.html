@@ -36,7 +36,7 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
 <div class="grid">
   <div>
     <div class="card">
-      <h2>实时决策流</h2>
+      <h2>实时决策流（tokens 按千位缩写）</h2>
       <div id="feed"></div>
     </div>
     <div class="card">
@@ -107,7 +107,7 @@ async function refresh(){
     const applied = bench.applied || {};
     const healthMap = health;
     const db = document.querySelector('#dyn tbody');
-    const dynRows = Object.entries(stats).map(([id, s]) => {
+    const dynRows = Object.entries(stats).slice(0, 50).map(([id, s]) => {
       const t = s.telemetry || {};
       const b = applied[id] || {};
       const bt = b.tiers || {};

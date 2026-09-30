@@ -75,11 +75,17 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
     let health_snap = st.health.snapshot();
     let now = mr_memory::health::now();
     let mut models = serde_json::Map::new();
-    for (id, s) in &stats {
+    // iterate the CATALOG (not just traffic stats) so every known model
+    // shows up, ranked by dynamic priority; top 50 returned
+    let mut ranked: Vec<(String, serde_json::Value)> = Vec::new();
+    for m in &st.engine.catalog.models {
+        let id = &m.id;
+        let empty = Default::default();
+        let s = stats.get(id).unwrap_or(&empty);
         let t = telemetry.get(id).cloned().unwrap_or_default();
         // link status from health ledger (any key ok = up)
         let key_ids: Vec<String> = {
-            let keys = st.engine.catalog.get(id).map(|m| m.key_values()).unwrap_or_default();
+            let keys = m.key_values();
             if keys.is_empty() {
                 vec![id.clone()]
             } else {
@@ -95,25 +101,21 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
         };
         // dynamic priority: benchmark tiers avg x reliability/speed x weight
         let (tiers, conf) = overlays.get(id).cloned().unwrap_or_else(|| {
-            let base = st.engine.catalog.get(id).map(|m| m.tiers).unwrap_or_default();
-            (base, 0.0)
+            (m.tiers, 0.0)
         });
         let bench_avg = (tiers.coding + tiers.reasoning + tiers.agentic) / 3.0;
         let dyn_score = {
             let rel = t.reliability.unwrap_or(0.7);
             let spd = t.speed_obs.unwrap_or(0.5);
             let raw = 0.5 * bench_avg + 0.3 * rel + 0.2 * spd;
-            let w = st
-                .engine
-                .catalog
-                .get(id)
-                .and_then(|m| m.weight)
+            let w = m
+                .weight
                 .unwrap_or(1.0)
                 .clamp(0.2, 3.0);
             let bias = t.learned_bias.unwrap_or(1.0).clamp(0.7, 1.3);
             (raw * (w * bias).sqrt().clamp(0.4, 1.8)).clamp(0.0, 1.0) * 100.0
         };
-        models.insert(
+        ranked.push((
             id.clone(),
             json!({
                 "link": link,
@@ -138,9 +140,18 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                 "last_total_ms": (s.last_total_ms > 0).then_some(s.last_total_ms),
                 "last_ttft_ms": (s.last_ttft_ms > 0).then_some(s.last_ttft_ms),
                 "telemetry": t,
-                "user_weight": st.engine.catalog.get(id).and_then(|m| m.weight),
+                "user_weight": m.weight,
             }),
-        );
+        ));
+    }
+    ranked.sort_by(|a, b| {
+        let av = a.1.get("dynamic_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let bv = b.1.get("dynamic_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        bv.partial_cmp(&av).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    ranked.truncate(50);
+    for (id, entry) in ranked {
+        models.insert(id, entry);
     }
     (axum::Json(json!({"models": models}))).into_response()
 }
