@@ -49,6 +49,8 @@ pub struct ModelStats {
     pub last_seen_ms: u64,
     pub last_total_ms: u64,
     pub last_ttft_ms: u64,
+    pub last_rate_tok_s: u64,
+    pub cost_usd: f64,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -124,6 +126,20 @@ impl Flywheel {
         }
         if let Some(t) = event.get("ttft_ms").and_then(|v| v.as_u64()) {
             s.last_ttft_ms = t;
+        }
+        if let Some(r) = event.get("est_cost_usd").and_then(|v| v.as_f64()) {
+            s.cost_usd += r;
+        }
+        // 最近吐字速率：completion_tokens / 生成窗口（total - ttft）
+        if let (Some(c), Some(tt), Some(t0)) = (
+            event.get("completion_tokens").and_then(|v| v.as_u64()),
+            event.get("total_ms").and_then(|v| v.as_u64()),
+            event.get("ttft_ms").and_then(|v| v.as_u64()),
+        ) {
+            let gen_ms = tt.saturating_sub(t0);
+            if gen_ms > 50 {
+                s.last_rate_tok_s = (c * 1000 / gen_ms).min(9999);
+            }
         }
         let est = event.get("est_tokens").and_then(|v| v.as_u64());
         if let (Some(p), Some(e)) = (prompt, est)

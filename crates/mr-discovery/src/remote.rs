@@ -16,9 +16,26 @@ pub struct ProviderGroup {
 }
 
 pub fn provider_groups(records: &[ModelRecord]) -> Vec<ProviderGroup> {
+    provider_groups_ex(records, None)
+}
+
+/// `self_origin`: e.g. "127.0.0.1:8787" — groups pointing at our own
+/// listener are the gateway itself, never an upstream (loop guard).
+pub fn provider_groups_ex(
+    records: &[ModelRecord],
+    self_origin: Option<&str>,
+) -> Vec<ProviderGroup> {
     let mut groups: HashMap<(String, String), ProviderGroup> = HashMap::new();
     for r in records {
         if r.base_url.is_empty() || r.protocol != Protocol::OpenAI {
+            continue;
+        }
+        if r.provider == "modelroute" {
+            continue;
+        }
+        if let Some(origin) = self_origin
+            && r.base_url.contains(origin)
+        {
             continue;
         }
         let key = r.key_values().first().cloned().unwrap_or_default();
@@ -106,6 +123,7 @@ const CACHE_TTL_MS: u64 = 60 * 60 * 1000;
 pub fn discover_remote_blocking(
     records: &[ModelRecord],
     cache_dir: &str,
+    self_origin: Option<&str>,
 ) -> Vec<ModelRecord> {
     let path = cache_path(cache_dir);
     let fresh = std::fs::metadata(&path)
@@ -135,7 +153,7 @@ pub fn discover_remote_blocking(
         .map(|r| (r.base_url.clone(), r.upstream_model.clone()))
         .collect();
     let mut group_meta: HashMap<String, String> = HashMap::new();
-    for g in provider_groups(records) {
+    for g in provider_groups_ex(records, self_origin) {
         group_meta.insert(g.base_url.clone(), g.provider_hint.clone());
         let base_url = g.base_url.clone();
         match fetch_provider_models_blocking(&client, &base_url, g.key.as_deref()) {
@@ -163,7 +181,7 @@ pub fn discover_remote_blocking(
             }
         }
     }
-    if errors as usize == provider_groups(records).len() && all.is_empty() {
+    if errors as usize == provider_groups_ex(records, self_origin).len() && all.is_empty() {
         // every provider unreachable: keep stale cache usable next time
         return Vec::new();
     }

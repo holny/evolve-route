@@ -112,11 +112,14 @@ pub fn build_state(config: FileConfig) -> AppState {
     if config.catalog.remote_fetch {
         let mut base_records = config.model_records();
         base_records.extend(discovered.iter().cloned());
+        let self_origin = format!("{}:{}", config.server.host, config.server.port);
         discovered.extend(mr_discovery::remote::discover_remote_blocking(
             &base_records,
             &config.data.dir,
+            Some(&self_origin),
         ));
     }
+    discovered.retain(|m| m.provider != "modelroute");
     let catalog = Catalog::build_with_discovered(&config, discovered);
     let policy = config.policy.clone();
     let backend = DecisionBackend::build(&config.decision.backend);

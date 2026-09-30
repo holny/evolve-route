@@ -21,6 +21,8 @@ pub struct Telemetry {
     pub bytes: u64,
     pub status: u16,
     pub usage: Option<Value>,
+    pub est_cost_usd: Option<f64>,
+    pub translated: Option<String>,
     pub extra: Option<Value>,
 }
 

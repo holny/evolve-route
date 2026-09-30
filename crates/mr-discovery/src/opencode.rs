@@ -144,6 +144,11 @@ fn extract_models(root: &Value) -> Vec<ModelRecord> {
     };
     let mut records = Vec::new();
     for (provider_id, pv) in providers {
+        // "modelroute" is the reserved self-adapter name: client configs
+        // point at our own gateway, never an upstream
+        if provider_id == "modelroute" {
+            continue;
+        }
         let base_url = pv
             .get("options")
             .and_then(|o| o.get("baseURL"))

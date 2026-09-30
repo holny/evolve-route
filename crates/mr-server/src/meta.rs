@@ -100,20 +100,45 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
             if !any_entry { "unknown" } else if any_ok { "up" } else { "down" }
         };
         // dynamic priority: benchmark tiers avg x reliability/speed x weight
-        let (tiers, conf) = overlays.get(id).cloned().unwrap_or_else(|| {
+        let (tiers, conf) = overlays.get(id).cloned().unwrap_or({
             (m.tiers, 0.0)
         });
         let bench_avg = (tiers.coding + tiers.reasoning + tiers.agentic) / 3.0;
+        // 性价比优先度（用户修正）：能力不是全部——按量计费模型看每次请求
+        // 的真实花费；coding plan 订阅模型看 5h/7d 窗口余量（好钢用在刀刃上）
         let dyn_score = {
             let rel = t.reliability.unwrap_or(0.7);
             let spd = t.speed_obs.unwrap_or(0.5);
-            let raw = 0.5 * bench_avg + 0.3 * rel + 0.2 * spd;
-            let w = m
-                .weight
-                .unwrap_or(1.0)
-                .clamp(0.2, 3.0);
+            let cost_eff = match m.cost {
+                // 按量：以一次典型 4k-in/0.5k-out 请求为基准，与目录最便宜
+                // 模型比价；无价模型（订阅摊薄）按 0.8 中性偏优
+                Some(c) => {
+                    let typical = (4_000.0 / 1e6) * c.input as f64 + (500.0 / 1e6) * c.output as f64;
+                    let cheapest = st
+                        .engine
+                        .catalog
+                        .models
+                        .iter()
+                        .filter_map(|x| {
+                            x.cost.map(|cc| {
+                                (4_000.0 / 1e6) * cc.input as f64
+                                    + (500.0 / 1e6) * cc.output as f64
+                            })
+                        })
+                        .fold(f64::MAX, f64::min);
+                    ((cheapest / typical) as f32).clamp(0.05, 1.0)
+                }
+                None => 0.8,
+            };
+            let quota_factor = st
+                .quota
+                .model_remaining_tokens(id)
+                .map(|rem| ((rem as f32) / 4_000.0).min(1.0))
+                .unwrap_or(1.0);
+            let raw = 0.40 * bench_avg + 0.25 * rel + 0.15 * spd + 0.20 * cost_eff;
+            let w = m.weight.unwrap_or(1.0).clamp(0.2, 3.0);
             let bias = t.learned_bias.unwrap_or(1.0).clamp(0.7, 1.3);
-            (raw * (w * bias).sqrt().clamp(0.4, 1.8)).clamp(0.0, 1.0) * 100.0
+            (raw * (w * bias).sqrt().clamp(0.4, 1.8) * quota_factor).clamp(0.0, 1.0) * 100.0
         };
         let success_rate = (s.requests > 0).then(|| s.success as f32 / s.requests as f32);
         let cache_hit_rate = (s.prompt_tokens > 0)

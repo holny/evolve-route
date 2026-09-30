@@ -21,7 +21,11 @@ impl Catalog {
     /// configs) > builtin priors. Connection facts always come from the
     /// user config layer.
     pub fn build_with_discovered(file: &FileConfig, discovered: Vec<ModelRecord>) -> Self {
-        let user: Vec<ModelRecord> = file.model_records();
+        let user: Vec<ModelRecord> = file
+            .model_records()
+            .into_iter()
+            .filter(|m| m.provider != "modelroute")
+            .collect();
         let _user_ids: Vec<&str> = user.iter().map(|m| m.id.as_str()).collect();
         // user light-weight overrides (e.g. only weight) inherit connection
         // facts from the discovered layer with the same id — the discovered
@@ -55,6 +59,9 @@ impl Catalog {
         let user_ids: Vec<&str> = user.iter().map(|m| m.id.as_str()).collect();
         let mut models: Vec<ModelRecord> = Vec::new();
         for d in discovered {
+            if d.provider == "modelroute" {
+                continue;
+            }
             if !user_ids.contains(&d.id.as_str()) {
                 models.push(d);
             }

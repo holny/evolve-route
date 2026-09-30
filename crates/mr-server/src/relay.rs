@@ -279,12 +279,20 @@ pub async fn chat_completions(
             bytes: 0,
             status: status.as_u16(),
             usage: None,
-            extra: Some(json!({
-                "reason": decision.reason,
-                "scores": decision.scores,
-                "difficulty_eff": decision.difficulty_eff,
-                "filtered": decision.filtered,
-            })),
+            est_cost_usd: None,
+            translated: cross.then(|| "anthropic->openai".to_string()),
+            extra: {
+                let mut ex = json!({
+                    "reason": decision.reason,
+                    "scores": decision.scores,
+                    "difficulty_eff": decision.difficulty_eff,
+                    "filtered": decision.filtered,
+                });
+                if cross {
+                    ex["translated"] = json!("anthropic->openai");
+                }
+                Some(ex)
+            },
         }));
 
         let mut out = Response::builder().status(map_status(status));
@@ -370,6 +378,12 @@ pub async fn chat_completions(
                 if let Some(u) = v.get("usage").filter(|u| u.is_object()) {
                     t.usage = Some(u.clone());
                 }
+                if let (Some(cost), Some(u)) = (record.cost, t.usage.as_ref()) {
+                    let pt = u.get("prompt_tokens").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                    let ct = u.get("completion_tokens").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                    t.est_cost_usd =
+                        Some((pt / 1e6) * cost.input as f64 + (ct / 1e6) * cost.output as f64);
+                }
                 let q = crate::quality::analyze_response(&parsed, v);
                 if let Some(ex) = t.extra.as_mut() {
                     ex["quality"] = serde_json::to_value(&q).unwrap_or_default();
@@ -385,8 +399,10 @@ pub async fn chat_completions(
                     .and_then(|t| t.as_array())
                     .map(|tcs| {
                         tcs.iter()
-                            .filter_map(|tc| tc.get("id").and_then(|i| i.as_str()).map(|s| s.to_string()))
-                            .collect()
+                            .filter_map(|tc| {
+                                tc.get("id").and_then(|i| i.as_str()).map(|s| s.to_string())
+                            })
+                            .collect::<Vec<String>>()
                     })
                     .unwrap_or_default();
                 let chosen = t.chosen.clone();

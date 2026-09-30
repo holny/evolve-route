@@ -245,6 +245,8 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             bytes: 0,
             status: status.as_u16(),
             usage: None,
+            est_cost_usd: None,
+            translated: to_openai.then(|| "openai->anthropic".to_string()),
             extra: Some(json!({
                 "reason": decision.reason,
                 "scores": decision.scores,
