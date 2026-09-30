@@ -77,7 +77,12 @@ pub fn start_benchmarks(st: &AppState) {
                     mr_discovery::benchmarks::apply_to_engine(&st_owned.engine, &fetched);
                 report.insert("__applied__".into(), serde_json::json!({ "models": applied }));
                 tracing::info!(applied, "benchmark tier overlay refreshed");
-                let path = std::path::Path::new(&data_dir).join("benchmarks.json");
+                let expanded = if data_dir.starts_with("~/") {
+                    std::env::var("HOME").map(|h| std::path::PathBuf::from(h).join(&data_dir[2..])).unwrap_or(std::path::PathBuf::from(&data_dir))
+                } else {
+                    std::path::PathBuf::from(&data_dir)
+                };
+                let path = expanded.join("benchmarks.json");
                 if let Some(parent) = path.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
