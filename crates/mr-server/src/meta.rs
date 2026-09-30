@@ -103,9 +103,14 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
 /// Benchmark feed status + currently applied tier overlay.
 pub async fn api_benchmarks(State(st): State<AppState>) -> Response {
     let overlay = st.engine.tier_overrides();
-    let snapshot = std::fs::read_to_string(
-        std::path::Path::new(&st.config.data.dir).join("benchmarks.json"),
-    )
+    let dir = if st.config.data.dir.starts_with("~/") {
+        std::env::var("HOME")
+            .map(|h| std::path::PathBuf::from(h).join(&st.config.data.dir[2..]))
+            .unwrap_or_else(|_| std::path::PathBuf::from(&st.config.data.dir))
+    } else {
+        std::path::PathBuf::from(&st.config.data.dir)
+    };
+    let snapshot = std::fs::read_to_string(dir.join("benchmarks.json"))
     .ok()
     .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
     .unwrap_or(serde_json::json!({}));
