@@ -106,6 +106,17 @@ pub fn build_state(config: FileConfig) -> AppState {
         }
         mr_discovery::modelsdev::spawn_refresh(config.data.dir.clone());
     }
+    // remote /models discovery: blocking fetch with 1h cache (build_state
+    // runs outside the runtime; per-provider timeouts, failures skipped and
+    // stale cache kept). Adds the provider-side union beyond user configs.
+    if config.catalog.remote_fetch {
+        let mut base_records = config.model_records();
+        base_records.extend(discovered.iter().cloned());
+        discovered.extend(mr_discovery::remote::discover_remote_blocking(
+            &base_records,
+            &config.data.dir,
+        ));
+    }
     let catalog = Catalog::build_with_discovered(&config, discovered);
     let policy = config.policy.clone();
     let backend = DecisionBackend::build(&config.decision.backend);

@@ -61,9 +61,11 @@ impl Catalog {
         }
         let present: Vec<String> =
             models.iter().map(|m| m.id.clone()).chain(user.iter().map(|m| m.id.clone())).collect();
-        for b in builtin_catalog() {
-            if !present.iter().any(|id| id == &b.id) {
-                models.push(b);
+        if file.catalog.builtin_priors {
+            for b in builtin_catalog() {
+                if !present.iter().any(|id| id == &b.id) {
+                    models.push(b);
+                }
             }
         }
         models.extend(user);

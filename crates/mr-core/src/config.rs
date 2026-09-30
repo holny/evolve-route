@@ -41,6 +41,7 @@ pub struct DecisionCfg {
 #[serde(default)]
 pub struct CatalogCfg {
     pub remote_fetch: bool,
+    pub builtin_priors: bool,
     /// models.dev as reference-only metadata (never overrides user values)
     pub modelsdev_reference: bool,
 }

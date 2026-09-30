@@ -9,6 +9,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ModelStats {
     pub requests: u64,
@@ -38,6 +45,10 @@ pub struct ModelStats {
     // L4 plugin-reported explicit feedback (tool execution results)
     pub fb_ok: u64,
     pub fb_total: u64,
+    // recency for the dashboard "最近耗时"
+    pub last_seen_ms: u64,
+    pub last_total_ms: u64,
+    pub last_ttft_ms: u64,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -106,6 +117,13 @@ impl Flywheel {
         }
         if let Some(c) = event.get("cached_tokens").and_then(|v| v.as_u64()) {
             s.cached_tokens += c;
+        }
+        s.last_seen_ms = now_ms();
+        if let Some(t) = event.get("total_ms").and_then(|v| v.as_u64()) {
+            s.last_total_ms = t;
+        }
+        if let Some(t) = event.get("ttft_ms").and_then(|v| v.as_u64()) {
+            s.last_ttft_ms = t;
         }
         let est = event.get("est_tokens").and_then(|v| v.as_u64());
         if let (Some(p), Some(e)) = (prompt, est)

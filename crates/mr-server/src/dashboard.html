@@ -44,8 +44,10 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
       <table id="health"><thead><tr><th>模型</th><th>状态</th><th>详情</th></tr></thead><tbody></tbody></table>
     </div>
     <div class="card">
-      <h2>模型能力榜单（基准 overlay）</h2>
-      <table id="bench"><thead><tr><th>模型</th><th>coding</th><th>reasoning</th><th>agentic</th><th>置信度</th></tr></thead><tbody></tbody></table>
+      <h2>模型动态（按路由优先度排序）</h2>
+      <table id="dyn"><thead>
+        <tr><th>模型</th><th>链路</th><th>优先度</th><th>coding/reason/agentic</th><th>请求</th><th>平均TTFT</th><th>最近耗时</th><th>tokens</th><th>工具%</th><th>权重</th></tr>
+      </thead><tbody></tbody></table>
     </div>
     <div class="card">
       <h2>配额窗口（上游限额头学习）</h2>
@@ -102,13 +104,38 @@ async function refresh(){
     const health = (await healthR.json()).models || {};
     const qwin = (await quotaR.json()).windows || {};
     const bench = (await benchR.json()) || {};
-    const bb = document.querySelector('#bench tbody');
-    const applied = Object.entries(bench.applied || {});
-    bb.innerHTML = applied.length ? applied.sort((a,b)=>(b[1].tiers?.coding??0)-(a[1].tiers?.coding??0)).map(([id, v]) => {
-      const t = v.tiers || {};
-      const pct = x => x==null ? '-' : Math.round(x*100)+'%';
-      return `<tr><td>${esc(id)}</td><td class="num">${pct(t.coding)}</td><td class="num">${pct(t.reasoning)}</td><td class="num">${pct(t.agentic)}</td><td class="num">${v.confidence ?? '-'}</td></tr>`;
-    }).join('') : '<tr><td colspan="5" style="color:var(--dim)">暂无匹配（等待榜单源或别名匹配）</td></tr>';
+    const applied = bench.applied || {};
+    const healthMap = health;
+    const db = document.querySelector('#dyn tbody');
+    const dynRows = Object.entries(stats).map(([id, s]) => {
+      const t = s.telemetry || {};
+      const b = applied[id] || {};
+      const bt = b.tiers || {};
+      const tierStr = [bt.coding, bt.reasoning, bt.agentic].map(x => x==null ? '-' : Math.round(x*100)).join('/');
+      const keys = Object.keys(healthMap).filter(k => k.split('\u001f')[0] === id);
+      const link = keys.length === 0 ? 'unknown'
+        : (keys.some(k => healthMap[k].available) ? 'up' : 'down');
+      const dyn = s.dynamic_score ?? 0;
+      const pill = link === 'up' ? '<span class="pill badge ok">up</span>'
+                 : link === 'down' ? '<span class="pill badge dead">down</span>'
+                 : '<span style="color:var(--dim)">-</span>';
+      const tc = s.tool_calls || {};
+      const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total)) + '%' : '-';
+      const w = (s.user_weight ?? 1) + '×' + (t.learned_bias ? t.learned_bias.toFixed(2) : '1.00');
+      return { id, dyn, row: `<tr>
+        <td title="${esc(id)}">${esc(id.length>30?id.slice(0,29)+'…':id)}</td>
+        <td>${pill}</td>
+        <td class="num" style="color:var(--blue)">${dyn.toFixed(1)}</td>
+        <td class="num">${tierStr}</td>
+        <td class="num">${s.requests}(${s.success})</td>
+        <td class="num">${fmtMs(s.avg_ttft_ms)}</td>
+        <td class="num">${fmtMs(s.last_total_ms)}</td>
+        <td class="num">${fmtK(s.prompt_tokens??0)}/${fmtK(s.completion_tokens??0)}</td>
+        <td class="num">${toolRate}</td>
+        <td class="num">${w}</td></tr>` };
+    }).sort((a,b) => b.dyn - a.dyn);
+    db.innerHTML = dynRows.length ? dynRows.map(r => r.row).join('')
+      : '<tr><td colspan="10" style="color:var(--dim)">暂无模型</td></tr>';
     const qb = document.querySelector('#quota tbody');
     const qrows = Object.entries(qwin).flatMap(([id, ws]) => (ws||[]).map(w => {
       const human = id.split('\u001f')[0] + (id.includes('\u001f') ? '['+id.split('\u001f')[1]+']' : '');

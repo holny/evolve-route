@@ -7,6 +7,7 @@
 pub mod agents_rest;
 pub mod alias;
 pub mod benchmarks;
+pub mod remote;
 pub mod codex;
 pub mod modelsdev;
 pub mod opencode;

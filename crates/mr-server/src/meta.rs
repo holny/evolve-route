@@ -67,16 +67,58 @@ pub async fn api_health(State(st): State<AppState>) -> Response {
     (axum::Json(json!({ "models": models }))).into_response()
 }
 
-/// Flywheel aggregates + learned telemetry per model.
+/// Flywheel aggregates + learned telemetry + link status + dynamic score.
 pub async fn api_stats(State(st): State<AppState>) -> Response {
     let stats = st.flywheel.stats();
     let telemetry = st.flywheel.telemetry_snapshot();
+    let overlays = st.engine.tier_overrides();
+    let health_snap = st.health.snapshot();
+    let now = mr_memory::health::now();
     let mut models = serde_json::Map::new();
     for (id, s) in &stats {
         let t = telemetry.get(id).cloned().unwrap_or_default();
+        // link status from health ledger (any key ok = up)
+        let key_ids: Vec<String> = {
+            let keys = st.engine.catalog.get(id).map(|m| m.key_values()).unwrap_or_default();
+            if keys.is_empty() {
+                vec![id.clone()]
+            } else {
+                (0..keys.len()).map(|i| format!("{id}\u{1f}{i}")).collect()
+            }
+        };
+        let link = {
+            let any_ok = key_ids.iter().any(|k| {
+                health_snap.get(k).map(|h| h.available(now)).unwrap_or(true)
+            });
+            let any_entry = key_ids.iter().any(|k| health_snap.contains_key(k));
+            if !any_entry { "unknown" } else if any_ok { "up" } else { "down" }
+        };
+        // dynamic priority: benchmark tiers avg x reliability/speed x weight
+        let (tiers, conf) = overlays.get(id).cloned().unwrap_or_else(|| {
+            let base = st.engine.catalog.get(id).map(|m| m.tiers).unwrap_or_default();
+            (base, 0.0)
+        });
+        let bench_avg = (tiers.coding + tiers.reasoning + tiers.agentic) / 3.0;
+        let dyn_score = {
+            let rel = t.reliability.unwrap_or(0.7);
+            let spd = t.speed_obs.unwrap_or(0.5);
+            let raw = 0.5 * bench_avg + 0.3 * rel + 0.2 * spd;
+            let w = st
+                .engine
+                .catalog
+                .get(id)
+                .and_then(|m| m.weight)
+                .unwrap_or(1.0)
+                .clamp(0.2, 3.0);
+            let bias = t.learned_bias.unwrap_or(1.0).clamp(0.7, 1.3);
+            (raw * (w * bias).sqrt().clamp(0.4, 1.8)).clamp(0.0, 1.0) * 100.0
+        };
         models.insert(
             id.clone(),
             json!({
+                "link": link,
+                "dynamic_score": (dyn_score * 10.0).round() / 10.0,
+                "bench_confidence": conf,
                 "requests": s.requests,
                 "success": s.success,
                 "failures": s.failures,
@@ -92,6 +134,9 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                 "empty_responses": s.empty_responses,
                 "semantic": {"matched": s.sem_matched, "total": s.sem_total},
                 "feedback": {"ok": s.fb_ok, "total": s.fb_total},
+                "last_seen_ms": (s.last_seen_ms > 0).then_some(s.last_seen_ms),
+                "last_total_ms": (s.last_total_ms > 0).then_some(s.last_total_ms),
+                "last_ttft_ms": (s.last_ttft_ms > 0).then_some(s.last_ttft_ms),
                 "telemetry": t,
                 "user_weight": st.engine.catalog.get(id).and_then(|m| m.weight),
             }),
