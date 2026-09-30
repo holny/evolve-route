@@ -181,7 +181,7 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                 "last_total_ms": (s.last_total_ms > 0).then_some(s.last_total_ms),
                 "last_ttft_ms": (s.last_ttft_ms > 0).then_some(s.last_ttft_ms),
                 "telemetry": t,
-                "user_weight": m.weight,
+                "user_weight": m.weight.map(|w| ((w as f64) * 100.0).round() / 100.0),
             }),
         ));
     }

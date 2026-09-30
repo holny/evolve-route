@@ -160,7 +160,9 @@ function renderWheel(){
     const t = s.telemetry || {};
     const bt = (applied[id] || {}).tiers || {};
     const pct = x => x==null ? '-' : Math.round(x*100)+'%';
-    const w = (s.user_weight ?? 1) + '×' + (t.learned_bias ? t.learned_bias.toFixed(2) : '1.00');
+    const uw = s.user_weight ?? 1;
+    const lb = t.learned_bias;
+    const w = (uw === 1 && (lb == null || lb === 1)) ? '—' : uw.toFixed(2) + '×' + (lb ?? 1).toFixed(2);
     const fb = s.feedback || {ok:0,total:0};
     const sr = s.success_rate==null ? '-' : Math.round(s.success_rate*100)+'%';
     const chr = s.cache_hit_rate==null ? '-' : Math.round(s.cache_hit_rate*100)+'%';
