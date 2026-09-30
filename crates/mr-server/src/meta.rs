@@ -199,7 +199,7 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
             .then(rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal))
             .then(db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal))
     });
-    ranked.truncate(50);
+    ranked.truncate(15);
     for (id, entry) in ranked {
         models.insert(id, entry);
     }

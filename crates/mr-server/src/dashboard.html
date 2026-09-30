@@ -142,7 +142,7 @@ function renderWheel(){
     const ra = (b[1].requests||0) - (a[1].requests||0);
     if (ra !== 0) return ra;
     return (b[1].dynamic_score??0) - (a[1].dynamic_score??0);
-  });
+  }).slice(0, 15);
   const rows = entries.map(([id, s]) => {
     const t = s.telemetry || {};
     const bt = (applied[id] || {}).tiers || {};
