@@ -46,6 +46,9 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
       <table id="dyn"><thead>
         <tr><th>模型</th><th>链路</th><th>请求(成功)</th><th>平均TTFT</th><th>最近耗时</th><th>tokens 出/⚡缓存</th><th>工具%</th></tr>
       </thead><tbody></tbody></table>
+      <h3>冷却与配额窗口（上游限额头学习）</h3>
+      <table id="health"><thead><tr><th>模型×key</th><th>状态</th><th>详情/冷却</th></tr></thead><tbody></tbody></table>
+      <table id="quota" style="margin-top:8px"><thead><tr><th>模型×key</th><th>窗口</th><th>剩余</th><th>重置</th></tr></thead><tbody></tbody></table>
     </div>
     <div class="card">
       <h2>飞轮 · 经验学习与自进化（参与路由决策的因素）</h2>
@@ -65,9 +68,6 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
           <th title="最终权重 = 用户 weight × 学习偏置，开方软化后乘入评分——参与决策但非决定性">权重</th>
         </tr>
       </thead><tbody></tbody></table>
-      <h3>冷却与配额窗口</h3>
-      <table id="health"><thead><tr><th>模型×key</th><th>状态</th><th>详情/冷却</th></tr></thead><tbody></tbody></table>
-      <table id="quota" style="margin-top:8px"><thead><tr><th>模型×key</th><th>窗口</th><th>剩余</th><th>重置</th></tr></thead><tbody></tbody></table>
     </div>
   </div>
 </div>
