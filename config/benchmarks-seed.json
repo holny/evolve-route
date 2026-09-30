@@ -1,0 +1,23 @@
+{
+  "curated_snapshot": "2026-09",
+  "note": "Hand-curated capability estimates from public leaderboard consensus (SWE-bench/LiveBench/arena-class), for cold-start tiers. Any configured benchmark source supersedes these for matched aliases. 0..1 scale.",
+  "scores": {
+    "glm-5.3": { "coding": 0.85, "reasoning": 0.88, "agentic": 0.82 },
+    "glm-5.3-flash": { "coding": 0.72, "reasoning": 0.75, "agentic": 0.74 },
+    "glm-5.2": { "coding": 0.72, "reasoning": 0.7, "agentic": 0.7 },
+    "glm-5.1": { "coding": 0.6, "reasoning": 0.58, "agentic": 0.6 },
+    "glm-4.7": { "coding": 0.68, "reasoning": 0.65, "agentic": 0.66 },
+    "minimax-m3": { "coding": 0.82, "reasoning": 0.85, "agentic": 0.8 },
+    "minimax-m2.7": { "coding": 0.75, "reasoning": 0.78, "agentic": 0.74 },
+    "minimax-m2.7-highspeed": { "coding": 0.68, "reasoning": 0.7, "agentic": 0.68 },
+    "deepseek-v4-pro": { "coding": 0.84, "reasoning": 0.86, "agentic": 0.8 },
+    "deepseek-v4-flash": { "coding": 0.74, "reasoning": 0.72, "agentic": 0.72 },
+    "deepseek-flash": { "coding": 0.72, "reasoning": 0.7, "agentic": 0.7 },
+    "kimi-k3": { "coding": 0.83, "reasoning": 0.82, "agentic": 0.79 },
+    "gpt-5.3": { "coding": 0.93, "reasoning": 0.94, "agentic": 0.92 },
+    "gpt-5.2": { "coding": 0.88, "reasoning": 0.9, "agentic": 0.88 },
+    "claude-sonnet": { "coding": 0.92, "reasoning": 0.9, "agentic": 0.93 },
+    "claude-opus": { "coding": 0.95, "reasoning": 0.94, "agentic": 0.95 },
+    "qwen3-max": { "coding": 0.84, "reasoning": 0.86, "agentic": 0.82 }
+  }
+}

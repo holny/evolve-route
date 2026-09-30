@@ -44,6 +44,27 @@ api_keys_env = ["ANTHROPIC_KEY_1", "ANTHROPIC_KEY_2"]   # 轮换池
 成功响应的限额头（anthropic unified 5h/7d、openai ratelimit）持续校准窗口余量，
 余量 < 请求预估时该模型在硬约束层被预判拦截。`/api/quota` 查看窗口账本。
 
+## 模型能力榜单（决策依据 #23）
+
+内置策展快照（config/benchmarks-seed.json，随二进制嵌入）为已发现模型提供冷启动
+能力分层（coding/reasoning/agentic 0-1），**零网络即可用**；配置 HTTP 源可覆盖：
+
+```toml
+[benchmarks]
+enabled = true
+interval_hours = 24
+[[benchmarks.sources]]
+name = "lmarena"
+url = "https://datasets-server.huggingface.co/rows?dataset=...&length=100"
+format = "lmarena_rows"
+[benchmarks.sources.headers]
+authorization = "Bearer ${HF_TOKEN}"
+```
+
+别名三层置信度匹配（#24）：glm-5.2/GLM-5.2/glm5.2 精确同判；后缀即身份（v4-flash ≠ v4-pro）；
+glm-latest 取家族最新（conf 0.7）；auto 取家族均值（0.5）；用户显式 tiers 压到 0.3 混合。
+`/api/benchmarks` 查看应用明细，面板有实时卡片。
+
 ## 决策后端
 
 ```toml

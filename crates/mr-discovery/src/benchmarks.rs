@@ -12,6 +12,9 @@ use std::collections::HashMap;
 
 pub use mr_core::config::BenchSourceCfg;
 
+/// Curated cold-start snapshot, embedded from the repo (no network needed).
+pub const SEED_JSON: &str = include_str!("../../../config/benchmarks-seed.json");
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BenchScore {
     pub alias: String,
@@ -165,6 +168,52 @@ pub fn parse_source(cfg: &BenchSourceCfg, payload: &Value) -> anyhow::Result<Vec
                     raw: cats.clone(),
                     fetched_at_ms: now,
                     ..Default::default()
+                });
+            }
+            Ok(out)
+        }
+        // curated seed: {"scores": {"alias": {"coding":0-1,...}}}
+        "seed" => {
+            let Some(map) = payload.get("scores").and_then(|s| s.as_object()) else {
+                return Ok(Vec::new());
+            };
+            let mut out = Vec::new();
+            for (name, dims) in map {
+                out.push(BenchScore {
+                    alias: normalize_alias(name),
+                    coding: dims.get("coding").and_then(|v| v.as_f64()).map(|v| v as f32),
+                    reasoning: dims.get("reasoning").and_then(|v| v.as_f64()).map(|v| v as f32),
+                    agentic: dims.get("agentic").and_then(|v| v.as_f64()).map(|v| v as f32),
+                    raw: dims.clone(),
+                    fetched_at_ms: now,
+                });
+            }
+            Ok(out)
+        }
+        // Artificial Analysis (requires free AA_API_KEY; v2 models payload):
+        // array of {model_name, intelligence_index, coding_index, math_index} (0-100)
+        "artificialanalysis" => {
+            let arr = payload
+                .as_array()
+                .or_else(|| payload.get("data").and_then(|d| d.as_array()))
+                .ok_or_else(|| anyhow::anyhow!("missing data array"))?;
+            let mut out = Vec::new();
+            for row in arr {
+                let Some(alias) = row
+                    .get("model_name")
+                    .or_else(|| row.get("name"))
+                    .and_then(|m| m.as_str())
+                else {
+                    continue;
+                };
+                let norm = |k: &str| row.get(k).and_then(|v| v.as_f64()).map(|v| (v / 100.0).clamp(0.0, 1.0) as f32);
+                out.push(BenchScore {
+                    alias: normalize_alias(alias),
+                    coding: norm("coding_index"),
+                    reasoning: norm("intelligence_index").or_else(|| norm("math_index")),
+                    agentic: norm("agentic_index"),
+                    raw: row.clone(),
+                    fetched_at_ms: now,
                 });
             }
             Ok(out)
@@ -325,6 +374,14 @@ pub fn tier_updates_for_catalog(
         out.push((r.id.clone(), t, conf));
     }
     out
+}
+
+/// Load the embedded curated seed as a baseline source.
+pub fn load_seed() -> Vec<BenchScore> {
+    parse_source(
+        &BenchSourceCfg { format: "seed".into(), ..Default::default() },
+        &serde_json::from_str(SEED_JSON).unwrap_or(serde_json::Value::Null),
+    ).unwrap_or_default()
 }
 
 /// Fetch one source (per-source headers, 15s timeout).
@@ -511,5 +568,24 @@ mod umbrella_tests {
         let updates = tier_updates_for_catalog(&blended, &records);
         let (_, _, conf) = &updates[0];
         assert!((conf - 0.3).abs() < 1e-5, "explicit tiers cap: {conf}");
+    }
+}
+
+#[cfg(test)]
+mod seed_tests {
+    use super::*;
+
+    #[test]
+    fn seed_loads_and_matches_flash() {
+        let seed = load_seed();
+        assert!(seed.iter().any(|s| s.alias == "glm-5.3-flash"), "seed has glm-5.3-flash");
+        let blended = blend_tiers(&[("curated-seed".into(), seed)]);
+        let records = vec![mr_core::types::ModelRecord {
+            id: "opencode-go/glm-5.3-flash".into(),
+            upstream_model: "glm-5.3-flash".into(),
+            ..Default::default()
+        }];
+        let updates = tier_updates_for_catalog(&blended, &records);
+        assert_eq!(updates.len(), 1, "seed must match upstream_model exactly");
     }
 }

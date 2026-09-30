@@ -27,17 +27,33 @@ pub type AppState = Arc<Inner>;
 /// parse → blend → apply capability-tier overlay. Failures keep last-good
 /// tiers; a snapshot lands in the data dir for the dashboard.
 pub fn start_benchmarks(st: &AppState) {
-    if !st.config.benchmarks.enabled || st.config.benchmarks.sources.is_empty() {
+    tracing::info!(
+        enabled = st.config.benchmarks.enabled,
+        sources = st.config.benchmarks.sources.len(),
+        "benchmark refresh: init"
+    );
+    if !st.config.benchmarks.enabled {
         return;
     }
+    // embedded curated seed always applies (zero-network baseline);
+    // configured HTTP sources layer on top per interval
+    let seed = vec![(
+        "curated-seed".into(),
+        mr_discovery::benchmarks::load_seed(),
+    )];
     let sources = st.config.benchmarks.sources.clone();
     let interval = Duration::from_secs(st.config.benchmarks.interval_hours.max(1) * 3600);
     let data_dir = st.config.data.dir.clone();
     let st_owned = st.clone();
     tokio::spawn(async move {
         loop {
-            let mut fetched: Vec<(String, Vec<mr_discovery::benchmarks::BenchScore>)> = Vec::new();
+            let mut fetched: Vec<(String, Vec<mr_discovery::benchmarks::BenchScore>)> =
+                seed.clone();
             let mut report = serde_json::Map::new();
+            report.insert(
+                "curated-seed".into(),
+                serde_json::json!({ "count": seed.len() }),
+            );
             for src in &sources {
                 match mr_discovery::benchmarks::fetch_source(&st_owned.http, src).await {
                     Ok(scores) => {

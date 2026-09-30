@@ -44,6 +44,10 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
       <table id="health"><thead><tr><th>模型</th><th>状态</th><th>详情</th></tr></thead><tbody></tbody></table>
     </div>
     <div class="card">
+      <h2>模型能力榜单（基准 overlay）</h2>
+      <table id="bench"><thead><tr><th>模型</th><th>coding</th><th>reasoning</th><th>agentic</th><th>置信度</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="card">
       <h2>配额窗口（上游限额头学习）</h2>
       <table id="quota"><thead><tr><th>模型×key</th><th>窗口</th><th>剩余</th><th>重置</th></tr></thead><tbody></tbody></table>
     </div>
@@ -67,6 +71,8 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
 <script>
 const feed = document.getElementById('feed');
 function fmt(n){ return n==null ? '-' : n; }
+function fmtK(n){ return n==null ? '-' : (n >= 1000 ? (n/1000).toFixed(1)+'k' : String(n)); }
+function fmtMs(ms){ return ms==null ? '-' : (ms >= 1000 ? (ms/1000).toFixed(1)+'s' : Math.round(ms)+'ms'); }
 function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 function addRow(e){
   if (e.kind !== 'chat') return;
@@ -77,10 +83,10 @@ function addRow(e){
   row.innerHTML = `<span class="t">${time}</span>
     <span class="pill badge ${badge}">${e.status}</span>
     <span class="m" title="${esc(e.chosen)}">${esc(e.chosen)}</span>
-    <span>${fmt(e.est_tokens)}tok</span>
+    <span>${fmtK(e.est_tokens)}tok</span>
     ${e.cached_tokens ? `<span title="缓存命中">⚡${e.cached_tokens}</span>` : ''}
     <span class="sk">${e.skipped ? 'fallback' : ''}</span>
-    <span class="ms">${fmt(e.total_ms)}ms</span>`;
+    <span class="ms">${fmtMs(e.total_ms)}</span>`;
   feed.prepend(row);
   while (feed.children.length > 200) feed.lastChild.remove();
 }
@@ -91,10 +97,18 @@ es.onmessage = ev => { try { addRow(JSON.parse(ev.data)); } catch(_){} };
 
 async function refresh(){
   try {
-    const [statsR, healthR, quotaR] = await Promise.all([fetch('/api/stats'), fetch('/api/health'), fetch('/api/quota')]);
+    const [statsR, healthR, quotaR, benchR] = await Promise.all([fetch('/api/stats'), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks')]);
     const stats = (await statsR.json()).models || {};
     const health = (await healthR.json()).models || {};
     const qwin = (await quotaR.json()).windows || {};
+    const bench = (await benchR.json()) || {};
+    const bb = document.querySelector('#bench tbody');
+    const applied = Object.entries(bench.applied || {});
+    bb.innerHTML = applied.length ? applied.sort((a,b)=>(b[1].tiers?.coding??0)-(a[1].tiers?.coding??0)).map(([id, v]) => {
+      const t = v.tiers || {};
+      const pct = x => x==null ? '-' : Math.round(x*100)+'%';
+      return `<tr><td>${esc(id)}</td><td class="num">${pct(t.coding)}</td><td class="num">${pct(t.reasoning)}</td><td class="num">${pct(t.agentic)}</td><td class="num">${v.confidence ?? '-'}</td></tr>`;
+    }).join('') : '<tr><td colspan="5" style="color:var(--dim)">暂无匹配（等待榜单源或别名匹配）</td></tr>';
     const qb = document.querySelector('#quota tbody');
     const qrows = Object.entries(qwin).flatMap(([id, ws]) => (ws||[]).map(w => {
       const human = id.split('\u001f')[0] + (id.includes('\u001f') ? '['+id.split('\u001f')[1]+']' : '');
@@ -111,10 +125,10 @@ async function refresh(){
       return `<tr><td title="${esc(id)}">${esc(id.length>28?id.slice(0,27)+'…':id)}</td>
         <td class="num">${s.requests}</td>
         <td class="num">${s.success}</td>
-        <td class="num">${fmt(s.avg_ttft_ms)}</td>
-        <td class="num">${fmt(s.avg_total_ms)}</td>
-        <td class="num">${s.prompt_tokens??0}/${s.completion_tokens??0}</td>
-        <td class="num">${s.cached_tokens||0}</td>
+        <td class="num">${fmtMs(s.avg_ttft_ms)}</td>
+        <td class="num">${fmtMs(s.avg_total_ms)}</td>
+        <td class="num">${fmtK(s.prompt_tokens??0)}/${fmtK(s.completion_tokens??0)}</td>
+        <td class="num">${fmtK(s.cached_tokens||0)}</td>
         <td class="num">${toolRate==null?'-':toolRate+'%'}</td>
         <td class="num" title="reliability=${fmt(t.reliability)} calibration=${fmt(t.calibration)}">${w}</td></tr>`;
     }).join('') || '<tr><td colspan="9" style="color:var(--dim)">暂无流量</td></tr>';

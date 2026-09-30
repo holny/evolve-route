@@ -22,6 +22,36 @@ impl Catalog {
     /// user config layer.
     pub fn build_with_discovered(file: &FileConfig, discovered: Vec<ModelRecord>) -> Self {
         let user: Vec<ModelRecord> = file.model_records();
+        let _user_ids: Vec<&str> = user.iter().map(|m| m.id.as_str()).collect();
+        // user light-weight overrides (e.g. only weight) inherit connection
+        // facts from the discovered layer with the same id — the discovered
+        // facts also originate from user agent configs (decision #22)
+        let disc_index: HashMap<&str, &ModelRecord> =
+            discovered.iter().map(|m| (m.id.as_str(), m)).collect();
+        let user: Vec<ModelRecord> = user
+            .into_iter()
+            .map(|mut u| {
+                if let Some(d) = disc_index.get(u.id.as_str()) {
+                    if u.base_url.is_empty() {
+                        u.base_url = d.base_url.clone();
+                    }
+                    if u.api_key.is_none() && u.keys.is_empty() {
+                        u.api_key = d.api_key.clone();
+                        u.keys = d.keys.clone();
+                    }
+                    if u.context_window.is_none() {
+                        u.context_window = d.context_window;
+                    }
+                    if u.cost.is_none() {
+                        u.cost = d.cost;
+                    }
+                    if u.upstream_model.is_empty() {
+                        u.upstream_model = d.upstream_model.clone();
+                    }
+                }
+                u
+            })
+            .collect();
         let user_ids: Vec<&str> = user.iter().map(|m| m.id.as_str()).collect();
         let mut models: Vec<ModelRecord> = Vec::new();
         for d in discovered {

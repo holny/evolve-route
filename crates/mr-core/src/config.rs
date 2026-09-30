@@ -75,7 +75,9 @@ pub struct BenchmarksCfg {
 
 impl Default for BenchmarksCfg {
     fn default() -> Self {
-        Self { enabled: false, interval_hours: 24, sources: Vec::new() }
+        // enabled by default: the embedded curated seed applies cold-start
+        // tiers offline; configured HTTP sources layer on top
+        Self { enabled: true, interval_hours: 24, sources: Vec::new() }
     }
 }
 
