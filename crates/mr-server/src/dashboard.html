@@ -50,7 +50,20 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
     <div class="card">
       <h2>飞轮 · 经验学习与自进化（参与路由决策的因素）</h2>
       <table id="wheel"><thead>
-        <tr><th>模型</th><th>榜单c/r/a</th><th>rel</th><th>calib</th><th>speed</th><th>bias</th><th>成功率</th><th>缓存%</th><th>费用$</th><th>样本</th><th>反馈</th><th>权重</th></tr>
+        <tr>
+          <th>模型</th>
+          <th title="榜单能力分（coding/reasoning/agentic，0-100%）：来自内置策展快照或配置的外部榜单源（LMArena/SWE-bench/LiveBench 等），经别名置信度匹配后作为路由决策的能力先验">榜单c/r/a</th>
+          <th title="实测可靠性 = 传输成功率 × 工具调用质量，再按会话语义确认与插件反馈融合（0-1，越高越可信）">rel</th>
+          <th title="token 校准系数：实际 prompt tokens ÷ 估算值（≥5 个样本后学习），用于上下文窗口硬约束，防撑爆">calib</th>
+          <th title="实测速度分（0-1）：由真实请求的平均总耗时对数衰减得出，与目录先验按 7:3 混合">speed</th>
+          <th title="学习偏置：该模型实际成功率相对目录中位数的比值（0.7-1.3），表现好自动上浮、翻车下沉">bias</th>
+          <th title="传输成功率（≥5 个样本后显示）">成功率</th>
+          <th title="缓存命中率 = 缓存 tokens ÷ prompt tokens">缓存%</th>
+          <th title="累计估算费用（按目录单价 × 累计 tokens）">费用$</th>
+          <th title="飞轮样本量（请求数），学习项达到 5 个样本后才开始生效（冷启动保护）">样本</th>
+          <th title="插件上报的工具执行反馈：ok/total（L4 最高精度信号）">反馈</th>
+          <th title="最终权重 = 用户 weight × 学习偏置，开方软化后乘入评分——参与决策但非决定性">权重</th>
+        </tr>
       </thead><tbody></tbody></table>
       <h3>冷却与配额窗口</h3>
       <table id="health"><thead><tr><th>模型×key</th><th>状态</th><th>详情/冷却</th></tr></thead><tbody></tbody></table>
