@@ -115,6 +115,18 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
             let bias = t.learned_bias.unwrap_or(1.0).clamp(0.7, 1.3);
             (raw * (w * bias).sqrt().clamp(0.4, 1.8)).clamp(0.0, 1.0) * 100.0
         };
+        let success_rate = (s.requests > 0).then(|| s.success as f32 / s.requests as f32);
+        let cache_hit_rate = (s.prompt_tokens > 0)
+            .then(|| s.cached_tokens as f32 / s.prompt_tokens as f32);
+        let est_cost_usd = st
+            .engine
+            .catalog
+            .get(id)
+            .and_then(|m| m.cost)
+            .map(|c| {
+                (s.prompt_tokens as f32 / 1e6) * c.input
+                    + (s.completion_tokens as f32 / 1e6) * c.output
+            });
         ranked.push((
             id.clone(),
             json!({
@@ -136,6 +148,10 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                 "empty_responses": s.empty_responses,
                 "semantic": {"matched": s.sem_matched, "total": s.sem_total},
                 "feedback": {"ok": s.fb_ok, "total": s.fb_total},
+                "success_rate": success_rate,
+                "cache_hit_rate": cache_hit_rate,
+                "est_cost_usd": est_cost_usd,
+                "samples": s.requests,
                 "last_seen_ms": (s.last_seen_ms > 0).then_some(s.last_seen_ms),
                 "last_total_ms": (s.last_total_ms > 0).then_some(s.last_total_ms),
                 "last_ttft_ms": (s.last_ttft_ms > 0).then_some(s.last_ttft_ms),

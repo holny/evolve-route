@@ -11,9 +11,10 @@
 body { background:var(--bg); color:var(--fg); font:13px/1.5 -apple-system,"PingFang SC",sans-serif; padding:16px; }
 h1 { font-size:16px; margin-bottom:4px; }
 .sub { color:var(--dim); font-size:12px; margin-bottom:14px; }
-.grid { display:grid; grid-template-columns: 1.2fr 1fr; gap:14px; align-items:start; }
+.grid { display:grid; grid-template-columns: 1fr 1.4fr; gap:14px; align-items:start; }
 .card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px; }
 .card h2 { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
+.card h3 { font-size:11px; color:var(--dim); margin:10px 0 6px; }
 table { width:100%; border-collapse:collapse; font-size:12px; }
 th { color:var(--dim); text-align:left; font-weight:normal; padding:3px 6px; border-bottom:1px solid var(--border); }
 td { padding:3px 6px; border-bottom:1px solid #21262d; }
@@ -21,12 +22,11 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
 .badge { display:inline-block; padding:0 6px; border-radius:4px; font-size:11px; }
 .badge.dead { background:#3d1618; color:var(--red); }
 .badge.ok   { background:#12261e; color:var(--green); }
-#feed { max-height:420px; overflow-y:auto; }
+#feed { max-height:380px; overflow-y:auto; }
 .feed-row { display:flex; gap:8px; padding:4px 0; border-bottom:1px solid #21262d; font-variant-numeric:tabular-nums; }
 .feed-row .t { color:var(--dim); min-width:64px; }
 .feed-row .m { color:var(--blue); min-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .feed-row .ms { margin-left:auto; color:var(--dim); }
-.feed-row .sk { color:var(--amber); font-size:11px; }
 .pill { border-radius:10px; padding:0 8px; font-size:11px; }
 </style>
 </head>
@@ -39,37 +39,32 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
       <h2>实时决策流</h2>
       <div id="feed"></div>
     </div>
-    <div class="card">
-      <h2>模型健康</h2>
-      <table id="health"><thead><tr><th>模型</th><th>状态</th><th>详情</th></tr></thead><tbody></tbody></table>
-    </div>
-    <div class="card">
-      <h2>模型动态（按路由优先度排序）</h2>
-      <table id="dyn"><thead>
-        <tr><th>模型</th><th>链路</th><th>优先度</th><th>coding/reason/agentic</th><th>请求(成功)</th><th>平均TTFT</th><th>最近耗时</th><th>tokens(出/缓存)</th><th>工具%</th><th>权重</th></tr>
-      </thead><tbody></tbody></table>
-    </div>
-    <div class="card">
-      <h2>配额窗口（上游限额头学习）</h2>
-      <table id="quota"><thead><tr><th>模型×key</th><th>窗口</th><th>剩余</th><th>重置</th></tr></thead><tbody></tbody></table>
-    </div>
   </div>
   <div>
     <div class="card">
-      <h2>图例</h2>
-      <div style="color:var(--dim);font-size:12px">
-        工具 = 有效调用率 (合法JSON·已知工具) · 权重 = user_weight × learned_bias<br>
-        学习项：reliability / speed / calibration 随流量自动修正，source 参见 /v1/models
-      </div>
+      <h2>模型动态（有流量在前按流量排序，无流量按优先度）</h2>
+      <table id="dyn"><thead>
+        <tr><th>模型</th><th>链路</th><th>请求(成功)</th><th>平均TTFT</th><th>最近耗时</th><th>tokens 出/⚡缓存</th><th>工具%</th></tr>
+      </thead><tbody></tbody></table>
+    </div>
+    <div class="card">
+      <h2>飞轮 · 经验学习与自进化（参与路由决策的因素）</h2>
+      <table id="wheel"><thead>
+        <tr><th>模型</th><th>榜单c/r/a</th><th>rel</th><th>calib</th><th>speed</th><th>bias</th><th>成功率</th><th>缓存%</th><th>费用$</th><th>样本</th><th>反馈</th><th>权重</th></tr>
+      </thead><tbody></tbody></table>
+      <h3>冷却与配额窗口</h3>
+      <table id="health"><thead><tr><th>模型×key</th><th>状态</th><th>详情/冷却</th></tr></thead><tbody></tbody></table>
+      <table id="quota" style="margin-top:8px"><thead><tr><th>模型×key</th><th>窗口</th><th>剩余</th><th>重置</th></tr></thead><tbody></tbody></table>
     </div>
   </div>
 </div>
 <script>
 const feed = document.getElementById('feed');
 function fmt(n){ return n==null ? '-' : n; }
+function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+// 不足 1000 不强制换算
 function fmtK(n){ return n==null ? '-' : (n >= 1000 ? (n/1000).toFixed(1)+'k' : String(n)); }
 function fmtMs(ms){ return ms==null ? '-' : (ms >= 1000 ? (ms/1000).toFixed(1)+'s' : Math.round(ms)+'ms'); }
-function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 function addRow(e){
   if (e.kind !== 'chat') return;
   const row = document.createElement('div');
@@ -80,7 +75,7 @@ function addRow(e){
     <span class="pill badge ${badge}">${e.status}</span>
     <span class="m" title="${esc(e.chosen)}">${esc(e.chosen)}</span>
     <span>${fmtK(e.est_tokens)}tok</span>
-    ${e.cached_tokens ? `<span title="缓存命中">⚡${e.cached_tokens}</span>` : ''}
+    ${e.cached_tokens ? `<span title="缓存命中">⚡${fmtK(e.cached_tokens)}</span>` : ''}
     <span class="sk">${e.skipped ? 'fallback' : ''}</span>
     <span class="ms">${fmtMs(e.total_ms)}</span>`;
   feed.prepend(row);
@@ -91,77 +86,86 @@ es.onopen = () => document.getElementById('sse-status').textContent = 'SSE 已�
 es.onerror = () => document.getElementById('sse-status').textContent = 'SSE 重连中…';
 es.onmessage = ev => { try { addRow(JSON.parse(ev.data)); } catch(_){} };
 
+const state = { stats:{}, bench:{}, health:{}, quota:{} };
 async function refresh(){
   try {
-    const [statsR, healthR, quotaR, benchR] = await Promise.all([fetch('/api/stats'), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks')]);
-    const stats = (await statsR.json()).models || {};
-    const health = (await healthR.json()).models || {};
-    const qwin = (await quotaR.json()).windows || {};
-    const bench = (await benchR.json()) || {};
-    const applied = bench.applied || {};
-    const healthMap = health;
-    const db = document.querySelector('#dyn tbody');
-    const dynRows = Object.entries(stats).slice(0, 50).map(([id, s]) => {
-      const t = s.telemetry || {};
-      const b = applied[id] || {};
-      const bt = b.tiers || {};
-      const tierStr = [bt.coding, bt.reasoning, bt.agentic].map(x => x==null ? '-' : Math.round(x*100)).join('/');
-      const keys = Object.keys(healthMap).filter(k => k.split('\u001f')[0] === id);
-      const link = keys.length === 0 ? 'unknown'
-        : (keys.some(k => healthMap[k].available) ? 'up' : 'down');
-      const dyn = s.dynamic_score ?? 0;
-      const pill = link === 'up' ? '<span class="pill badge ok">up</span>'
-                 : link === 'down' ? '<span class="pill badge dead">down</span>'
-                 : '<span style="color:var(--dim)">-</span>';
-      const tc = s.tool_calls || {};
-      const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total)) + '%' : '-';
-      const w = (s.user_weight ?? 1) + '×' + (t.learned_bias ? t.learned_bias.toFixed(2) : '1.00');
-      const tip = `reliability=${t.reliability ?? '-'} calibration=${t.calibration ?? '-'} speed=${t.speed_obs ?? '-'} 反馈=${s.feedback?.ok ?? 0}/${s.feedback?.total ?? 0}`;
-      return { id, dyn, row: `<tr>
-        <td title="${esc(id)} | ${esc(tip)}">${esc(id.length>30?id.slice(0,29)+'…':id)}</td>
-        <td>${pill}</td>
-        <td class="num" style="color:var(--blue)">${dyn.toFixed(1)}</td>
-        <td class="num">${tierStr}</td>
-        <td class="num">${s.requests}(${s.success})</td>
-        <td class="num">${fmtMs(s.avg_ttft_ms)}</td>
-        <td class="num">${fmtMs(s.last_total_ms)}</td>
-        <td class="num">${fmtK(s.completion_tokens??0)}/⚡${fmtK(s.cached_tokens||0)}</td>
-        <td class="num">${toolRate}</td>
-        <td class="num">${w}</td></tr>` };
-    }).sort((a,b) => b.dyn - a.dyn);
-    db.innerHTML = dynRows.length ? dynRows.map(r => r.row).join('')
-      : '<tr><td colspan="10" style="color:var(--dim)">暂无模型</td></tr>';
-    const qb = document.querySelector('#quota tbody');
-    const qrows = Object.entries(qwin).flatMap(([id, ws]) => (ws||[]).map(w => {
-      const human = id.split('\u001f')[0] + (id.includes('\u001f') ? '['+id.split('\u001f')[1]+']' : '');
-      const reset = w.reset_epoch_ms ? new Date(w.reset_epoch_ms).toLocaleTimeString('zh-CN',{hour12:false}) : '-';
-      return `<tr><td>${esc(human)}</td><td>${esc(w.scope)}</td><td class="num">${fmt(w.remaining)}</td><td class="num">${reset}</td></tr>`;
-    }));
-    qb.innerHTML = qrows.length ? qrows.join('') : '<tr><td colspan="4" style="color:var(--dim)">尚未观测到限额头</td></tr>';
-    const tb = document.querySelector('#stats tbody');
-    tb.innerHTML = Object.entries(stats).sort((a,b)=>b[1].requests-a[1].requests).map(([id,s]) => {
-      const t = s.telemetry||{};
-      const tc = s.tool_calls||{};
-      const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total)) : null;
-      const w = (s.user_weight ?? 1) + '×' + (t.learned_bias ? t.learned_bias.toFixed(2) : '1.00');
-      return `<tr><td title="${esc(id)}">${esc(id.length>28?id.slice(0,27)+'…':id)}</td>
-        <td class="num">${s.requests}</td>
-        <td class="num">${s.success}</td>
-        <td class="num">${fmtMs(s.avg_ttft_ms)}</td>
-        <td class="num">${fmtMs(s.avg_total_ms)}</td>
-        <td class="num">${fmtK(s.prompt_tokens??0)}/${fmtK(s.completion_tokens??0)}</td>
-        <td class="num">${fmtK(s.cached_tokens||0)}</td>
-        <td class="num">${toolRate==null?'-':toolRate+'%'}</td>
-        <td class="num" title="reliability=${fmt(t.reliability)} calibration=${fmt(t.calibration)}">${w}</td></tr>`;
-    }).join('') || '<tr><td colspan="9" style="color:var(--dim)">暂无流量</td></tr>';
-    const hb = document.querySelector('#health tbody');
-    const entries = Object.entries(health);
-    hb.innerHTML = entries.length ? entries.map(([id,h]) => `<tr>
-      <td>${esc(id)}</td>
-      <td><span class="pill badge ${h.available?'ok':'dead'}">${h.available?'可用':esc(h.kind)}</span></td>
-      <td style="color:var(--dim)">${esc(h.message||'')}${h.cooldown_remaining_ms?` (${Math.round(h.cooldown_remaining_ms/1000)}s)`:''}</td></tr>`).join('')
-      : '<tr><td colspan="3" style="color:var(--dim)">全部正常（无异常记录）</td></tr>';
+    const [statsR, healthR, quotaR, benchR] = await Promise.all([
+      fetch('/api/stats'), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks')]);
+    state.stats  = (await statsR.json()).models  || {};
+    state.health = (await healthR.json()).models || {};
+    state.quota  = (await quotaR.json()).windows || {};
+    state.bench  = (await benchR.json()) || {};
+    renderDyn();
+    renderHealthQuota();
+    renderWheel();
   } catch(_){}
+}
+function renderDyn(){
+  const db = document.querySelector('#dyn tbody');
+  const rows = Object.entries(state.stats).slice(0, 50).map(([id, s]) => {
+    const keys = Object.keys(state.health).filter(k => k.split('\u001f')[0] === id);
+    const link = keys.length === 0 ? '<span style="color:var(--dim)">-</span>'
+      : (keys.some(k => state.health[k].available) ? '<span class="pill badge ok">up</span>'
+         : '<span class="pill badge dead">down</span>');
+    const tc = s.tool_calls || {};
+    const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total)) + '%' : '-';
+    return `<tr><td title="${esc(id)}">${esc(id.length>34?id.slice(0,33)+'…':id)}</td>
+      <td>${link}</td>
+      <td class="num">${s.requests}(${s.success})</td>
+      <td class="num">${fmtMs(s.avg_ttft_ms)}</td>
+      <td class="num">${fmtMs(s.last_total_ms)}</td>
+      <td class="num">${fmtK(s.completion_tokens??0)}/⚡${fmtK(s.cached_tokens||0)}</td>
+      <td class="num">${toolRate}</td></tr>`;
+  });
+  db.innerHTML = rows.join('') || '<tr><td colspan="7" style="color:var(--dim)">暂无流量</td></tr>';
+}
+function renderHealthQuota(){
+  const hb = document.querySelector('#health tbody');
+  const hentries = Object.entries(state.health);
+  hb.innerHTML = hentries.length ? hentries.map(([id,h]) => `<tr>
+    <td>${esc(id)}</td>
+    <td><span class="pill badge ${h.available?'ok':'dead'}">${h.available?'可用':esc(h.kind)}</span></td>
+    <td style="color:var(--dim)">${esc(h.message||'')}${h.cooldown_remaining_ms?` (${Math.round(h.cooldown_remaining_ms/1000)}s)`:''}</td></tr>`).join('')
+    : '<tr><td colspan="3" style="color:var(--dim)">全部正常（无异常记录）</td></tr>';
+  const qb = document.querySelector('#quota tbody');
+  const qrows = Object.entries(state.quota).flatMap(([id, ws]) => (ws||[]).map(w => {
+    const human = id.split('\u001f')[0] + (id.includes('\u001f') ? '['+id.split('\u001f')[1]+']' : '');
+    const reset = w.reset_epoch_ms ? new Date(w.reset_epoch_ms).toLocaleTimeString('zh-CN',{hour12:false}) : '-';
+    return `<tr><td>${esc(human)}</td><td>${esc(w.scope)}</td><td class="num">${fmtK(w.remaining)}</td><td class="num">${reset}</td></tr>`;
+  }));
+  qb.innerHTML = qrows.length ? qrows.join('') : '<tr><td colspan="4" style="color:var(--dim)">尚未观测到限额头</td></tr>';
+}
+function renderWheel(){
+  const applied = state.bench.applied || {};
+  const wb = document.querySelector('#wheel tbody');
+  const entries = Object.entries(state.stats).sort((a,b) => {
+    const ra = (b[1].requests||0) - (a[1].requests||0);
+    if (ra !== 0) return ra;
+    return (b[1].dynamic_score??0) - (a[1].dynamic_score??0);
+  });
+  const rows = entries.map(([id, s]) => {
+    const t = s.telemetry || {};
+    const bt = (applied[id] || {}).tiers || {};
+    const pct = x => x==null ? '-' : Math.round(x*100)+'%';
+    const w = (s.user_weight ?? 1) + '×' + (t.learned_bias ? t.learned_bias.toFixed(2) : '1.00');
+    const fb = s.feedback || {ok:0,total:0};
+    const sr = s.success_rate==null ? '-' : Math.round(s.success_rate*100)+'%';
+    const chr = s.cache_hit_rate==null ? '-' : Math.round(s.cache_hit_rate*100)+'%';
+    const cost = s.est_cost_usd==null ? '-' : '$'+s.est_cost_usd.toFixed(3);
+    return `<tr><td title="${esc(id)}">${esc(id.length>32?id.slice(0,31)+'…':id)}</td>
+      <td class="num">${pct(bt.coding)}/${pct(bt.reasoning)}/${pct(bt.agentic)}</td>
+      <td class="num">${t.reliability==null?'-':t.reliability.toFixed(2)}</td>
+      <td class="num">${t.calibration==null?'-':'×'+t.calibration.toFixed(2)}</td>
+      <td class="num">${t.speed_obs==null?'-':t.speed_obs.toFixed(2)}</td>
+      <td class="num">${t.learned_bias==null?'-':t.learned_bias.toFixed(2)}</td>
+      <td class="num">${sr}</td>
+      <td class="num">${chr}</td>
+      <td class="num">${cost}</td>
+      <td class="num">${s.samples??0}</td>
+      <td class="num">${fb.ok}/${fb.total}</td>
+      <td class="num">${w}</td></tr>`;
+  });
+  wb.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="12" style="color:var(--dim)">飞轮经验积累中…</td></tr>';
 }
 refresh();
 setInterval(refresh, 3000);
