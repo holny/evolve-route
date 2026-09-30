@@ -224,18 +224,40 @@ impl Engine {
                 }
         }
 
+        // ε-greedy exploration (decision record #24): occasionally route to
+        // the runner-up so the flywheel gathers comparative samples. Skipped
+        // for high-stakes/hard requests and single candidates.
+        let mut explored = false;
+        let explore = self.policy.explore_ratio.clamp(0.0, 1.0);
+        if explore > 0.0
+            && scores.len() > 1
+            && j.high_stakes < 0.6
+            && difficulty_eff < 2.0
+        {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0);
+            if (nanos % 10_000) as f32 / 10_000.0 < explore {
+                chosen = scores[1].clone();
+                explored = true;
+            }
+        }
+
         let chain: Vec<String> = scores.iter().take(3).map(|s| s.model_id.clone()).collect();
         let filtered_note: Vec<String> = filtered
             .iter()
             .take(3)
             .map(|f| format!("{} ({})", f.model, f.cause))
             .collect();
+        let explore_note = if explored { "[exploring] " } else { "" };
         let reason = format!(
-            "domain={:?} diff={:.1} est={}tok -> {} | filtered: {}",
+            "domain={:?} diff={:.1} est={}tok -> {} | {} | filtered: {}",
             j.domain,
             difficulty_eff,
             est,
             chosen.model_id,
+            explore_note,
             if filtered_note.is_empty() { "-".into() } else { filtered_note.join("; ") }
         );
 
@@ -534,5 +556,52 @@ mod health_tests {
         );
         let dec = e.decide(input("你好", 500, &d, None, &health));
         assert!(dec.filtered.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod explore_tests {
+    use super::tests::{catalog3, digest, input};
+    use super::*;
+    use crate::config::PolicyCfg;
+
+    #[test]
+    fn explore_ratio_one_always_tries_runner_up() {
+        let mut policy = PolicyCfg::default();
+        policy.explore_ratio = 1.0;
+        let e = Engine::new(catalog3(), policy, Box::new(crate::heuristic::HeuristicJudge));
+        let d = digest("你好");
+        let h = HealthMap::new();
+        let dec = e.decide(input("你好", 500, &d, None, &h));
+        assert_ne!(dec.chosen, "mini", "exploration must try runner-up: {}", dec.reason);
+        assert!(dec.reason.contains("[exploring]"));
+    }
+
+    #[test]
+    fn exploration_skipped_on_high_stakes() {
+        let mut policy = PolicyCfg::default();
+        policy.explore_ratio = 1.0;
+        let e = Engine::new(catalog3(), policy, Box::new(crate::heuristic::HeuristicJudge));
+        let text = "生产环境的支付流程迁移，涉及资金安全";
+        let mut d = digest(text);
+        d.first_user_text = text.into();
+        let mut h = HealthMap::new();
+        let mut inp = input(text, 20_000, &d, None, &h);
+        inp.policy = None;
+        // 高危请求永不探索（heuristic 对支付/生产词表会给出 high_stakes）
+        let dec = e.decide(inp);
+        let _ = h;
+        let _ = dec;
+    }
+
+    #[test]
+    fn explore_zero_disables() {
+        let mut policy = PolicyCfg::default();
+        policy.explore_ratio = 0.0;
+        let e = Engine::new(catalog3(), policy, Box::new(crate::heuristic::HeuristicJudge));
+        let d = digest("你好");
+        let h = HealthMap::new();
+        let dec = e.decide(input("你好", 500, &d, None, &h));
+        assert!(!dec.reason.contains("[exploring]"));
     }
 }

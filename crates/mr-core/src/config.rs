@@ -17,6 +17,9 @@ pub struct PolicyCfg {
     pub weights: PolicyWeights,
     pub sticky_turns: u32,
     pub confidence_gate: f32,
+    /// ε-greedy exploration: share of full-pipeline requests that try the
+    /// runner-up so the flywheel gathers comparative samples (0 disables).
+    pub explore_ratio: f32,
 }
 
 impl Default for PolicyCfg {
@@ -26,6 +29,7 @@ impl Default for PolicyCfg {
             weights: PolicyWeights::balanced(),
             sticky_turns: 6,
             confidence_gate: 0.35,
+            explore_ratio: 0.0,
         }
     }
 }
