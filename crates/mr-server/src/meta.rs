@@ -144,10 +144,19 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
             }),
         ));
     }
+    // 模型动态排序（用户规则）：有流量的固定前排，内部按 流量(请求数) 降序、
+    // 再按路由优先度降序；无流量的殿后，纯按路由优先度降序
     ranked.sort_by(|a, b| {
-        let av = a.1.get("dynamic_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let bv = b.1.get("dynamic_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        bv.partial_cmp(&av).unwrap_or(std::cmp::Ordering::Equal)
+        let get = |v: &serde_json::Value, k: &str| {
+            v.get(k).and_then(|x| x.as_f64()).unwrap_or(0.0)
+        };
+        let (ra, rb) = (get(&a.1, "requests"), get(&b.1, "requests"));
+        let (da, db) = (get(&a.1, "dynamic_score"), get(&b.1, "dynamic_score"));
+        let ta = if ra > 0.0 { 0 } else { 1 };
+        let tb = if rb > 0.0 { 0 } else { 1 };
+        ta.cmp(&tb)
+            .then(rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal))
+            .then(db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal))
     });
     ranked.truncate(50);
     for (id, entry) in ranked {

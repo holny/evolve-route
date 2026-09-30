@@ -36,7 +36,7 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
 <div class="grid">
   <div>
     <div class="card">
-      <h2>实时决策流（tokens 按千位缩写）</h2>
+      <h2>实时决策流</h2>
       <div id="feed"></div>
     </div>
     <div class="card">
@@ -46,7 +46,7 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
     <div class="card">
       <h2>模型动态（按路由优先度排序）</h2>
       <table id="dyn"><thead>
-        <tr><th>模型</th><th>链路</th><th>优先度</th><th>coding/reason/agentic</th><th>请求</th><th>平均TTFT</th><th>最近耗时</th><th>tokens</th><th>工具%</th><th>权重</th></tr>
+        <tr><th>模型</th><th>链路</th><th>优先度</th><th>coding/reason/agentic</th><th>请求(成功)</th><th>平均TTFT</th><th>最近耗时</th><th>tokens(出/缓存)</th><th>工具%</th><th>权重</th></tr>
       </thead><tbody></tbody></table>
     </div>
     <div class="card">
@@ -55,12 +55,6 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
     </div>
   </div>
   <div>
-    <div class="card">
-      <h2>模型统计（飞轮）</h2>
-      <table id="stats"><thead>
-        <tr><th>模型</th><th>请求</th><th>成功</th><th>TTFT</th><th>耗时</th><th>tokens</th><th>缓存</th><th>工具</th><th>权重</th></tr>
-      </thead><tbody></tbody></table>
-    </div>
     <div class="card">
       <h2>图例</h2>
       <div style="color:var(--dim);font-size:12px">
@@ -122,15 +116,16 @@ async function refresh(){
       const tc = s.tool_calls || {};
       const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total)) + '%' : '-';
       const w = (s.user_weight ?? 1) + '×' + (t.learned_bias ? t.learned_bias.toFixed(2) : '1.00');
+      const tip = `reliability=${t.reliability ?? '-'} calibration=${t.calibration ?? '-'} speed=${t.speed_obs ?? '-'} 反馈=${s.feedback?.ok ?? 0}/${s.feedback?.total ?? 0}`;
       return { id, dyn, row: `<tr>
-        <td title="${esc(id)}">${esc(id.length>30?id.slice(0,29)+'…':id)}</td>
+        <td title="${esc(id)} | ${esc(tip)}">${esc(id.length>30?id.slice(0,29)+'…':id)}</td>
         <td>${pill}</td>
         <td class="num" style="color:var(--blue)">${dyn.toFixed(1)}</td>
         <td class="num">${tierStr}</td>
         <td class="num">${s.requests}(${s.success})</td>
         <td class="num">${fmtMs(s.avg_ttft_ms)}</td>
         <td class="num">${fmtMs(s.last_total_ms)}</td>
-        <td class="num">${fmtK(s.prompt_tokens??0)}/${fmtK(s.completion_tokens??0)}</td>
+        <td class="num">${fmtK(s.completion_tokens??0)}/⚡${fmtK(s.cached_tokens||0)}</td>
         <td class="num">${toolRate}</td>
         <td class="num">${w}</td></tr>` };
     }).sort((a,b) => b.dyn - a.dyn);
