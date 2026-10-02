@@ -109,9 +109,16 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
 
     let mut skipped: Vec<String> = Vec::new();
     let mut last_error: Option<(StatusCode, Bytes)> = None;
+    let mut min_context_needed: Option<u64> = None;
 
     for cand in &attempts {
         let Some(record) = st.engine.catalog.get(cand).cloned() else { continue };
+        if let Some(need) = min_context_needed
+            && record.context_window.map(|w| w < need).unwrap_or(true)
+        {
+            skipped.push(format!("{cand}(window < {need})"));
+            continue;
+        }
         let to_openai = record.protocol == Protocol::OpenAI;
         // multi-key pool: rotate through keys (mirrors relay.rs); on auth/
         // quota failure the health ledger marks model⟨sep⟩keyidx and the
@@ -208,6 +215,9 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                 "status": status.as_u16(), "health": failure.kind.label(),
                 "message": failure.message, "session": session_key,
             }));
+            if failure.kind == HealthKind::ContextOverflow {
+                min_context_needed = Some(est.max(1));
+            }
             st.health.mark_failure(&health_id, failure);
             let kind_label = {
                 let snap = st.health.snapshot();
@@ -464,7 +474,7 @@ fn resolve_target(st: &AppState, model_field: &str) -> Result<Target, Response> 
 }
 
 fn fallback_eligible(status: u16) -> bool {
-    matches!(status, 401 | 402 | 403 | 404 | 408 | 429) || status >= 500
+    matches!(status, 400 | 401 | 402 | 403 | 404 | 408 | 429) || status >= 500
 }
 
 fn map_status(s: reqwest::StatusCode) -> StatusCode {
@@ -588,6 +598,35 @@ fn estimate_anthropic(parsed: &Value) -> u64 {
     }
     if let Some(tools) = parsed.get("tools") {
         total += tok::estimate_text(&tools.to_string());
+    }
+    // tool_result blocks carry (often large) tool output; images are a
+    // flat per-image cost
+    if let Some(msgs) = parsed.get("messages").and_then(|m| m.as_array()) {
+        for m in msgs {
+            if let Some(Value::Array(parts)) = m.get("content") {
+                for b in parts {
+                    match b.get("type").and_then(|t| t.as_str()) {
+                        Some("tool_result") => {
+                            if let Some(c) = b.get("content") {
+                                match c {
+                                    Value::String(t) => total += tok::estimate_text(t),
+                                    Value::Array(bs) => {
+                                        for bb in bs {
+                                            if let Some(t) = bb.get("text").and_then(|t| t.as_str()) {
+                                                total += tok::estimate_text(t);
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        Some("image") => total += 800,
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
     total
 }

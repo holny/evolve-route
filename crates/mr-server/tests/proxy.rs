@@ -590,3 +590,60 @@ async fn dead_key_rotates_within_pool() {
     assert!(!mini_entries.is_empty(), "per-key health present: {keys:?}");
     assert!(mini_entries.iter().any(|h| h["kind"] == "payment_required"), "dead key marked");
 }
+
+async fn spawn_context_pick_mock() -> u16 {
+    let app = axum::Router::new().route(
+        "/v1/chat/completions",
+        axum::routing::post(|headers: axum::http::HeaderMap, body: axum::body::Bytes| async move {
+            let auth = headers.get("authorization").and_then(|a| a.to_str().ok()).unwrap_or("");
+            let v: Value = serde_json::from_slice(&body).unwrap();
+            let model = v["model"].as_str().unwrap_or("?").to_string();
+            if model == "mock-mini" {
+                return axum::http::Response::builder()
+                    .status(400)
+                    .body(Body::from(r#"{"error":{"message":"This model's maximum context length is 32768 tokens. However, your messages resulted in over 50000 tokens."}}"#))
+                    .unwrap();
+            }
+            let _ = auth;
+            axum::http::Response::builder()
+                .status(200)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"model": model, "choices": [{"message": {"role": "assistant", "content": "fits"}}],
+                           "usage": {"prompt_tokens": 5, "completion_tokens": 1}}).to_string(),
+                ))
+                .unwrap()
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    port
+}
+
+#[tokio::test]
+async fn context_overflow_reroutes_to_bigger_window() {
+    let port = spawn_context_pick_mock().await;
+    let mut cfg = test_config(port);
+    cfg.data.dir = std::env::temp_dir().join(format!("mr-test-ovf-{}", std::process::id())).to_string_lossy().into_owned();
+    let app = build_router(build_state(cfg));
+
+    // est ~5k fits mini's DECLARED 32k window, but the mock rejects it with
+    // a context error anyway (real-world: calib under-estimate) -> the
+    // gateway must classify + reroute instead of surfacing the 400
+    let big = "a".repeat(20_000);
+    let (status, headers, raw) = send(app.clone(), chat_request("auto", json!(big), json!({}))).await;
+    assert_eq!(status, StatusCode::OK, "body: {}", String::from_utf8_lossy(&raw));
+    assert_ne!(headers["x-mr-model"], "mini");
+    let skipped = headers["x-mr-skipped"].to_str().unwrap_or("");
+    assert!(skipped.contains("context overflow"), "skipped: {skipped}");
+
+    // health marks the overflowed model briefly
+    let req = Request::builder().method("GET").uri("/api/health").body(Body::empty()).unwrap();
+    let (_, _, raw) = send(app, req).await;
+    let v = json_body(&raw);
+    let mini = &v["models"]["mini"];
+    assert_eq!(mini["kind"], "context_overflow");
+}

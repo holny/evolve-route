@@ -130,10 +130,19 @@ pub async fn chat_completions(
 
     let mut skipped: Vec<String> = Vec::new();
     let mut last_error: Option<(StatusCode, Bytes)> = None;
+    // context overflow on one candidate means the session needs MORE window:
+    // later candidates smaller than the est are pointless, skip them
+    let mut min_context_needed: Option<u64> = None;
 
     // Cross-protocol: OpenAI ingress -> Anthropic upstream (Switchyard IR)
     for cand in &attempts {
         let Some(record) = st.engine.catalog.get(cand).cloned() else { continue };
+        if let Some(need) = min_context_needed
+            && record.context_window.map(|w| w < need).unwrap_or(true)
+        {
+            skipped.push(format!("{cand}(window < {need})"));
+            continue;
+        }
         let to_anthropic = record.protocol == Protocol::Anthropic;
         let keys = record.key_values();
         let key_len = keys.len().max(1);
@@ -242,6 +251,9 @@ pub async fn chat_completions(
             } else {
                 format!("{cand}{KEY_SEP}{key_idx}")
             };
+            if failure.kind == HealthKind::ContextOverflow {
+                min_context_needed = Some(est.max(1));
+            }
             st.health.mark_failure(&health_id, failure);
             let kind_label = {
                 let snap = st.health.snapshot();
@@ -444,7 +456,7 @@ pub async fn chat_completions(
 }
 
 fn fallback_eligible(status: u16) -> bool {
-    matches!(status, 401 | 402 | 403 | 404 | 408 | 429) || status >= 500
+    matches!(status, 400 | 401 | 402 | 403 | 404 | 408 | 429) || status >= 500
 }
 
 fn insert_header(h: &mut axum::http::HeaderMap, k: &'static str, v: &str) {

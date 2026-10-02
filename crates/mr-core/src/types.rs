@@ -290,6 +290,7 @@ pub enum HealthKind {
     QuotaExhausted,
     RateLimited,
     Unsupported,
+    ContextOverflow,
     Transient,
 }
 
@@ -302,6 +303,8 @@ impl HealthKind {
             HealthKind::QuotaExhausted => "quota exhausted",
             HealthKind::RateLimited => "rate limited",
             HealthKind::Unsupported => "model unsupported",
+            HealthKind::ContextOverflow => "context overflow",
+            HealthKind::ContextOverflow => "context overflow",
             HealthKind::Transient => "transient error",
         }
     }
@@ -310,6 +313,7 @@ impl HealthKind {
             HealthKind::Ok => 0,
             HealthKind::AuthFailed | HealthKind::PaymentRequired => 30 * 60 * 1000,
             HealthKind::Unsupported => 24 * 60 * 60 * 1000,
+            HealthKind::ContextOverflow => 2 * 60 * 1000,
             HealthKind::QuotaExhausted => 5 * 60 * 1000,
             HealthKind::RateLimited => 60 * 1000,
             HealthKind::Transient => 30 * 1000,

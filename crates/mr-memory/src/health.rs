@@ -72,12 +72,26 @@ pub fn classify_failure(status: u16, body_snippet: &str, retry_after_ms: Option<
     let quota = ["quota", "exceeded your", "usage limit", "limit reached", "rate limit exceeded", "额度", "配额", "用量", "超限"];
 
     match status {
+        413 => Failure {
+            kind: HealthKind::ContextOverflow,
+            message: "request body exceeds context".into(),
+        },
         404 => Failure {
             kind: HealthKind::Unsupported,
             message: first_hit(&lower, &["unsupported", "not support", "does not exist", "not found"])
                 .unwrap_or("model not found on upstream")
                 .into(),
         },
+        400 if ["context", "too long", "maximum context", "context length",
+                "exceeds", "prompt is too long", "上下文", "超出了模型"]
+            .iter()
+            .any(|k| lower.contains(k)) =>
+        {
+            Failure {
+                kind: HealthKind::ContextOverflow,
+                message: "context window exceeded".into(),
+            }
+        }
         401 | 403 => Failure {
             kind: HealthKind::AuthFailed,
             message: first_hit(&lower, &["invalid", "unauthorized", "forbidden", "无权", "鉴权"])

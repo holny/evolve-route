@@ -178,11 +178,37 @@ impl Engine {
         }
 
         if candidates.is_empty() {
-            let id = self.catalog.models.first().map(|m| m.id.clone()).unwrap_or_else(|| "none".into());
+            // best-effort: route to the LARGEST known window (upstream may
+            // still accept more than declared); clear reason if all fail
+            let best = self
+                .catalog
+                .models
+                .iter()
+                .filter(|m| m.context_window.is_some())
+                .max_by_key(|m| m.context_window.unwrap())
+                .or_else(|| self.catalog.models.first());
+            let Some(best) = best else {
+                return self.finish(
+                    "none".into(),
+                    vec![],
+                    format!("catalog empty; cannot route est {} tok", est),
+                    BTreeMap::new(),
+                    j,
+                    filtered,
+                    false,
+                    est,
+                    difficulty_eff,
+                    input.session_key,
+                    None,
+                );
+            };
             return self.finish(
-                id.clone(),
-                vec![id],
-                format!("no candidate passed hard constraints (est {} tok); forced fallback", est),
+                best.id.clone(),
+                vec![best.id.clone()],
+                format!(
+                    "no candidate passed hard constraints (est {} tok); best-effort largest window: {}",
+                    est, best.id
+                ),
                 BTreeMap::new(),
                 j,
                 filtered,
