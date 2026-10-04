@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod decision_model;
 pub mod laya;
 pub mod typesafe;
 

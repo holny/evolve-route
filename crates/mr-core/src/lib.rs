@@ -1,4 +1,5 @@
 pub mod catalog;
+pub mod decision_model;
 pub mod config;
 pub mod engine;
 pub mod features;

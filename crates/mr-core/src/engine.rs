@@ -437,6 +437,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn decide(text: &str, est: u64, d: &DigestSignals, sticky: Option<StickyState>, health: &HealthMap) -> Decision {
         engine().decide(input(text, est, d, sticky, health))
     }
