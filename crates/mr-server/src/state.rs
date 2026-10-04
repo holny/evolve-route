@@ -190,4 +190,8 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/v1/messages", axum::routing::post(crate::anthropic::messages))
         .route("/v1/messages/count_tokens", axum::routing::post(crate::anthropic::count_tokens))
         .with_state(state)
+        // must come AFTER routes: raises axum's 2MB default body cap so
+        // multi-MB agent sessions reach the router (BUG: was added before
+        // routes and silently didn't apply)
+        .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
 }
