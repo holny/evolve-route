@@ -179,6 +179,7 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                 "prompt_tokens": s.prompt_tokens,
                 "completion_tokens": s.completion_tokens,
                 "cached_tokens": s.cached_tokens,
+                "cache_write_tokens": s.cache_write_tokens,
                 "tool_calls": {"total": s.tc_total, "valid_json": s.tc_valid_json,
                                "known_name": s.tc_known_name, "schema_ok": s.tc_schema_ok},
                 "truncations": s.truncations,

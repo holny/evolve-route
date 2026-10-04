@@ -44,7 +44,7 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
     <div class="card">
       <h2>模型动态（有流量在前按流量排序，无流量按优先度）</h2>
       <table id="dyn"><thead>
-        <tr><th>模型</th><th>链路</th><th>请求(成功)</th><th>平均TTFT</th><th>最近耗时</th><th>tokens 出/⚡缓存</th><th>工具%</th></tr>
+        <tr><th>模型</th><th>链路</th><th>请求(成功)</th><th>平均TTFT</th><th>最近耗时</th><th title="完成 tokens / ⚡缓存读(折扣命中) / ✎缓存写(计入计价)">tokens 出/⚡读/✎写</th><th>工具%</th></tr>
       </thead><tbody></tbody></table>
       <h3>冷却与配额窗口（上游限额头学习）</h3>
       <table id="health"><thead><tr><th>模型×key</th><th>状态</th><th>详情/冷却</th></tr></thead><tbody></tbody></table>
@@ -88,7 +88,9 @@ function addRow(e){
     <span class="pill badge ${badge}">${e.status}</span>
     <span class="m" title="${esc(e.chosen)}">${esc(e.chosen)}</span>
     <span>${fmtK(e.est_tokens)}tok</span>
-    ${e.cached_tokens ? `<span title="缓存命中">⚡${fmtK(e.cached_tokens)}</span>` : ''}
+    ${e.cached_tokens ? `<span title="缓存读(命中折扣)">⚡${fmtK(e.cached_tokens)}</span>` : ''}
+    ${e.cache_write_tokens ? `<span title="缓存写(计入计价)">✎${fmtK(e.cache_write_tokens)}</span>` : ''}
+    ${e.translated ? `<span class="sk" title="协议已翻译">⇄${esc(e.translated)}</span>` : ''}
     <span class="sk">${e.skipped ? 'fallback' : ''}</span>
     <span class="ms">${fmtMs(e.total_ms)}</span>`;
   feed.prepend(row);
@@ -127,7 +129,7 @@ function renderDyn(){
       <td class="num">${s.requests}(${s.success})</td>
       <td class="num">${fmtMs(s.avg_ttft_ms)}</td>
       <td class="num">${fmtMs(s.last_total_ms)}</td>
-      <td class="num">${fmtK(s.completion_tokens??0)}/⚡${fmtK(s.cached_tokens||0)}</td>
+      <td class="num">${fmtK(s.completion_tokens??0)}/⚡${fmtK(s.cached_tokens||0)}/✎${fmtK(s.cache_write_tokens||0)}</td>
       <td class="num">${toolRate}</td></tr>`;
   });
   db.innerHTML = rows.join('') || '<tr><td colspan="7" style="color:var(--dim)">暂无流量</td></tr>';

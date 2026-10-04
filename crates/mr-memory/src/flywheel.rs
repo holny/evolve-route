@@ -31,6 +31,7 @@ pub struct ModelStats {
     pub est_tokens: u64,
     pub est_n: u64,
     pub cached_tokens: u64,
+    pub cache_write_tokens: u64,
     // L2 gateway-side response quality
     pub tc_total: u64,
     pub tc_valid_json: u64,
@@ -121,6 +122,9 @@ impl Flywheel {
         }
         if let Some(c) = event.get("cached_tokens").and_then(|v| v.as_u64()) {
             s.cached_tokens += c;
+        }
+        if let Some(c) = event.get("cache_write_tokens").and_then(|v| v.as_u64()) {
+            s.cache_write_tokens += c;
         }
         // 窗口下界：成功请求的 prompt_tokens 证明窗口 ≥ 该值
         if (200..300).contains(&status)

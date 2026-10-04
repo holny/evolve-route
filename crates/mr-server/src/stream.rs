@@ -45,10 +45,11 @@ impl Telemetry {
             "usage": self.usage,
         });
         if let Some(u) = &self.usage {
-            let (p, c, cached) = extract_usage_fields(u);
+            let (p, c, cached, cwrite) = extract_usage_fields(u);
             v["prompt_tokens"] = json!(p);
             v["completion_tokens"] = json!(c);
             v["cached_tokens"] = json!(cached);
+            v["cache_write_tokens"] = json!(cwrite);
         }
         if let Some(extra) = &self.extra
             && let (Some(obj), Some(ex)) = (v.as_object_mut(), extra.as_object()) {
@@ -409,7 +410,7 @@ impl Stream for TelemetryStream {
     }
 }
 
-pub fn extract_usage_fields(usage: &Value) -> (Option<u64>, Option<u64>, Option<u64>) {
+pub fn extract_usage_fields(usage: &Value) -> (Option<u64>, Option<u64>, Option<u64>, Option<u64>) {
     let prompt = usage.get("prompt_tokens").and_then(|v| v.as_u64());
     let completion = usage.get("completion_tokens").and_then(|v| v.as_u64());
     let cached = usage
@@ -418,5 +419,11 @@ pub fn extract_usage_fields(usage: &Value) -> (Option<u64>, Option<u64>, Option<
         .and_then(|v| v.as_u64())
         .or_else(|| usage.get("prompt_cache_hit_tokens").and_then(|v| v.as_u64()))
         .or_else(|| usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()));
-    (prompt, completion, cached)
+    // 缓存写：zhipu cache_write_tokens / anthropic cache_creation_input_tokens
+    let cache_write = usage
+        .get("prompt_tokens_details")
+        .and_then(|d| d.get("cache_write_tokens"))
+        .and_then(|v| v.as_u64())
+        .or_else(|| usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()));
+    (prompt, completion, cached, cache_write)
 }
