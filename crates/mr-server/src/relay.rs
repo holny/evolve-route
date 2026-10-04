@@ -278,6 +278,8 @@ pub async fn chat_completions(
         decision.upstream_model = record.upstream_model.clone();
         decision.id = format!("{}-{}", decision.id, skipped.len());
 
+        // 响应头到达时刻 = 非流式 TTFT / 流式首块前基准
+        let head_ms = started.elapsed().as_millis() as u64;
         let telem = std::sync::Arc::new(std::sync::Mutex::new(crate::stream::Telemetry {
             decision_id: decision.id.clone(),
             session: session_key.clone(),
@@ -287,7 +289,7 @@ pub async fn chat_completions(
             sticky: decision.sticky,
             stream: is_stream,
             started,
-            ttft_ms: None,
+            ttft_ms: Some(head_ms as u128),
             bytes: 0,
             status: status.as_u16(),
             usage: None,

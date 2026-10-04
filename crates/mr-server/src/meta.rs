@@ -201,6 +201,12 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                 "last_seen_ms": (s.last_seen_ms > 0).then_some(s.last_seen_ms),
                 "last_total_ms": (s.last_total_ms > 0).then_some(s.last_total_ms),
                 "last_ttft_ms": (s.last_ttft_ms > 0).then_some(s.last_ttft_ms),
+                // 平均吐字速率：完成 tokens ÷ 生成窗口（总耗时-TTFT 累计）
+                "avg_rate_tok_s": (s.total_ms_sum > s.ttft_ms_sum).then(|| {
+                    let gen_s = (s.total_ms_sum - s.ttft_ms_sum) as f32 / 1000.0;
+                    ((s.completion_tokens as f32 / gen_s) * 10.0).round() / 10.0
+                }),
+                "last_rate_tok_s": (s.last_rate_tok_s > 0).then_some(s.last_rate_tok_s),
                 "telemetry": t,
                 "user_weight": m.weight.map(|w| ((w as f64) * 100.0).round() / 100.0),
             }),
