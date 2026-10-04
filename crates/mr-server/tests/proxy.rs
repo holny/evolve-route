@@ -598,7 +598,7 @@ async fn spawn_context_pick_mock() -> u16 {
             let auth = headers.get("authorization").and_then(|a| a.to_str().ok()).unwrap_or("");
             let v: Value = serde_json::from_slice(&body).unwrap();
             let model = v["model"].as_str().unwrap_or("?").to_string();
-            if model == "mock-mini" {
+            if model == "mock-mini" || model == "mock-small" {
                 return axum::http::Response::builder()
                     .status(400)
                     .body(Body::from(r#"{"error":{"message":"This model's maximum context length is 32768 tokens. However, your messages resulted in over 50000 tokens."}}"#))
@@ -646,4 +646,70 @@ async fn context_overflow_reroutes_to_bigger_window() {
     let v = json_body(&raw);
     let mini = &v["models"]["mini"];
     assert_eq!(mini["kind"], "context_overflow");
+}
+
+#[tokio::test]
+async fn anthropic_ingress_context_overflow_reroutes() {
+    // anthropic-protocol client -> openai upstream that rejects the small
+    // model with a context-overflow 400 -> gateway reroutes to bigger model
+    // (same guarantee as the openai ingress — protocol-agnostic)
+    let port = spawn_context_pick_mock().await;
+    let mut cfg = test_config(port);
+    cfg.data.dir = std::env::temp_dir().join(format!("mr-test-axovf-{}", std::process::id())).to_string_lossy().into_owned();
+    cfg.models = vec![
+        ModelEntry {
+            id: "small".into(),
+            provider: "mock".into(),
+            protocol: mr_core::types::Protocol::OpenAI,
+            base_url: format!("http://127.0.0.1:{port}/v1"),
+            api_key_env: None,
+            api_keys_env: None,
+            upstream_model: Some("mock-small".into()),
+            context_window: Some(8_000),
+            max_output: 1024,
+            cost: Some(Cost { input: 0.1, output: 0.4 }),
+            tiers: Tiers { reasoning: 0.3, coding: 0.4, vision: 0.0, agentic: 0.4 },
+            speed_tier: 0.9,
+            weight: None,
+            source_note: None,
+        },
+        ModelEntry {
+            id: "big".into(),
+            provider: "mock".into(),
+            protocol: mr_core::types::Protocol::OpenAI,
+            base_url: format!("http://127.0.0.1:{port}/v1"),
+            api_key_env: None,
+            api_keys_env: None,
+            upstream_model: Some("mock-big".into()),
+            context_window: Some(200_000),
+            max_output: 4096,
+            cost: Some(Cost { input: 3.0, output: 15.0 }),
+            tiers: Tiers { reasoning: 0.9, coding: 0.95, vision: 0.9, agentic: 0.95 },
+            speed_tier: 0.5,
+            weight: None,
+            source_note: None,
+        },
+    ];
+    let app = build_router(build_state(cfg));
+
+    // anthropic messages request with ~2k-token body (fits small's 8k
+    // declared window per gateway estimation, but upstream disagrees)
+    let body = json!({
+        "model": "auto",
+        "max_tokens": 64,
+        "messages": [{"role": "user", "content": [{"type": "text", "text": "a".repeat(8_000)}]}]
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/messages")
+        .header("content-type", "application/json")
+        .header("x-mr-session", "ax-ovf")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let (status, headers, raw) = send(app, req).await;
+    assert_eq!(status, StatusCode::OK, "body: {}", String::from_utf8_lossy(&raw));
+    assert_eq!(headers["x-mr-model"], "big", "small rejected -> reroute");
+    let v = json_body(&raw);
+    assert_eq!(v["type"], "message", "client receives anthropic shape");
+    assert!(v["content"][0]["text"].as_str().unwrap_or("").contains("fits"));
 }

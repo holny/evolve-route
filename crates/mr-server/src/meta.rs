@@ -20,13 +20,26 @@ pub async fn dashboard() -> impl IntoResponse {
 }
 
 pub async fn list_models(State(st): State<AppState>) -> Response {
+    // advertised window for auto = largest context in the eligible pool;
+    // dynamic-catalog agents (hermes/openrouter-style) read this directly
+    let max_window = st
+        .engine
+        .catalog
+        .models
+        .iter()
+        .filter_map(|m| m.context_window)
+        .max()
+        .unwrap_or(0);
     let mut data = vec![
         json!({"id": "auto", "object": "model", "owned_by": "modelroute", "source": "router",
-               "description": "intelligent routing (default policy)"}),
+               "description": "intelligent routing (default policy)",
+               "context_length": max_window}),
         json!({"id": "auto:cost", "object": "model", "owned_by": "modelroute", "source": "router",
-               "description": "intelligent routing, cost-optimized policy"}),
+               "description": "intelligent routing, cost-optimized policy",
+               "context_length": max_window}),
         json!({"id": "auto:quality", "object": "model", "owned_by": "modelroute", "source": "router",
-               "description": "intelligent routing, quality-optimized policy"}),
+               "description": "intelligent routing, quality-optimized policy",
+               "context_length": max_window}),
     ];
     for m in &st.engine.catalog.models {
         data.push(json!({

@@ -304,7 +304,6 @@ impl HealthKind {
             HealthKind::RateLimited => "rate limited",
             HealthKind::Unsupported => "model unsupported",
             HealthKind::ContextOverflow => "context overflow",
-            HealthKind::ContextOverflow => "context overflow",
             HealthKind::Transient => "transient error",
         }
     }
