@@ -56,7 +56,10 @@ impl LayaBackend {
     }
 
     fn build_payload(&self, features: &RequestFeatures, digest: &DigestSignals) -> serde_json::Value {
+        let cjk = features.cjk_ratio;
+        let lang_hint = if cjk > 0.15 { "multilingual" } else { "typed-decisions" };
         json!({
+            "lang_hint": lang_hint,
             "state": {
                 "task": {
                     "length_bucket": bucket(features.user_text_chars, &[30, 100, 400, 1500]),

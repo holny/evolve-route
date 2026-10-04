@@ -22,6 +22,14 @@ from pydantic import BaseModel
 
 app = FastAPI(title="modelroute-laya-sidecar")
 
+# 语言感知检查点（laya README）：CJK 文本走 multilingual（100+语言），
+# 英文走 typed-decisions（针对 typed workflow 微调，benchmark 最优）。
+# 两个检查点都常驻，切换零重载。
+CHECKPOINT_FOR_LANG = {
+    "typed-decisions": "english",      # ModernBERT-large，英文 typed workflow 最优
+    "multilingual": "multilingual",    # mmBERT，100+ 语言
+}
+
 _router = None
 
 
@@ -30,12 +38,13 @@ def get_router():
     if _router is None:
         from laya import Router
 
-        _router = Router(preload=True)
+        _router = Router(preload=True, max_loaded=3)
     return _router
 
 
 class JudgeRequest(BaseModel):
     state: dict
+    lang_hint: str = "auto"
 
 
 QUESTIONS = {
@@ -96,10 +105,26 @@ def health() -> dict:
         return {"status": "error", "detail": str(e)}
 
 
+def pick_checkpoint(req: JudgeRequest) -> str:
+    # CJK 占比高 -> multilingual；英文 -> typed-decisions；auto 交给 Router 自检
+    text = json.dumps(req.state, ensure_ascii=False)
+    cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff" or "\u3040" <= ch <= "\u30ff" or "\uac00" <= ch <= "\ud7af")
+    total = max(len(text), 1)
+    if req.lang_hint == "auto" and cjk / total > 0.15:
+        return "multilingual"
+    if req.lang_hint in CHECKPOINT_FOR_LANG.values():
+        return req.lang_hint
+    return "typed-decisions"
+
+
 @app.post("/v1/judge")
 def judge(req: JudgeRequest) -> dict:
+    import json as _json
+
     router = get_router()
-    result = router.predict(req.state, QUESTIONS)
+    checkpoint = pick_checkpoint(req)
+    result = router.predict(req.state, QUESTIONS, model=checkpoint)
+    answers = result["answers"]
     answers = result["answers"]
 
     domain_raw = answers["task_domain"]["choice"]
