@@ -405,3 +405,32 @@ impl ResponseQuality {
                 && self.tool_calls_known_name == self.tool_calls_total)
     }
 }
+
+/// 双判官取严融合（决策记录 #24 扩展）：Jev 语义判定为主，heuristic 关键词
+/// 为独立第二意见；逐字段取更保守值。专治 Jev 的 CJK 弱点——中文任务被
+/// 误判为 Other/简单时，heuristic 把域和难度救回来。
+pub fn fuse_judgments(jev: &JudgmentSet, heur: &JudgmentSet) -> JudgmentSet {
+    let take_max = |a: f32, b: f32| a.max(b);
+    // 域冲突：Jev 说 Other 而 heuristic 有明确域 -> 采信 heuristic（CJK 救援）
+    let domain = if jev.domain == Domain::Other && heur.domain != Domain::Other {
+        heur.domain
+    } else if jev.domain_confidence >= heur.domain_confidence {
+        jev.domain
+    } else {
+        heur.domain
+    };
+    JudgmentSet {
+        domain,
+        // 难度取严：两判官中更高的难度生效（好钢用在刀刃上的保守面）
+        difficulty: take_max(jev.difficulty, heur.difficulty),
+        domain_confidence: jev.domain_confidence.min(heur.domain_confidence),
+        difficulty_confidence: jev.difficulty_confidence.min(heur.difficulty_confidence),
+        needs_vision: take_max(jev.needs_vision, heur.needs_vision),
+        is_trivial: jev.is_trivial.min(heur.is_trivial),
+        tool_heavy: take_max(jev.tool_heavy, heur.tool_heavy),
+        high_stakes: take_max(jev.high_stakes, heur.high_stakes),
+        // 会话相关性取严：任一判官认为跑题即按跑题处理
+        session_relevance: jev.session_relevance.min(heur.session_relevance),
+        session_depth: take_max(jev.session_depth, heur.session_depth),
+    }
+}

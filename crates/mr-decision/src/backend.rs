@@ -13,6 +13,22 @@ impl Judge for HeuristicBackend {
     }
 }
 
+/// 双判官取严融合（决策记录 #24 扩展）：Jev 语义判定为主，heuristic 为
+/// 独立第二意见；冲突时取更保守值。专治 Jev 的 CJK 弱点——中文任务被
+/// 误判为 Other/简单时，heuristic 关键词（中英词表）把域和难度救回来。
+pub struct HybridBackend {
+    primary: Box<dyn Judge>,
+    secondary: mr_core::heuristic::HeuristicJudge,
+}
+
+impl Judge for HybridBackend {
+    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals) -> JudgmentSet {
+        let j = self.primary.judge(features, digest);
+        let h = self.secondary.judge(features, digest);
+        mr_core::types::fuse_judgments(&j, &h)
+    }
+}
+
 impl DecisionBackend {
     /// `auto`: upgrade to TypeSafe Jev when TYPESAFE_API_KEY is present,
     /// otherwise heuristic. Explicit "heuristic"/"typesafe" force a choice;
@@ -39,8 +55,8 @@ impl DecisionBackend {
             },
             "auto" => match crate::typesafe::TypesafeBackend::from_env() {
                 Some(b) => {
-                    tracing::info!("decision backend: typesafe jev (auto-detected)");
-                    Box::new(b)
+                    tracing::info!("decision backend: hybrid (jev primary + heuristic rescue)");
+                    Box::new(HybridBackend { primary: Box::new(b), secondary: mr_core::heuristic::HeuristicJudge })
                 }
                 None => Box::new(HeuristicBackend),
             },
