@@ -108,7 +108,10 @@ pub fn score_all(
 }
 
 pub fn context_fits(m: &ModelRecord, est_input: u64, max_output: u64) -> Result<(), &'static str> {
-    let window = m.context_window.ok_or("unknown context window")?;
+    // None window: the engine's proven-bound check (telemetry max_accepted)
+    // is the single gate — reaching here means the model is proven, so no
+    // declared-window check applies.
+    let Some(window) = m.context_window else { return Ok(()) };
     let need = (est_input as f64 * 1.1) as u64 + max_output;
     if need <= window {
         Ok(())

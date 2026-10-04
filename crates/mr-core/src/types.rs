@@ -351,6 +351,9 @@ pub struct ModelTelemetry {
     pub calibration: Option<f32>,
     /// Flywheel-learned bias: realized success vs catalog median, clamped.
     pub learned_bias: Option<f32>,
+    /// Window lower-bound inference: largest prompt tokens a successful
+    /// request actually accepted (for unknown-window models).
+    pub max_accepted: Option<u64>,
 }
 
 pub type TelemetrySnapshot = std::collections::HashMap<String, ModelTelemetry>;

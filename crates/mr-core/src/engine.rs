@@ -155,8 +155,24 @@ impl Engine {
                 continue;
             }
             if m.context_window.is_none() {
-                filtered.push(FilteredOut { model: m.id.clone(), cause: "unknown context window".into() });
-                continue;
+                // unknown window is NOT permanent exile (progressive proof):
+                // a successful request at P tokens proves window >= P, so the
+                // model may take any request with est <= proven bound. Below
+                // the proven bound (or no proof yet) -> stay out (宁可错过).
+                let proven = input
+                    .telemetry
+                    .get(&m.id)
+                    .and_then(|t| t.max_accepted)
+                    .unwrap_or(0);
+                if (m_est as f64 * 1.1) as u64 + max_output > proven {
+                    filtered.push(FilteredOut {
+                        model: m.id.clone(),
+                        cause: format!(
+                            "unknown context window (proven max accepted {proven} tok)"
+                        ),
+                    });
+                    continue;
+                }
             }
             if let Some(remaining) = input.quota.get(&m.id)
                 && *remaining < m_est {
@@ -629,5 +645,67 @@ mod explore_tests {
         let h = HealthMap::new();
         let dec = e.decide(input("你好", 500, &d, None, &h));
         assert!(!dec.reason.contains("[exploring]"));
+    }
+}
+
+#[cfg(test)]
+mod unknown_window_tests {
+    use super::tests::{catalog3, digest, input};
+    use super::*;
+    use crate::config::PolicyCfg;
+
+    fn unknown_window_catalog() -> Catalog {
+        let mut cat = catalog3();
+        cat.models[0].context_window = None; // mini: unknown window
+        cat
+    }
+
+    fn decide_tel(
+        text: &str,
+        est: u64,
+        tel: &TelemetrySnapshot,
+    ) -> Decision {
+        let e = Engine::new(unknown_window_catalog(), PolicyCfg::default(), Box::new(crate::heuristic::HeuristicJudge));
+        let d = digest(text);
+        let h = HealthMap::new();
+        let mut inp = input(text, est, &d, None, &h);
+        inp.telemetry = tel;
+        e.decide(inp)
+    }
+
+    #[test]
+    fn unknown_window_filtered_without_proof() {
+        let d = digest("你好");
+        let dec = decide_tel("你好", 500, &TelemetrySnapshot::new());
+        assert!(dec
+            .filtered
+            .iter()
+            .any(|f| f.model == "mini" && f.cause.contains("proven max accepted 0")), "reason: {}", dec.reason);
+    }
+
+    #[test]
+    fn proven_bound_lets_small_requests_through() {
+        let mut tel = TelemetrySnapshot::new();
+        tel.insert("mini".into(), ModelTelemetry { max_accepted: Some(5_000), ..Default::default() });
+        let d = digest("你好");
+        let dec = decide_tel("你好", 500, &tel);
+        assert_eq!(dec.chosen, "mini", "proven bound admits small request; reason: {}", dec.reason);
+    }
+
+    #[test]
+    fn proven_bound_blocks_requests_beyond_proof() {
+        let e = Engine::new(unknown_window_catalog(), PolicyCfg::default(), Box::new(crate::heuristic::HeuristicJudge));
+        let d = digest("你好");
+        let mut tel = TelemetrySnapshot::new();
+        tel.insert("mini".into(), ModelTelemetry { max_accepted: Some(1_000), ..Default::default() });
+        let mut h = HealthMap::new();
+        // est 20_000 * 1.1 = 22_000 > proven 1_000 -> filtered
+        let mut inp = input("你好", 20_000, &d, None, &h);
+        inp.telemetry = &tel;
+        let dec = e.decide(inp);
+        assert!(dec
+            .filtered
+            .iter()
+            .any(|f| f.model == "mini" && f.cause.contains("proven max accepted 1000")), "reason: {}", dec.reason);
     }
 }

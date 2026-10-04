@@ -45,6 +45,8 @@ pub struct ModelStats {
     // L4 plugin-reported explicit feedback (tool execution results)
     pub fb_ok: u64,
     pub fb_total: u64,
+    // 窗口下界推断：该模型实际接受过的最大 prompt_tokens（成功请求）
+    pub max_accepted_tokens: u64,
     // recency for the dashboard "最近耗时"
     pub last_seen_ms: u64,
     pub last_total_ms: u64,
@@ -119,6 +121,13 @@ impl Flywheel {
         }
         if let Some(c) = event.get("cached_tokens").and_then(|v| v.as_u64()) {
             s.cached_tokens += c;
+        }
+        // 窗口下界：成功请求的 prompt_tokens 证明窗口 ≥ 该值
+        if (200..300).contains(&status)
+            && let Some(p) = event.get("prompt_tokens").and_then(|v| v.as_u64())
+            && p > s.max_accepted_tokens
+        {
+            s.max_accepted_tokens = p;
         }
         s.last_seen_ms = now_ms();
         if let Some(t) = event.get("total_ms").and_then(|v| v.as_u64()) {
@@ -254,6 +263,7 @@ impl Flywheel {
             } else {
                 None
             };
+            let max_accepted = (s.max_accepted_tokens > 0).then_some(s.max_accepted_tokens);
             let calibration = if s.est_n >= MIN_CALIBRATION_SAMPLES && s.prompt_n >= MIN_CALIBRATION_SAMPLES {
                 let avg_est = s.est_tokens as f32 / s.est_n as f32;
                 let avg_actual = s.prompt_tokens as f32 / s.prompt_n as f32;
@@ -267,7 +277,7 @@ impl Flywheel {
             };
             out.insert(
                 id.clone(),
-                ModelTelemetry { reliability, speed_obs, calibration, learned_bias: None },
+                ModelTelemetry { reliability, speed_obs, calibration, learned_bias: None, max_accepted },
             );
             sampled.push((id.clone(), s.success as f32 / s.requests.max(1) as f32));
         }
