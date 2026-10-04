@@ -218,6 +218,8 @@ fn extract_models(root: &Value) -> Vec<ModelRecord> {
                     agentic: if tool_call { 0.7 } else { 0.4 },
                 },
                 tiers_explicit: false,
+                plan: false,
+                currency: String::new(),
                 speed_tier: 0.6,
                 weight: None,
                 source: Source::Discovered,

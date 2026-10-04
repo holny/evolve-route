@@ -1,4 +1,5 @@
 use crate::types::*;
+use crate::types::infer_currency as mr_infer_currency;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -120,6 +121,10 @@ pub struct ModelEntry {
     pub tiers: Tiers,
     pub speed_tier: f32,
     pub weight: Option<f32>,
+    /// 订阅套餐（边际成本≈0，配额窗口内优先）
+    pub plan: Option<bool>,
+    /// 计价货币（缺省按厂商推断：国内厂商 CNY，其余 USD）
+    pub currency: Option<String>,
     pub source_note: Option<String>,
 }
 
@@ -133,6 +138,8 @@ impl Default for ModelEntry {
             base_url: d.base_url.clone(),
             api_key_env: None,
             api_keys_env: None,
+            plan: None,
+            currency: None,
             upstream_model: None,
             context_window: d.context_window,
             max_output: d.max_output,
@@ -175,10 +182,19 @@ impl FileConfig {
     }
 
     pub fn resolve_model(&self, entry: &ModelEntry) -> ModelRecord {
+        // "provider/model" 形式的目录 id：上游真实模型名取 '/' 后段
+        // （覆盖 zhipuai-coding-plan/glm-5.3-flash -> glm-5.3-flash）
         let upstream_model = entry
             .upstream_model
             .clone()
-            .unwrap_or_else(|| entry.id.clone());
+            .unwrap_or_else(|| {
+                entry
+                    .id
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(&entry.id)
+                    .to_string()
+            });
         let mut keys: Vec<KeySlot> = Vec::new();
         if let Some(envs) = &entry.api_keys_env {
             for (i, env) in envs.iter().enumerate() {
@@ -209,6 +225,8 @@ impl FileConfig {
             cost: entry.cost,
             tiers: entry.tiers,
             tiers_explicit: entry.tiers != Tiers::default(),
+            plan: entry.plan.unwrap_or(false),
+            currency: entry.currency.clone().unwrap_or_else(|| mr_infer_currency(&entry.provider).to_string()),
             speed_tier: entry.speed_tier,
             weight: entry.weight,
             source: Source::User,

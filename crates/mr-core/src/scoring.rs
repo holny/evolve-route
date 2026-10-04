@@ -77,12 +77,17 @@ pub fn score_all(
                 Some(obs) => 0.7 * prior_speed + 0.3 * obs.clamp(0.0, 1.0),
                 None => prior_speed,
             };
-            let c = match m.cost {
-                Some(_) => {
-                    let price = blended_price(m, est_input, est_output).max(1e-6);
-                    (min_price / price).clamp(0.0, 1.0)
+            let c = if m.plan {
+                // 订阅套餐：配额内边际成本≈0 —— 与目录最便宜按量模型同级
+                1.0
+            } else {
+                match m.cost {
+                    Some(_) => {
+                        let price = blended_price(m, est_input, est_output).max(1e-6);
+                        (min_price / price).clamp(0.0, 1.0)
+                    }
+                    None => 0.5,
                 }
-                None => 0.5,
             };
             let r = telemetry
                 .get(&m.id)

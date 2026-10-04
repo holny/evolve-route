@@ -76,6 +76,10 @@ pub struct ModelRecord {
     pub tiers: Tiers,
     /// True when the user explicitly declared tiers (benchmarks blend at 0.3)
     pub tiers_explicit: bool,
+    /// 订阅套餐标志：plan 模型边际成本≈0，配额窗口内优先（用掉才值）
+    pub plan: bool,
+    /// 计价货币：CNY / USD（缺省按厂商推断）
+    pub currency: String,
     pub speed_tier: f32,
     /// User bias weight (participates in scoring, never decisive).
     pub weight: Option<f32>,
@@ -99,12 +103,27 @@ impl Default for ModelRecord {
             cost: None,
             tiers: Tiers::default(),
             tiers_explicit: false,
+            plan: false,
+            currency: String::new(),
             speed_tier: 0.6,
             weight: None,
             source: Source::User,
             source_note: None,
         }
     }
+}
+
+/// 国内厂商按人民币计价；其余默认美元（可被配置显式覆盖）
+pub fn infer_currency(provider: &str) -> &'static str {
+    let p = provider.to_lowercase();
+    for cn in ["zhipu", "deepseek", "minimax", "volces", "ark", "moonshot", "kimi",
+               "qwen", "dashscope", "alibaba", "baidu", "ernie", "tencent", "hunyuan",
+               "stepfun", "01ai", "baichuan", "sensetime", "doubao"] {
+        if p.contains(cn) {
+            return "CNY";
+        }
+    }
+    "USD"
 }
 
 impl ModelRecord {

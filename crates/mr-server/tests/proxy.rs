@@ -353,7 +353,9 @@ async fn openai_ingress_routes_to_anthropic_upstream_translated() {
         tiers: Tiers { reasoning: 0.9, coding: 0.95, vision: 0.9, agentic: 0.95 },
         speed_tier: 0.65,
         weight: None,
-        source_note: None,
+        plan: None,
+            currency: None,
+            source_note: None,
     }];
     let app = build_router(build_state(cfg));
 
@@ -423,7 +425,9 @@ async fn anthropic_ingress_same_protocol_relays() {
         tiers: Tiers { reasoning: 0.9, coding: 0.95, vision: 0.9, agentic: 0.95 },
         speed_tier: 0.65,
         weight: None,
-        source_note: None,
+        plan: None,
+            currency: None,
+            source_note: None,
     }];
     let app = build_router(build_state(cfg));
 
@@ -513,7 +517,9 @@ async fn openai_streaming_to_anthropic_upstream_translated() {
         tiers: Tiers { reasoning: 0.9, coding: 0.95, vision: 0.9, agentic: 0.95 },
         speed_tier: 0.65,
         weight: None,
-        source_note: None,
+        plan: None,
+            currency: None,
+            source_note: None,
     }];
     let app = build_router(build_state(cfg));
     let (status, headers, raw) = send(
@@ -671,6 +677,8 @@ async fn anthropic_ingress_context_overflow_reroutes() {
             tiers: Tiers { reasoning: 0.3, coding: 0.4, vision: 0.0, agentic: 0.4 },
             speed_tier: 0.9,
             weight: None,
+            plan: None,
+            currency: None,
             source_note: None,
         },
         ModelEntry {
@@ -687,6 +695,8 @@ async fn anthropic_ingress_context_overflow_reroutes() {
             tiers: Tiers { reasoning: 0.9, coding: 0.95, vision: 0.9, agentic: 0.95 },
             speed_tier: 0.5,
             weight: None,
+            plan: None,
+            currency: None,
             source_note: None,
         },
     ];

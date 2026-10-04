@@ -122,7 +122,11 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
         let dyn_score = {
             let rel = t.reliability.unwrap_or(0.7);
             let spd = t.speed_obs.unwrap_or(0.5);
-            let cost_eff = match m.cost {
+            let cost_eff = if m.plan {
+                // 订阅套餐：配额内边际成本≈0，用掉才值
+                1.0_f32
+            } else {
+            match m.cost {
                 // 按量：以一次典型 4k-in/0.5k-out 请求为基准，与目录最便宜
                 // 模型比价；无价模型（订阅摊薄）按 0.8 中性偏优
                 Some(c) => {
@@ -142,6 +146,7 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                     ((cheapest / typical) as f32).clamp(0.05, 1.0)
                 }
                 None => 0.8,
+            }
             };
             let quota_factor = st
                 .quota
@@ -156,15 +161,16 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
         let success_rate = (s.requests > 0).then(|| s.success as f32 / s.requests as f32);
         let cache_hit_rate = (s.prompt_tokens > 0)
             .then(|| s.cached_tokens as f32 / s.prompt_tokens as f32);
-        let est_cost_usd = st
-            .engine
-            .catalog
-            .get(id)
-            .and_then(|m| m.cost)
-            .map(|c| {
+        let cat_model = st.engine.catalog.get(id);
+        let currency = cat_model.map(|m| m.currency.clone()).unwrap_or_default();
+        let est_cost: Option<f32> = match cat_model.map(|m| (m.plan, m.cost)) {
+            Some((true, _)) | Some((false, None)) => Some(0.0),
+            Some((false, Some(c))) => Some(
                 (s.prompt_tokens as f32 / 1e6) * c.input
-                    + (s.completion_tokens as f32 / 1e6) * c.output
-            });
+                    + (s.completion_tokens as f32 / 1e6) * c.output,
+            ),
+            _ => None,
+        };
         ranked.push((
             id.clone(),
             json!({
@@ -189,7 +195,8 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                 "feedback": {"ok": s.fb_ok, "total": s.fb_total},
                 "success_rate": success_rate,
                 "cache_hit_rate": cache_hit_rate,
-                "est_cost_usd": est_cost_usd,
+                "est_cost": est_cost,
+                "currency": currency,
                 "samples": s.requests,
                 "last_seen_ms": (s.last_seen_ms > 0).then_some(s.last_seen_ms),
                 "last_total_ms": (s.last_total_ms > 0).then_some(s.last_total_ms),

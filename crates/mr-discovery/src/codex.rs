@@ -56,6 +56,8 @@ pub fn discover_from_text(text: &str) -> anyhow::Result<Vec<ModelRecord>> {
             records.push(ModelRecord {
                 id: format!("codex/{model}"),
                 provider: format!("codex-{provider_id}"),
+                plan: false,
+                currency: String::new(),
                 protocol: Protocol::OpenAI,
                 base_url,
                 api_key_env: None,
