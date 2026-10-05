@@ -436,3 +436,14 @@ pub fn fuse_judgments(jev: &JudgmentSet, heur: &JudgmentSet) -> JudgmentSet {
         session_depth: take_max(jev.session_depth, heur.session_depth),
     }
 }
+
+/// v2 直接路由顾问：决策模型看到候选全画像后直接推荐模型。
+/// 与 Judge（语义判定器）不同——RouteAdvisor 的输出就是路由决定。
+pub trait RouteAdvisor: Send + Sync {
+    fn recommend(
+        &self,
+        task_summary: &str,
+        candidates_json: &str,
+        policy: &str,
+    ) -> Option<(String, f32)>;
+}

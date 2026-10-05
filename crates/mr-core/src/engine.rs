@@ -39,6 +39,7 @@ pub struct Engine {
     pub catalog: Catalog,
     pub policy: PolicyCfg,
     judge: Box<dyn Judge>,
+    route_advisor: Option<std::sync::Arc<dyn RouteAdvisor>>,
     tiers_overlay: std::sync::RwLock<HashMap<String, (Tiers, f32)>>,
     counter: std::sync::atomic::AtomicU64,
 }
@@ -49,9 +50,14 @@ impl Engine {
             catalog,
             policy,
             judge,
+            route_advisor: None,
             tiers_overlay: std::sync::RwLock::new(HashMap::new()),
             counter: std::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    pub fn set_route_advisor(&mut self, advisor: std::sync::Arc<dyn RouteAdvisor>) {
+        self.route_advisor = Some(advisor);
     }
 
     /// Benchmark layer (decision record #23): refresh capability priors for

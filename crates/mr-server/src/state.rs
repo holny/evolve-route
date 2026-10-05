@@ -10,7 +10,7 @@ use tokio::sync::broadcast;
 
 pub struct Inner {
     pub config: FileConfig,
-    pub key_cursor: std::sync::Mutex<HashMap<String, usize>>,
+    pub key_cursor: Mutex<HashMap<String, usize>>,
     pub engine: Engine,
     pub sessions: SessionStore,
     pub events: EventLog,
@@ -23,92 +23,11 @@ pub struct Inner {
 
 pub type AppState = Arc<Inner>;
 
-/// Benchmark feed refresh (decision record #23): fetch configured sources →
-/// parse → blend → apply capability-tier overlay. Failures keep last-good
-/// tiers; a snapshot lands in the data dir for the dashboard.
-pub fn start_benchmarks(st: &AppState) {
-    tracing::info!(
-        enabled = st.config.benchmarks.enabled,
-        sources = st.config.benchmarks.sources.len(),
-        "benchmark refresh: init"
-    );
-    if !st.config.benchmarks.enabled {
-        return;
-    }
-    // embedded curated seed always applies (zero-network baseline);
-    // configured HTTP sources layer on top per interval
-    let seed = vec![(
-        "curated-seed".into(),
-        mr_discovery::benchmarks::load_seed(),
-    )];
-    let sources = st.config.benchmarks.sources.clone();
-    let interval = Duration::from_secs(st.config.benchmarks.interval_hours.max(1) * 3600);
-    let data_dir = st.config.data.dir.clone();
-    let st_owned = st.clone();
-    tokio::spawn(async move {
-        loop {
-            let mut fetched: Vec<(String, Vec<mr_discovery::benchmarks::BenchScore>)> =
-                seed.clone();
-            let mut report = serde_json::Map::new();
-            report.insert(
-                "curated-seed".into(),
-                serde_json::json!({ "count": seed.len() }),
-            );
-            for src in &sources {
-                match mr_discovery::benchmarks::fetch_source(&st_owned.http, src).await {
-                    Ok(scores) => {
-                        report.insert(
-                            src.name.clone(),
-                            serde_json::json!({ "fetched_at_ms": mr_memory::quota::now_ms(), "count": scores.len() }),
-                        );
-                        fetched.push((src.name.clone(), scores));
-                    }
-                    Err(e) => {
-                        tracing::warn!(source = %src.name, error = %e, "benchmark fetch failed");
-                        report.insert(
-                            src.name.clone(),
-                            serde_json::json!({ "error": e.to_string(), "fetched_at_ms": mr_memory::quota::now_ms() }),
-                        );
-                    }
-                }
-            }
-            if !fetched.is_empty() {
-                let applied =
-                    mr_discovery::benchmarks::apply_to_engine(&st_owned.engine, &fetched);
-                report.insert("__applied__".into(), serde_json::json!({ "models": applied }));
-                tracing::info!(applied, "benchmark tier overlay refreshed");
-                let expanded = if data_dir.starts_with("~/") {
-                    std::env::var("HOME").map(|h| std::path::PathBuf::from(h).join(&data_dir[2..])).unwrap_or(std::path::PathBuf::from(&data_dir))
-                } else {
-                    std::path::PathBuf::from(&data_dir)
-                };
-                let path = expanded.join("benchmarks.json");
-                if let Some(parent) = path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                let _ = std::fs::write(
-                    &path,
-                    serde_json::to_vec(&serde_json::Value::Object(report)).unwrap_or_default(),
-                );
-            }
-            tokio::time::sleep(interval).await;
-        }
-    });
-}
-
-
-
 pub fn build_state(config: FileConfig) -> AppState {
     let mut discovered = mr_discovery::discover(&config.discovery.agents);
-    if config.catalog.modelsdev_reference {
-        if let Some(api) = mr_discovery::modelsdev::load_fresh(&config.data.dir) {
-            mr_discovery::modelsdev::enrich(&mut discovered, &api);
-        }
-        mr_discovery::modelsdev::spawn_refresh(config.data.dir.clone());
-    }
-    // remote /models discovery: blocking fetch with 1h cache (build_state
-    // runs outside the runtime; per-provider timeouts, failures skipped and
-    // stale cache kept). Adds the provider-side union beyond user configs.
+
+    // remote /models discovery FIRST (provider union), THEN models.dev
+    // enrichment can fill unknown windows for remote entries too
     if config.catalog.remote_fetch {
         let mut base_records = config.model_records();
         base_records.extend(discovered.iter().cloned());
@@ -119,7 +38,17 @@ pub fn build_state(config: FileConfig) -> AppState {
             Some(&self_origin),
         ));
     }
-    discovered.retain(|m| m.provider != "modelroute");
+
+    if config.catalog.modelsdev_reference {
+        if let Some(api) = mr_discovery::modelsdev::load_fresh(&config.data.dir) {
+            mr_discovery::modelsdev::enrich(&mut discovered, &api);
+        }
+        mr_discovery::modelsdev::spawn_refresh(config.data.dir.clone());
+    }
+
+    // remote entries without a usable window are dead weight — drop them
+    discovered.retain(|m| m.source != mr_core::types::Source::Remote || m.context_window.is_some());
+
     let catalog = Catalog::build_with_discovered(&config, discovered);
     let policy = config.policy.clone();
     let backend = DecisionBackend::build(&config.decision.backend);
@@ -160,8 +89,7 @@ impl Inner {
         v
     }
 
-
-    /// Must be called inside the tokio runtime: periodic flywheel persistence.
+    /// Must be called inside the tokio runtime.
     pub fn start_background(&self) {
         let flywheel = self.flywheel.clone();
         tokio::spawn(async move {
@@ -190,8 +118,5 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/v1/messages", axum::routing::post(crate::anthropic::messages))
         .route("/v1/messages/count_tokens", axum::routing::post(crate::anthropic::count_tokens))
         .with_state(state)
-        // must come AFTER routes: raises axum's 2MB default body cap so
-        // multi-MB agent sessions reach the router (BUG: was added before
-        // routes and silently didn't apply)
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
 }

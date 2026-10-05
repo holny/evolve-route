@@ -15,10 +15,10 @@ use std::time::Duration;
 pub const STATE_TOKEN_BUDGET: usize = 2048;
 
 pub struct TypesafeBackend {
-    client: reqwest::Client,
-    api_key: String,
-    model: String,
-    endpoint: String,
+    pub client: reqwest::Client,
+    pub api_key: String,
+    pub model: String,
+    pub endpoint: String,
     pub redact: bool,
 }
 
@@ -57,6 +57,61 @@ impl Judge for TypesafeBackend {
 }
 
 impl TypesafeBackend {
+    /// v2 直接路由推荐：决策模型看到任务文本+候选全画像，直接推荐哪个模型。
+    /// 返回 (model_id, confidence)。调用失败返回 None（调用方走公式回退）。
+    pub fn recommend_route(
+        &self,
+        task_summary: &str,
+        candidates_json: &str,
+        policy: &str,
+    ) -> Option<(String, f32)> {
+        let payload = serde_json::json!({
+            "model": &self.model,
+            "state": {
+                "task": task_summary.chars().take(600).collect::<String>(),
+                "candidates": candidates_json.chars().take(30_000).collect::<String>(),
+                "policy": policy,
+            },
+            "questions": {
+                "route_recommendation": {
+                    "type": "choice",
+                    "instructions": {
+                        "question": "Given this task and the candidate model profiles, which single model should handle this request? Consider capability match, cost efficiency, reliability track record, context window fit, and quota availability.",
+                        "candidates_note": "Each option is a candidate model id from the routing catalog.",
+                    },
+                }
+            }
+        });
+        let client = self.client.clone();
+        let endpoint = self.endpoint.clone();
+        let api_key = self.api_key.clone();
+        let _model = self.model.clone();
+        let call = async move {
+            client
+                .post(&endpoint)
+                .bearer_auth(&api_key)
+                .timeout(Duration::from_secs(5))
+                .json(&payload)
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<serde_json::Value>()
+                .await
+        };
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::try_current().ok().and_then(|h| {
+                h.block_on(async { call.await.ok() })
+            })
+        })
+        .as_ref()
+        .and_then(|v| {
+            let choice = v.pointer("/answers/route_recommendation/choice")?.as_str()?.to_string();
+            let conf = v.pointer("/answers/route_recommendation/confidence")
+                .and_then(|c| c.as_f64()).unwrap_or(0.5) as f32;
+            Some((choice, conf))
+        })
+    }
+
     pub fn from_env() -> Option<Self> {
         let api_key = std::env::var("TYPESAFE_API_KEY").ok().filter(|k| !k.is_empty())?;
         Some(Self {
@@ -170,4 +225,87 @@ pub(crate) fn parse_judgment(v: &serde_json::Value) -> Option<JudgmentSet> {
         session_relevance: noul("session_relevance"),
         session_depth: score("session_depth").clamp(0.0, 3.0),
     })
+}
+
+/// v2 直接路由：决策模型看到候选全画像 + 飞轮经验，直接推荐模型
+pub struct RouteAdvisor {
+    backend: TypesafeBackend,
+}
+
+impl RouteAdvisor {
+    pub fn new(backend: TypesafeBackend) -> Self {
+        Self { backend }
+    }
+
+    pub fn recommend(
+        &self,
+        task_text: &str,
+        candidates_json: &str,
+        session_summary: &str,
+        policy: &str,
+    ) -> Option<(String, String, f32)> {
+        let payload = serde_json::json!({
+            "model": &self.backend.model,
+            "state": {
+                "task": task_text.chars().take(600).collect::<String>(),
+                "candidates": candidates_json.chars().take(30000).collect::<String>(),
+                "session": session_summary.chars().take(300).collect::<String>(),
+                "policy": policy,
+            },
+            "questions": {
+                "route_recommendation": {
+                    "type": "choice",
+                    "instructions": {
+                        "question": "Given this task and the candidate model profiles, which single model should handle this request?",
+                        "note": "Consider capability match, cost efficiency, reliability track record, context window fit, and quota availability. Recommend exactly one candidate id.",
+                    },
+                }
+            }
+        });
+        let resp = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::try_current().ok().and_then(|h| {
+                h.block_on(async {
+                    self.backend
+                        .client
+                        .post(&self.backend.endpoint)
+                        .bearer_auth(&self.backend.api_key)
+                        .timeout(Duration::from_secs(5))
+                        .json(&payload)
+                        .send()
+                        .await
+                        .ok()?
+                        .error_for_status()
+                        .ok()?
+                        .json::<serde_json::Value>()
+                        .await
+                        .ok()
+                })
+            })
+        })?;
+        let choice = resp
+            .pointer("/answers/route_recommendation/choice")
+            .and_then(|c| c.as_str())?
+            .to_string();
+        let confidence = resp
+            .pointer("/answers/route_recommendation/confidence")
+            .and_then(|c| c.as_f64())
+            .unwrap_or(0.5) as f32;
+        let reasoning = resp
+            .pointer("/answers/route_recommendation/reasoning")
+            .and_then(|r| r.as_str())
+            .unwrap_or("")
+            .to_string();
+        Some((choice, reasoning, confidence))
+    }
+}
+
+impl mr_core::types::RouteAdvisor for TypesafeBackend {
+    fn recommend(
+        &self,
+        task_summary: &str,
+        candidates_json: &str,
+        policy: &str,
+    ) -> Option<(String, f32)> {
+        self.recommend_route(task_summary, candidates_json, policy)
+    }
 }
