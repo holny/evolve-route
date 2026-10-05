@@ -9,6 +9,12 @@ pub struct Catalog {
 
 impl Catalog {
     pub fn from_records(models: Vec<ModelRecord>) -> Self {
+        let mut models = models;
+        for m in models.iter_mut() {
+            if m.currency.is_empty() {
+                m.currency = infer_currency(&m.provider).to_string();
+            }
+        }
         let index = models.iter().enumerate().map(|(i, m)| (m.id.clone(), i)).collect();
         Self { models, index }
     }
@@ -76,6 +82,11 @@ impl Catalog {
             }
         }
         models.extend(user);
+        for m in models.iter_mut() {
+            if m.currency.is_empty() {
+                m.currency = infer_currency(&m.provider).to_string();
+            }
+        }
         let index = models.iter().enumerate().map(|(i, m)| (m.id.clone(), i)).collect();
         Self { models, index }
     }

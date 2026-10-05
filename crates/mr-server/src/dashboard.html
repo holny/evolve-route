@@ -16,7 +16,7 @@ h1 { font-size:16px; margin-bottom:4px; }
 .card h2 { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
 .card h3 { font-size:11px; color:var(--dim); margin:10px 0 6px; }
 table { width:100%; border-collapse:collapse; font-size:12px; }
-th { color:var(--dim); text-align:left; font-weight:normal; padding:3px 6px; border-bottom:1px solid var(--border); }
+th { color:var(--dim); text-align:left; font-weight:normal; padding:3px 6px; border-bottom:1px solid var(--border); white-space:nowrap; }
 td { padding:3px 6px; border-bottom:1px solid #21262d; }
 td.num { text-align:right; font-variant-numeric:tabular-nums; }
 .badge { display:inline-block; padding:0 6px; border-radius:4px; font-size:11px; }
@@ -44,7 +44,7 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
     <div class="card">
       <h2>模型动态（有流量在前按流量排序，无流量按优先度）</h2>
       <table id="dyn"><thead>
-        <tr><th>模型</th><th>链路</th><th>请求(成功)</th><th>平均TTFT</th><th>最近耗时</th><th title="完成 tokens / ⚡缓存读(折扣命中) / ✎缓存写(计入计价)">tokens 出/⚡读/✎写</th><th>工具%</th></tr>
+        <tr><th>模型</th><th>链路</th><th>请求(成功)</th><th title="输入 tokens">入tok</th><th title="输出 tokens">出tok</th><th>平均TTFT</th><th>最近TTFT</th><th>平均耗时</th><th>最近耗时</th><th title="平均吐 token 速率（tokens/秒）">平均tok/s</th><th title="最近一次请求吐 token 速率（tokens/秒）">最近tok/s</th><th title="缓存读 tokens（折扣命中，不全价计费）">缓存读</th><th title="缓存写 tokens（计入计价）">缓存写</th><th>工具%</th></tr>
       </thead><tbody></tbody></table>
       <h3>冷却与配额窗口（上游限额头学习）</h3>
       <table id="health"><thead><tr><th>模型×key</th><th>状态</th><th>详情/冷却</th></tr></thead><tbody></tbody></table>
@@ -62,7 +62,7 @@ td.num { text-align:right; font-variant-numeric:tabular-nums; }
           <th title="学习偏置：该模型实际成功率相对目录中位数的比值（0.7-1.3），表现好自动上浮、翻车下沉">bias</th>
           <th title="传输成功率（≥5 个样本后显示）">成功率</th>
           <th title="缓存命中率 = 缓存 tokens ÷ prompt tokens">缓存%</th>
-          <th title="累计估算费用（按目录单价 × 累计 tokens）">费用$</th>
+          <th title="累计估算费用（按目录单价 × 累计 tokens，按厂商币种显示）">费用</th>
           <th title="飞轮样本量（请求数），学习项达到 5 个样本后才开始生效（冷启动保护）">样本</th>
           <th title="插件上报的工具执行反馈：ok/total（L4 最高精度信号）">反馈</th>
           <th title="最终权重 = 用户 weight × 学习偏置，开方软化后乘入评分——参与决策但非决定性">权重</th>
@@ -84,8 +84,8 @@ function addRow(e){
   const time = new Date().toLocaleTimeString('zh-CN', {hour12:false});
   const badge = (200<=e.status && e.status<300) ? 'ok' : 'dead';
   const tokens = fmtK(e.prompt_tokens ?? e.est_tokens) + '入 / ' + fmtK(e.completion_tokens ?? 0) + '出' +
-    (e.cached_tokens ? ' ⚡' + fmtK(e.cached_tokens) : '') +
-    (e.cache_write_tokens ? ' ✎' + fmtK(e.cache_write_tokens) : '');
+    (e.cached_tokens ? ' 缓存读' + fmtK(e.cached_tokens) : '') +
+    (e.cache_write_tokens ? ' 缓存写' + fmtK(e.cache_write_tokens) : '');
   const detail = esc(e.reason || '') +
     (e.funnel ? '<br>决策漏斗: ' + e.funnel.join(' → ') : '') +
     (e.filtered && e.filtered.length ? '<br>剔除: ' + e.filtered.map(function(f) { return esc(f.model + ' (' + f.cause + ')'); }).join('、 ') : '');
@@ -142,12 +142,19 @@ function renderDyn(){
     return `<tr><td title="${esc(id)}">${esc(id.length>34?id.slice(0,33)+'…':id)}</td>
       <td>${link}</td>
       <td class="num">${s.requests}(${s.success})</td>
+      <td class="num">${fmtK(s.prompt_tokens??0)}</td>
+      <td class="num">${fmtK(s.completion_tokens??0)}</td>
       <td class="num">${fmtMs(s.avg_ttft_ms)}</td>
+      <td class="num">${fmtMs(s.last_ttft_ms)}</td>
+      <td class="num">${fmtMs(s.avg_total_ms)}</td>
       <td class="num">${fmtMs(s.last_total_ms)}</td>
-      <td class="num">${fmtK(s.completion_tokens??0)}/⚡${fmtK(s.cached_tokens||0)}/✎${fmtK(s.cache_write_tokens||0)}</td>
+      <td class="num">${s.avg_rate_tok_s==null?'-':s.avg_rate_tok_s.toFixed(1)}</td>
+      <td class="num">${s.last_rate_tok_s==null?'-':s.last_rate_tok_s.toFixed(1)}</td>
+      <td class="num">${fmtK(s.cached_tokens||0)}</td>
+      <td class="num">${fmtK(s.cache_write_tokens||0)}</td>
       <td class="num">${toolRate}</td></tr>`;
   });
-  db.innerHTML = rows.join('') || '<tr><td colspan="7" style="color:var(--dim)">暂无流量</td></tr>';
+  db.innerHTML = rows.join('') || '<tr><td colspan="14" style="color:var(--dim)">暂无流量</td></tr>';
 }
 function renderHealthQuota(){
   const hb = document.querySelector('#health tbody');
@@ -183,7 +190,7 @@ function renderWheel(){
     const fb = s.feedback || {ok:0,total:0};
     const sr = s.success_rate==null ? '-' : Math.round(s.success_rate*100)+'%';
     const chr = s.cache_hit_rate==null ? '-' : Math.round(s.cache_hit_rate*100)+'%';
-    const cost = s.est_cost_usd==null ? '-' : '$'+s.est_cost_usd.toFixed(3);
+    const cost = fmtCost(s.est_cost, s.currency);
     return `<tr><td title="${esc(id)}">${esc(id.length>32?id.slice(0,31)+'…':id)}</td>
       <td class="num">${pct(bt.coding)}/${pct(bt.reasoning)}/${pct(bt.agentic)}</td>
       <td class="num">${t.reliability==null?'-':t.reliability.toFixed(2)}</td>

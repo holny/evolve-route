@@ -112,6 +112,7 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/api/stats", axum::routing::get(crate::meta::api_stats))
         .route("/api/feedback", axum::routing::post(crate::meta::api_feedback))
         .route("/api/quota", axum::routing::get(crate::meta::api_quota))
+        .route("/api/events", axum::routing::get(crate::meta::api_events))
         .route("/api/benchmarks", axum::routing::get(crate::meta::api_benchmarks))
         .route("/api/stream", axum::routing::get(crate::meta::api_stream))
         .route("/", axum::routing::get(crate::meta::dashboard))

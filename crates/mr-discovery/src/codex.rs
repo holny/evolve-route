@@ -57,7 +57,7 @@ pub fn discover_from_text(text: &str) -> anyhow::Result<Vec<ModelRecord>> {
                 id: format!("codex/{model}"),
                 provider: format!("codex-{provider_id}"),
                 plan: false,
-                currency: String::new(),
+                currency: mr_core::types::infer_currency(&format!("codex-{provider_id}")).to_string(),
                 protocol: Protocol::OpenAI,
                 base_url,
                 api_key_env: None,

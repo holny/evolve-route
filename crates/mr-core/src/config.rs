@@ -226,7 +226,8 @@ impl FileConfig {
             tiers: entry.tiers,
             tiers_explicit: entry.tiers != Tiers::default(),
             plan: entry.plan.unwrap_or(false),
-            currency: entry.currency.clone().unwrap_or_else(|| mr_infer_currency(&entry.provider).to_string()),
+            currency: entry.currency.clone().filter(|c| !c.is_empty())
+                .unwrap_or_else(|| mr_infer_currency(&entry.provider).to_string()),
             speed_tier: entry.speed_tier,
             weight: entry.weight,
             source: Source::User,

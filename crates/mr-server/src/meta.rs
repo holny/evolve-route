@@ -201,10 +201,11 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                 "last_seen_ms": (s.last_seen_ms > 0).then_some(s.last_seen_ms),
                 "last_total_ms": (s.last_total_ms > 0).then_some(s.last_total_ms),
                 "last_ttft_ms": (s.last_ttft_ms > 0).then_some(s.last_ttft_ms),
-                // 平均吐字速率：完成 tokens ÷ 生成窗口（总耗时-TTFT 累计）
+                // 平均吐字速率：完成 tokens ÷ 生成窗口（总耗时-TTFT 累计）；
+                // f64 域取整避免 f32 序列化毛刺
                 "avg_rate_tok_s": (s.total_ms_sum > s.ttft_ms_sum).then(|| {
                     let gen_s = (s.total_ms_sum - s.ttft_ms_sum) as f32 / 1000.0;
-                    ((s.completion_tokens as f32 / gen_s) * 10.0).round() / 10.0
+                    ((s.completion_tokens as f64 / gen_s as f64) * 10.0).round() / 10.0
                 }),
                 "last_rate_tok_s": (s.last_rate_tok_s > 0).then_some(s.last_rate_tok_s),
                 "telemetry": t,
@@ -252,6 +253,40 @@ pub async fn api_benchmarks(State(st): State<AppState>) -> Response {
         models.insert(id, json!({ "tiers": tiers, "confidence": conf }));
     }
     (axum::Json(json!({ "sources": snapshot, "applied": models }))).into_response()
+}
+
+/// Recent routing events for the dashboard decision feed.
+pub async fn api_events(
+    State(st): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let limit: usize = params
+        .get("limit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
+    let dir = shellexpand_dir(&st.config.data.dir);
+    let path = dir.join("events.jsonl");
+    let mut events = Vec::new();
+    if let Ok(content) = tokio::fs::read_to_string(&path).await {
+        for line in content.lines().rev() {
+            if events.len() >= limit { break; }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                events.push(v);
+            }
+        }
+        events.reverse(); // oldest first, so prepend works for feed
+    }
+    (axum::Json(serde_json::Value::Array(events))).into_response()
+}
+
+fn shellexpand_dir(dir: &str) -> std::path::PathBuf {
+    if dir.starts_with("~/") {
+        std::env::var("HOME")
+            .map(|h| std::path::PathBuf::from(h).join(&dir[2..]))
+            .unwrap_or_else(|_| std::path::PathBuf::from(dir))
+    } else {
+        std::path::PathBuf::from(dir)
+    }
 }
 
 /// Quota windows learned from upstream rate-limit headers.

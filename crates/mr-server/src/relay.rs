@@ -301,6 +301,7 @@ pub async fn chat_completions(
                     "scores": decision.scores,
                     "difficulty_eff": decision.difficulty_eff,
                     "filtered": decision.filtered,
+                    "funnel": decision.funnel,
                 });
                 if cross {
                     ex["translated"] = json!("anthropic->openai");

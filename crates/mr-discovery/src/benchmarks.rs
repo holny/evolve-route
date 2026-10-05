@@ -507,7 +507,7 @@ mod tests {
 #[cfg(test)]
 mod umbrella_tests {
     use super::*;
-    use crate::alias;
+    
     use mr_core::types::{ModelRecord, Tiers};
     use std::collections::HashMap;
 

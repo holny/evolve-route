@@ -116,7 +116,7 @@ impl Default for ModelRecord {
 /// 国内厂商按人民币计价；其余默认美元（可被配置显式覆盖）
 pub fn infer_currency(provider: &str) -> &'static str {
     let p = provider.to_lowercase();
-    for cn in ["zhipu", "deepseek", "minimax", "volces", "ark", "moonshot", "kimi",
+    for cn in ["zhipu", "deepseek", "minimax", "volces", "volcengine", "ark", "moonshot", "kimi",
                "qwen", "dashscope", "alibaba", "baidu", "ernie", "tencent", "hunyuan",
                "stepfun", "01ai", "baichuan", "sensetime", "doubao"] {
         if p.contains(cn) {
@@ -446,4 +446,24 @@ pub trait RouteAdvisor: Send + Sync {
         candidates_json: &str,
         policy: &str,
     ) -> Option<(String, f32)>;
+}
+
+#[cfg(test)]
+mod currency_tests {
+    use super::infer_currency;
+
+    #[test]
+    fn cn_vendors_bill_in_cny() {
+        for p in ["zhipuai-coding-plan", "volcengine-coding-plan", "volces",
+                  "deepseek", "MiniMax", "moonshot"] {
+            assert_eq!(infer_currency(p), "CNY", "{p} 应计人民币");
+        }
+    }
+
+    #[test]
+    fn international_vendors_bill_in_usd() {
+        for p in ["opencode-go", "openai", "anthropic", "zen"] {
+            assert_eq!(infer_currency(p), "USD", "{p} 应计美元");
+        }
+    }
 }

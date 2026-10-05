@@ -219,7 +219,7 @@ fn extract_models(root: &Value) -> Vec<ModelRecord> {
                 },
                 tiers_explicit: false,
                 plan: false,
-                currency: String::new(),
+                currency: mr_core::types::infer_currency(provider_id).to_string(),
                 speed_tier: 0.6,
                 weight: None,
                 source: Source::Discovered,

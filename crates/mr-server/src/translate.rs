@@ -361,7 +361,7 @@ mod tests {
         }
         assert!(collected.contains("\"content\""), "content deltas mapped: {collected}");
         assert!(collected.contains("finish_reason"), "finish mapped");
-        assert!(collected.contains("data: [DONE]") || collected.contains("[DONE]") == false);
+        assert!(collected.contains("data: [DONE]") || !collected.contains("[DONE]"));
         // determinism: same input twice → byte-identical output
         let mut s2 = StreamTranslationState::default();
         let mut collected2 = String::new();

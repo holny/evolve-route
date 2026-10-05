@@ -561,7 +561,7 @@ mod tests {
 
 #[cfg(test)]
 mod health_tests {
-    use super::tests::{digest, input};
+    use super::tests::input;
     use super::*;
     use std::collections::HashMap;
 
@@ -630,8 +630,7 @@ mod explore_tests {
 
     #[test]
     fn explore_ratio_one_always_tries_runner_up() {
-        let mut policy = PolicyCfg::default();
-        policy.explore_ratio = 1.0;
+        let policy = PolicyCfg { explore_ratio: 1.0, ..Default::default() };
         let e = Engine::new(catalog3(), policy, Box::new(crate::heuristic::HeuristicJudge));
         let d = digest("你好");
         let h = HealthMap::new();
@@ -642,13 +641,12 @@ mod explore_tests {
 
     #[test]
     fn exploration_skipped_on_high_stakes() {
-        let mut policy = PolicyCfg::default();
-        policy.explore_ratio = 1.0;
+        let policy = PolicyCfg { explore_ratio: 1.0, ..Default::default() };
         let e = Engine::new(catalog3(), policy, Box::new(crate::heuristic::HeuristicJudge));
         let text = "生产环境的支付流程迁移，涉及资金安全";
         let mut d = digest(text);
         d.first_user_text = text.into();
-        let mut h = HealthMap::new();
+        let h = HealthMap::new();
         let mut inp = input(text, 20_000, &d, None, &h);
         inp.policy = None;
         // 高危请求永不探索（heuristic 对支付/生产词表会给出 high_stakes）
@@ -659,8 +657,7 @@ mod explore_tests {
 
     #[test]
     fn explore_zero_disables() {
-        let mut policy = PolicyCfg::default();
-        policy.explore_ratio = 0.0;
+        let policy = PolicyCfg { explore_ratio: 0.0, ..Default::default() };
         let e = Engine::new(catalog3(), policy, Box::new(crate::heuristic::HeuristicJudge));
         let d = digest("你好");
         let h = HealthMap::new();
@@ -696,7 +693,7 @@ mod unknown_window_tests {
 
     #[test]
     fn unknown_window_filtered_without_proof() {
-        let d = digest("你好");
+        let _d = digest("你好");
         let dec = decide_tel("你好", 500, &TelemetrySnapshot::new());
         assert!(dec
             .filtered
@@ -708,7 +705,7 @@ mod unknown_window_tests {
     fn proven_bound_lets_small_requests_through() {
         let mut tel = TelemetrySnapshot::new();
         tel.insert("mini".into(), ModelTelemetry { max_accepted: Some(5_000), ..Default::default() });
-        let d = digest("你好");
+        let _d = digest("你好");
         let dec = decide_tel("你好", 500, &tel);
         assert_eq!(dec.chosen, "mini", "proven bound admits small request; reason: {}", dec.reason);
     }
@@ -719,7 +716,7 @@ mod unknown_window_tests {
         let d = digest("你好");
         let mut tel = TelemetrySnapshot::new();
         tel.insert("mini".into(), ModelTelemetry { max_accepted: Some(1_000), ..Default::default() });
-        let mut h = HealthMap::new();
+        let h = HealthMap::new();
         // est 20_000 * 1.1 = 22_000 > proven 1_000 -> filtered
         let mut inp = input("你好", 20_000, &d, None, &h);
         inp.telemetry = &tel;
