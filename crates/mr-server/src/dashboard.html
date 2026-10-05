@@ -2,177 +2,260 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<title>ModelRoute 面板</title>
+<title>ModelRoute</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root { --bg:#0d1117; --card:#161b22; --border:#30363d; --fg:#c9d1d9; --dim:#8b949e;
         --green:#3fb950; --red:#f85149; --amber:#d29922; --blue:#58a6ff; }
 * { box-sizing:border-box; margin:0; padding:0; }
-body { background:var(--bg); color:var(--fg); font:13px/1.5 -apple-system,"PingFang SC",sans-serif; padding:16px; }
-h1 { font-size:16px; margin-bottom:4px; }
-.sub { color:var(--dim); font-size:12px; margin-bottom:14px; }
-.grid { display:grid; grid-template-columns: 1fr 1.4fr; gap:14px; align-items:start; }
-.card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px; }
+body { background:var(--bg); color:var(--fg); font:13px/1.5 -apple-system,"PingFang SC","Helvetica Neue",sans-serif; padding:16px 20px; }
+.topbar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+.topbar h1 { font-size:17px; }
+.sub { color:var(--dim); font-size:12px; display:flex; align-items:center; gap:6px; }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--amber); display:inline-block; }
+.dot.ok { background:var(--green); } .dot.err { background:var(--red); }
+.chips { display:flex; gap:8px; flex-wrap:wrap; margin-left:auto; }
+.chip { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:2px 10px; font-size:12px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.chip b { color:var(--fg); font-weight:normal; }
+.lang-sel { background:var(--card); color:var(--fg); border:1px solid var(--border); border-radius:12px; padding:3px 8px; font-size:12px; cursor:pointer; }
+.grid { display:grid; grid-template-columns: minmax(300px,1fr) 2.2fr; gap:14px; align-items:start; }
+@media (max-width:1100px){ .grid { grid-template-columns:1fr; } }
+.card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:14px; }
 .card h2 { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
-.card h3 { font-size:11px; color:var(--dim); margin:10px 0 6px; }
+.card h2 .note { text-transform:none; letter-spacing:0; opacity:.75; margin-left:6px; }
+.card h3 { font-size:11px; color:var(--dim); margin:12px 0 6px; }
 table { width:100%; border-collapse:collapse; font-size:12px; }
-th { color:var(--dim); text-align:left; font-weight:normal; padding:3px 6px; border-bottom:1px solid var(--border); white-space:nowrap; }
-td { padding:3px 6px; border-bottom:1px solid #21262d; }
-td.num { text-align:right; font-variant-numeric:tabular-nums; }
+th { color:var(--dim); text-align:left; font-weight:normal; padding:4px 6px; border-bottom:1px solid var(--border); white-space:nowrap; vertical-align:bottom; }
+td { padding:4px 6px; border-bottom:1px solid #21262d; vertical-align:top; }
+tbody tr:hover { background:#1c2129; }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.dim2 { color:var(--dim); font-size:11px; }
 .badge { display:inline-block; padding:0 6px; border-radius:4px; font-size:11px; }
 .badge.dead { background:#3d1618; color:var(--red); }
 .badge.ok   { background:#12261e; color:var(--green); }
-#feed { max-height:380px; overflow-y:auto; }
-.feed-row { display:flex; gap:8px; padding:4px 0; border-bottom:1px solid #21262d; font-variant-numeric:tabular-nums; }
-.feed-row .t { color:var(--dim); min-width:64px; }
-.feed-row .m { color:var(--blue); min-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#feed { max-height:520px; overflow-y:auto; }
+.feed-row { display:flex; gap:8px; padding:4px 0; border-bottom:1px solid #21262d; font-variant-numeric:tabular-nums; cursor:pointer; align-items:baseline; }
+.feed-row:hover { background:#1c2129; }
+.feed-row .t { color:var(--dim); min-width:60px; font-size:11px; }
+.feed-row .m { color:var(--blue); min-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.feed-row .tk { font-size:11px; color:var(--dim); }
 .feed-row .ms { margin-left:auto; color:var(--dim); }
 .pill { border-radius:10px; padding:0 8px; font-size:11px; }
+.feed-detail { padding:4px 12px; color:var(--dim); font-size:11px; border-left:2px solid var(--border); margin:2px 0 4px 8px; }
 </style>
 </head>
 <body>
-<h1>ModelRoute 路由面板</h1>
-<div class="sub">本地智能路由网关 · <span id="sse-status">SSE 连接中…</span></div>
-<div class="grid">
+<header class="topbar">
   <div>
-    <div class="card">
-      <h2>实时决策流</h2>
-      <div id="feed"></div>
-    </div>
+    <h1 data-i18n="title">ModelRoute 路由面板</h1>
+    <div class="sub"><span class="dot" id="sse-dot"></span><span id="sse-status" data-i18n="sse_conn">SSE 连接中…</span></div>
   </div>
+  <div class="chips" id="chips"></div>
+  <select class="lang-sel" id="lang-sel"></select>
+</header>
+<main class="grid">
+  <section class="card">
+    <h2 data-i18n="feed">实时决策流</h2>
+    <div id="feed"></div>
+  </section>
   <div>
-    <div class="card">
-      <h2>模型动态（有流量在前按流量排序，无流量按优先度）</h2>
-      <table id="dyn"><thead>
-        <tr><th>模型</th><th>链路</th><th>请求(成功)</th><th title="输入 tokens">入tok</th><th title="输出 tokens">出tok</th><th>平均TTFT</th><th>最近TTFT</th><th>平均耗时</th><th>最近耗时</th><th title="平均吐 token 速率（tokens/秒）">平均tok/s</th><th title="最近一次请求吐 token 速率（tokens/秒）">最近tok/s</th><th title="缓存读 tokens（折扣命中，不全价计费）">缓存读</th><th title="缓存写 tokens（计入计价）">缓存写</th><th>工具%</th></tr>
-      </thead><tbody></tbody></table>
-      <h3>冷却与配额窗口（上游限额头学习）</h3>
-      <table id="health"><thead><tr><th>模型×key</th><th>状态</th><th>详情/冷却</th></tr></thead><tbody></tbody></table>
-      <table id="quota" style="margin-top:8px"><thead><tr><th>模型×key</th><th>窗口</th><th>剩余</th><th>重置</th></tr></thead><tbody></tbody></table>
-    </div>
-    <div class="card">
-      <h2>飞轮 · 经验学习与自进化（参与路由决策的因素）</h2>
-      <table id="wheel"><thead>
-        <tr>
-          <th>模型</th>
-          <th title="榜单能力分（coding/reasoning/agentic，0-100%）：来自内置策展快照或配置的外部榜单源（LMArena/SWE-bench/LiveBench 等），经别名置信度匹配后作为路由决策的能力先验">榜单c/r/a</th>
-          <th title="实测可靠性 = 传输成功率 × 工具调用质量，再按会话语义确认与插件反馈融合（0-1，越高越可信）">rel</th>
-          <th title="token 校准系数：实际 prompt tokens ÷ 估算值（≥5 个样本后学习），用于上下文窗口硬约束，防撑爆">calib</th>
-          <th title="实测速度分（0-1）：由真实请求的平均总耗时对数衰减得出，与目录先验按 7:3 混合">speed</th>
-          <th title="学习偏置：该模型实际成功率相对目录中位数的比值（0.7-1.3），表现好自动上浮、翻车下沉">bias</th>
-          <th title="传输成功率（≥5 个样本后显示）">成功率</th>
-          <th title="缓存命中率 = 缓存 tokens ÷ prompt tokens">缓存%</th>
-          <th title="累计估算费用（按目录单价 × 累计 tokens，按厂商币种显示）">费用</th>
-          <th title="飞轮样本量（请求数），学习项达到 5 个样本后才开始生效（冷启动保护）">样本</th>
-          <th title="插件上报的工具执行反馈：ok/total（L4 最高精度信号）">反馈</th>
-          <th title="最终权重 = 用户 weight × 学习偏置，开方软化后乘入评分——参与决策但非决定性">权重</th>
-        </tr>
-      </thead><tbody></tbody></table>
-    </div>
+    <section class="card">
+      <h2><span data-i18n="dyn">模型动态</span><span class="note" data-i18n="dyn_note">有流量在前按流量排序，无流量按优先度</span></h2>
+      <table id="dyn"><thead></thead><tbody></tbody></table>
+      <h3 data-i18n="health">冷却与配额窗口（上游限额头学习）</h3>
+      <table id="health"><thead></thead><tbody></tbody></table>
+      <table id="quota" style="margin-top:8px"><thead></thead><tbody></tbody></table>
+    </section>
+    <section class="card">
+      <h2 data-i18n="wheel">飞轮 · 经验学习与自进化（参与路由决策的因素）</h2>
+      <table id="wheel"><thead></thead><tbody></tbody></table>
+    </section>
   </div>
-</div>
+</main>
 <script>
+const LANGS = ['zh','en','ko','ja','es','fr'];
+let lang = localStorage.getItem('mr-lang');
+if (!LANGS.includes(lang)) lang = 'zh';
+const LOCALE = {zh:'zh-CN', en:'en-US', ko:'ko-KR', ja:'ja-JP', es:'es-ES', fr:'fr-FR'};
+
+const T = {
+  title:     {zh:'ModelRoute 路由面板', en:'ModelRoute Dashboard', ko:'ModelRoute 대시보드', ja:'ModelRoute ダッシュボード', es:'Panel de ModelRoute', fr:'Tableau de bord ModelRoute'},
+  sse_conn:  {zh:'SSE 连接中…', en:'SSE connecting…', ko:'SSE 연결 중…', ja:'SSE 接続中…', es:'Conectando SSE…', fr:'Connexion SSE…'},
+  sse_ok:    {zh:'SSE 已连接', en:'SSE connected', ko:'SSE 연결됨', ja:'SSE 接続済み', es:'SSE conectado', fr:'SSE connecté'},
+  sse_retry: {zh:'SSE 重连中…', en:'SSE reconnecting…', ko:'SSE 재연결 중…', ja:'SSE 再接続中…', es:'Reconectando SSE…', fr:'Reconnexion SSE…'},
+  feed:      {zh:'实时决策流', en:'Live decisions', ko:'실시간 결정 스트림', ja:'リアルタイム決定ストリーム', es:'Flujo de decisiones', fr:'Flux de décisions'},
+  dyn:       {zh:'模型动态', en:'Model activity', ko:'모델 동향', ja:'モデル動向', es:'Actividad de modelos', fr:'Activité des modèles'},
+  dyn_note:  {zh:'有流量在前按流量排序，无流量按优先度', en:'with traffic first by reqs, then by priority', ko:'트래픽 있는 모델이 앞(요청 수순), 없으면 우선순위순', ja:'トラフィックありを先にリクエスト数順、なしは優先度順', es:'con tráfico primero por solicitudes, luego por prioridad', fr:'avec trafic d\'abord par requêtes, puis par priorité'},
+  health:    {zh:'冷却与配额窗口（上游限额头学习）', en:'Cooldowns & quota windows (from rate-limit headers)', ko:'쿨다운 및 쿼터 윈도우(레이트 리밋 헤더 학습)', ja:'クールダウンとクォータ窓（レート制限ヘッダー学習）', es:'Enfriamientos y ventanas de cuota (cabeceras de límite)', fr:'Refroidissements et fenêtres de quota (en-têtes de limite)'},
+  wheel:     {zh:'飞轮 · 经验学习与自进化（参与路由决策的因素）', en:'Flywheel · learned signals that feed routing', ko:'플라이휠 · 경험 학습과 자기 진화(라우팅 판단에 참여)', ja:'フライホイール · 経験学習と自己進化（ルーティング判断に参与）', es:'Volante · aprendizaje que alimenta el enrutamiento', fr:'Volant · apprentissage nourrissant le routage'},
+  noflow:    {zh:'暂无流量', en:'no traffic yet', ko:'트래픽 없음', ja:'トラフィックなし', es:'sin tráfico aún', fr:'pas de trafic'},
+  allnormal: {zh:'全部正常（无异常记录）', en:'all normal (no incidents)', ko:'모두 정상(이상 기록 없음)', ja:'すべて正常（異常記録なし）', es:'todo normal (sin incidentes)', fr:'tout est normal (aucun incident)'},
+  noquota:   {zh:'尚未观测到限额头', en:'no rate-limit headers observed yet', ko:'아직 레이트 리밋 헤더 관찰 안 됨', ja:'まだレート制限ヘッダーは観測なし', es:'aún sin cabeceras de límite', fr:'pas encore d\'en-têtes de limite'},
+  wheelcold: {zh:'飞轮经验积累中…', en:'flywheel warming up…', ko:'플라이휠 경험 축적 중…', ja:'フライホイール経験蓄積中…', es:'volante acumulando experiencia…', fr:'volant en accumulation d\'expérience…'},
+  funnel:    {zh:'决策漏斗', en:'funnel', ko:'결정 퍼널', ja:'決定ファネル', es:'embudo de decisión', fr:'entonnoir de décision'},
+  filtered:  {zh:'剔除', en:'filtered out', ko:'제외', ja:'除外', es:'filtrados', fr:'filtrés'},
+  translated:{zh:'协议翻译', en:'protocol translated', ko:'프로토콜 번역', ja:'プロトコル翻訳', es:'protocolo traducido', fr:'protocole traduit'},
+  skipped:   {zh:'降级链', en:'fallback chain', ko:'폴백 체인', ja:'フォールバック連鎖', es:'cadena de reserva', fr:'chaîne de repli'},
+  c_model:  {zh:'模型', en:'Model', ko:'모델', ja:'モデル', es:'Modelo', fr:'Modèle'},
+  c_link:   {zh:'链路', en:'Link', ko:'링크', ja:'リンク', es:'Enlace', fr:'Lien'},
+  c_reqs:   {zh:'请求(成功)', en:'Reqs(ok)', ko:'요청(성공)', ja:'リクエスト(成功)', es:'Solicitudes(ok)', fr:'Requêtes(ok)'},
+  c_tokens: {zh:'Tokens 入/出/缓存读/缓存写', en:'Tokens in/out/c.read/c.write', ko:'토큰 입/출/캐시읽/캐시쓰', ja:'トークン 入/出/ｷｬｯｼｭ読/書', es:'Tokens ent/sal/lee/esc', fr:'Jetons entr/sor/lect/éc',
+    _t:{zh:'输入 / 输出 / 缓存读(折扣命中) / 缓存写(计入计价)', en:'prompt / completion / cache read (discounted) / cache write (billed)', ko:'입력 / 출력 / 캐시 읽기(할인) / 캐시 쓰기(과금)', ja:'入力 / 出力 / キャッシュ読み(割引) / キャッシュ書き(課金)', es:'entrada / salida / lectura caché (descuento) / escritura caché (facturada)', fr:'entrée / sortie / lecture cache (remise) / écriture cache (facturée)'}},
+  c_ttft:   {zh:'TTFT 均/近', en:'TTFT avg/last', ko:'TTFT 평균/최근', ja:'TTFT 平均/最新', es:'TTFT prom/últ', fr:'TTFT moy/dern',
+    _t:{zh:'首字延迟：平均 / 最近', en:'time-to-first-token: avg / last', ko:'첫 토큰 지연: 평균 / 최근', ja:'初トークン遅延: 平均 / 最新', es:'tiempo al primer token: prom/últ', fr:'délai au 1er jeton: moy/dern'}},
+  c_lat:    {zh:'耗时 均/近', en:'Latency avg/last', ko:'지연 평균/최근', ja:'レイテンシ 平均/最新', es:'Latencia prom/últ', fr:'Latence moy/dern',
+    _t:{zh:'总耗时：平均 / 最近', en:'total latency: avg / last', ko:'총 지연: 평균 / 최근', ja:'合計時間: 平均 / 最新', es:'latencia total: prom/últ', fr:'latence totale: moy/dern'}},
+  c_rate:   {zh:'tok/s 均/近', en:'tok/s avg/last', ko:'tok/s 평균/최근', ja:'tok/s 平均/最新', es:'tok/s prom/últ', fr:'tok/s moy/dern',
+    _t:{zh:'吐 token 速率：平均 / 最近（完成 tokens ÷ 生成窗口）', en:'generation speed: avg / last (completion tokens ÷ gen window)', ko:'토큰 생성 속도: 평균 / 최근(완료 토큰 ÷ 생성 구간)', ja:'トークン生成速度: 平均 / 最新（完成 ÷ 生成窓）', es:'velocidad: prom/últ (tokens ÷ ventana gen)', fr:'vitesse: moy/dern (jetons ÷ fenêtre gén)'}},
+  c_cache:  {zh:'缓存%', en:'Cache%', ko:'캐시%', ja:'ｷｬｯｼｭ%', es:'Caché%', fr:'Cache%',
+    _t:{zh:'缓存命中率 = 缓存 tokens ÷ prompt tokens', en:'cache hit rate = cached ÷ prompt tokens', ko:'캐시 적중률 = 캐시 토큰 ÷ 프롬프트 토큰', ja:'命中率 = キャッシュ ÷ プロンプトトークン', es:'tasa de acierto = caché ÷ prompt', fr:'taux de succès = cache ÷ prompt'}},
+  c_tools:  {zh:'工具%', en:'Tools%', ko:'도구%', ja:'ツール%', es:'Herram%', fr:'Outils%',
+    _t:{zh:'工具调用 valid_json 占比', en:'tool calls with valid JSON', ko:'도구 호출 valid_json 비율', ja:'ツール呼び出し valid_json 比率', es:'llamadas con JSON válido', fr:'appels avec JSON valide'}},
+  c_mk:     {zh:'模型×key', en:'Model×key', ko:'모델×키', ja:'モデル×キー', es:'Modelo×key', fr:'Modèle×clé'},
+  c_status: {zh:'状态', en:'Status', ko:'상태', ja:'状態', es:'Estado', fr:'État'},
+  c_detail: {zh:'详情/冷却', en:'Detail/Cooldown', ko:'상세/쿨다운', ja:'詳細/クールダウン', es:'Detalle/Enfriamiento', fr:'Détail/Refroidissement'},
+  c_window: {zh:'窗口', en:'Window', ko:'윈도우', ja:'ウィンドウ', es:'Ventana', fr:'Fenêtre'},
+  c_remain: {zh:'剩余', en:'Remaining', ko:'잔여', ja:'残り', es:'Restante', fr:'Restant'},
+  c_reset:  {zh:'重置', en:'Reset', ko:'리셋', ja:'リセット', es:'Reinicio', fr:'Réinitialisation'},
+  available:{zh:'可用', en:'available', ko:'사용 가능', ja:'利用可能', es:'disponible', fr:'disponible'},
+  w_bench:  {zh:'榜单c/r/a', en:'Bench c/r/a', ko:'벤치 c/r/a', ja:'指標 c/r/a', es:'Bench c/r/a', fr:'Bench c/r/a',
+    _t:{zh:'榜单能力分（coding/reasoning/agentic，0-100%）：内置策展或外部榜单源，经别名置信度匹配后作为能力先验', en:'benchmark tiers (coding/reasoning/agentic) used as capability prior', ko:'벤치마크 능력 점수(coding/reasoning/agentic) — 라우팅 능력 사전으로 사용', ja:'ベンチマーク能力スコア（coding/reasoning/agentic）— 能力事前値', es:'niveles de benchmark (coding/reasoning/agentic) como prior', fr:'niveaux de benchmark (coding/reasoning/agentic) comme a priori'}},
+  w_rel:    {zh:'rel', en:'rel', ko:'rel', ja:'rel', es:'rel', fr:'rel',
+    _t:{zh:'实测可靠性 = 传输成功率 × 工具调用质量，再按会话确认与插件反馈融合（0-1）', en:'observed reliability (0-1)', ko:'측정 신뢰성(0-1): 전송 성공률 × 도구 품질, 세션·플러그인 피드백 융합', ja:'実測信頼性(0-1): 転送成功率 × ツール品質、セッション確認と融合', es:'fiabilidad observada (0-1)', fr:'fiabilité observée (0-1)'}},
+  w_calib:  {zh:'calib', en:'calib', ko:'calib', ja:'calib', es:'calib', fr:'calib',
+    _t:{zh:'token 校准系数：实际 prompt tokens ÷ 估算值（≥5 样本后学习），用于上下文窗口硬约束', en:'token calibration factor (actual ÷ estimated prompt tokens)', ko:'토큰 보정 계수: 실제 ÷ 추정 프롬프트 토큰(≥5 샘플), 컨텍스트 윈도우 제약용', ja:'トークン較正係数: 実際 ÷ 推定（≥5サンプル）、コンテキスト窓の硬制約用', es:'factor de calibración de tokens (real ÷ estimado)', fr:'facteur de calibrage des jetons (réel ÷ estimé)'}},
+  w_speed:  {zh:'speed', en:'speed', ko:'speed', ja:'speed', es:'speed', fr:'speed',
+    _t:{zh:'实测速度分（0-1）：真实请求平均总耗时对数衰减，与目录先验 7:3 混合', en:'observed speed score (0-1) from real latencies', ko:'측정 속도 점수(0-1): 실제 평균 지연의 로그 감쇠, 카탈로그 사전과 7:3 혼합', ja:'実測速度スコア(0-1): 実リクエスト平均時間の対数減衰、カタログと7:3混合', es:'puntuación de velocidad (0-1) de latencias reales', fr:'score de vitesse (0-1) à partir de latences réelles'}},
+  w_bias:   {zh:'bias', en:'bias', ko:'bias', ja:'bias', es:'bias', fr:'bias',
+    _t:{zh:'学习偏置：实际成功率相对目录中位数比值（0.7-1.3），表现好上浮、翻车下沉', en:'learned bias vs catalog median success (0.7-1.3)', ko:'학습 편향: 실제 성공률 ÷ 카탈로그 중앙값(0.7-1.3)', ja:'学習バイアス: 実成功率 ÷ カタログ中央値(0.7-1.3)', es:'sesgo aprendido vs mediana del catálogo (0.7-1.3)', fr:'biais appris vs médiane du catalogue (0.7-1.3)'}},
+  w_sr:     {zh:'成功率', en:'Succ%', ko:'성공률', ja:'成功率', es:'Éxito%', fr:'Succ%',
+    _t:{zh:'传输成功率（≥5 样本后显示）', en:'transport success rate (≥5 samples)', ko:'전송 성공률(≥5 샘플)', ja:'転送成功率（≥5サンプル）', es:'tasa de éxito (≥5 muestras)', fr:'taux de succès (≥5 échantillons)'}},
+  w_cache:  {zh:'缓存%', en:'Cache%', ko:'캐시%', ja:'ｷｬｯｼｭ%', es:'Caché%', fr:'Cache%',
+    _t:{zh:'缓存命中率 = 缓存 tokens ÷ prompt tokens', en:'cache hit rate = cached ÷ prompt tokens', ko:'캐시 적중률 = 캐시 토큰 ÷ 프롬프트 토큰', ja:'命中率 = キャッシュ ÷ プロンプトトークン', es:'tasa de acierto = caché ÷ prompt', fr:'taux de succès = cache ÷ prompt'}},
+  w_cost:   {zh:'费用', en:'Cost', ko:'비용', ja:'費用', es:'Coste', fr:'Coût',
+    _t:{zh:'累计估算费用（目录单价 × 累计 tokens，按厂商币种）', en:'cumulative estimated cost (catalog price × tokens, vendor currency)', ko:'누적 추정 비용(카탈로그 단가 × 누적 토큰, 벤더 통화)', ja:'累計推定費用（カタログ単価 × 累計トークン、ベンダー通貨）', es:'coste estimado acumulado (precio × tokens, moneda del proveedor)', fr:'coût estimé cumulé (prix × jetons, devise du fournisseur)'}},
+  w_samples:{zh:'样本', en:'Samples', ko:'샘플', ja:'サンプル', es:'Muestras', fr:'Échant.',
+    _t:{zh:'飞轮样本量（请求数），学习项达 5 样本后生效（冷启动保护）', en:'flywheel sample size; learning kicks in at 5', ko:'플라이휠 샘플 수(요청 수), 학습은 5 샘플부터(콜드스타트 보호)', ja:'サンプル数（リクエスト数）、学習は5サンプルから（コールドスタート保護）', es:'muestras del volante; el aprendizaje inicia en 5', fr:'échantillons du volant; l\'apprentissage démarre à 5'}},
+  w_fb:     {zh:'反馈', en:'Feedback', ko:'피드백', ja:'フィードバック', es:'Feedback', fr:'Retour',
+    _t:{zh:'插件上报的工具执行反馈 ok/total（L4 最高精度信号）', en:'plugin-reported tool feedback ok/total (L4)', ko:'플러그인 보고 도구 실행 피드백 ok/total(L4 최고 정밀 신호)', ja:'プラグイン報告のツール実行フィードバック ok/total（L4）', es:'feedback de herramientas del plugin ok/total (L4)', fr:'retour d\'exécution des outils du plugin ok/total (L4)'}},
+  w_weight: {zh:'权重', en:'Weight', ko:'가중치', ja:'重み', es:'Peso', fr:'Poids',
+    _t:{zh:'最终权重 = 用户 weight × 学习偏置，开方软化后乘入评分', en:'final weight = user weight × learned bias, sqrt-softened into score', ko:'최종 가중치 = 사용자 weight × 학습 편향, 제곱근 완화 후 점수에 곱', ja:'最終重み = ユーザーweight × 学習バイアス、平方根緩和してスコアに乗算', es:'peso final = peso usuario × sesgo, suavizado con raíz', fr:'poids final = poids utilisateur × biais, adouci par racine'}},
+  chip_reqs:  {zh:'请求', en:'reqs', ko:'요청', ja:'リクエスト', es:'solicitudes', fr:'requêtes'},
+  chip_cost:  {zh:'累计费用', en:'cost', ko:'누적 비용', ja:'累計費用', es:'coste', fr:'coût'},
+  chip_active:{zh:'活跃模型', en:'active', ko:'활성 모델', ja:'アクティブ', es:'activos', fr:'actifs'},
+  s_in:   {zh:'入', en:' in', ko:'입', ja:'入', es:' ent', fr:' entr'},
+  s_out:  {zh:'出', en:' out', ko:'출', ja:'出', es:' sal', fr:' sor'},
+  s_read: {zh:'读', en:'r', ko:'읽', ja:'読', es:'lee', fr:'lect'},
+  s_write:{zh:'写', en:'w', ko:'쓰', ja:'書', es:'esc', fr:'éc'},
+};
+const t = k => (T[k] && (T[k][lang] ?? T[k].zh)) ?? k;
+
 const feed = document.getElementById('feed');
-function fmt(n){ return n==null ? '-' : n; }
 function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
-// 不足 1000 不强制换算
-function fmtK(n){ return n==null ? '-' : (n >= 1000 ? (n/1000).toFixed(1)+'k' : String(n)); }
+function fmtK(n){ return n==null ? '-' : (n>=1e6 ? (n/1e6).toFixed(1)+'M' : n>=1000 ? (n/1000).toFixed(1)+'k' : String(n)); }
 function fmtCost(n, cur){ if (n==null) return '-'; const sym = cur==='CNY' ? '¥' : '$'; return sym + (n>=100 ? n.toFixed(0) : n.toFixed(n<1 ? 3 : 2)); }
-function fmtMs(ms){ return ms==null ? '-' : (ms >= 1000 ? (ms/1000).toFixed(1)+'s' : Math.round(ms)+'ms'); }
+function fmtMs(ms){ return ms==null ? '-' : (ms>=10000 ? (ms/1000).toFixed(0)+'s' : ms>=1000 ? (ms/1000).toFixed(1)+'s' : Math.round(ms)+'ms'); }
+function fmtRate(r){ return r==null ? '-' : r.toFixed(1); }
+function pair(a, b, f){ return (a==null&&b==null) ? '-' : f(a)+' / '+f(b); }
+function timeStr(d){ return d.toLocaleTimeString(LOCALE[lang], {hour12:false}); }
+function feedTokens(e){
+  let s = fmtK(e.prompt_tokens ?? e.est_tokens)+t('s_in')+' '+fmtK(e.completion_tokens ?? 0)+t('s_out');
+  if (e.cached_tokens)      s += ' '+t('s_read')+fmtK(e.cached_tokens);
+  if (e.cache_write_tokens) s += ' '+t('s_write')+fmtK(e.cache_write_tokens);
+  return s;
+}
 function addRow(e){
   if (e.kind !== 'chat') return;
-  const time = new Date().toLocaleTimeString('zh-CN', {hour12:false});
   const badge = (200<=e.status && e.status<300) ? 'ok' : 'dead';
-  const tokens = fmtK(e.prompt_tokens ?? e.est_tokens) + '入 / ' + fmtK(e.completion_tokens ?? 0) + '出' +
-    (e.cached_tokens ? ' 缓存读' + fmtK(e.cached_tokens) : '') +
-    (e.cache_write_tokens ? ' 缓存写' + fmtK(e.cache_write_tokens) : '');
   const detail = esc(e.reason || '') +
-    (e.funnel ? '<br>决策漏斗: ' + e.funnel.join(' → ') : '') +
-    (e.filtered && e.filtered.length ? '<br>剔除: ' + e.filtered.map(function(f) { return esc(f.model + ' (' + f.cause + ')'); }).join('、 ') : '');
+    (e.funnel ? '<br>'+t('funnel')+': ' + e.funnel.join(' → ') : '') +
+    (e.filtered && e.filtered.length ? '<br>'+t('filtered')+': ' + e.filtered.map(f => esc(f.model+' ('+f.cause+')')).join('、 ') : '');
   const row = document.createElement('div');
-  row.innerHTML = '<div class="feed-row" style="cursor:pointer">' +
-    '<span class="t">' + time + '</span>' +
-    '<span class="pill badge ' + badge + '">' + e.status + '</span>' +
-    '<span class="m" title="' + esc(e.chosen) + '">' + esc(e.chosen) + '</span>' +
-    '<span>' + tokens + '</span>' +
-    (e.translated ? '<span class="sk" title="协议翻译">⇄' + esc(e.translated) + '</span>' : '') +
-    (e.skipped ? '<span class="sk" title="降级链">↩' + esc(e.skipped) + '</span>' : '') +
-    '<span class="ms">' + fmtMs(e.total_ms) + '</span>' +
-    '</div><div class="feed-detail" style="display:none;padding:4px 12px;color:var(--dim);font-size:11px;border-left:2px solid var(--border);margin:2px 0 4px 8px">' + detail + '</div>';
-  row.querySelector('.feed-row').addEventListener('click', function() {
-    var d = row.querySelector('.feed-detail');
+  row.innerHTML = '<div class="feed-row">' +
+    '<span class="t">'+timeStr(new Date())+'</span>' +
+    '<span class="pill badge '+badge+'">'+e.status+'</span>' +
+    '<span class="m" title="'+esc(e.chosen)+'">'+esc(e.chosen)+'</span>' +
+    '<span class="tk">'+feedTokens(e)+'</span>' +
+    (e.translated ? '<span class="tk" title="'+t('translated')+'">⇄'+esc(e.translated)+'</span>' : '') +
+    (e.skipped ? '<span class="tk" title="'+t('skipped')+'">↩'+esc(e.skipped)+'</span>' : '') +
+    '<span class="ms">'+fmtMs(e.total_ms)+'</span></div>' +
+    '<div class="feed-detail" style="display:none">'+detail+'</div>';
+  row.querySelector('.feed-row').addEventListener('click', () => {
+    const d = row.querySelector('.feed-detail');
     if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
   });
   feed.prepend(row);
   while (feed.children.length > 400) { if (feed.lastChild) feed.removeChild(feed.lastChild); }
 }
-function detail_placeholder(row) {
-  // 返回归因链 detail div（放在 row 后面）
-  // 这里只是占位——实际的 detail div 在 addRow 里拼入 row 后面
-  return null;
-}
-const es = new EventSource('/api/stream');
-es.onopen = () => document.getElementById('sse-status').textContent = 'SSE 已连接';
-es.onerror = () => document.getElementById('sse-status').textContent = 'SSE 重连中…';
-es.onmessage = ev => { try { addRow(JSON.parse(ev.data)); } catch(_){} };
 
 const state = { stats:{}, bench:{}, health:{}, quota:{} };
-async function refresh(){
-  try {
-    const [statsR, healthR, quotaR, benchR] = await Promise.all([
-      fetch('/api/stats'), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks')]);
-    state.stats  = (await statsR.json()).models  || {};
-    state.health = (await healthR.json()).models || {};
-    state.quota  = (await quotaR.json()).windows || {};
-    state.bench  = (await benchR.json()) || {};
-    renderDyn();
-    renderHealthQuota();
-    renderWheel();
-  } catch(_){}
+
+function tt(key){ const [k, sub] = key.split('.'); return sub && T[k] && T[k][sub] ? (T[k][sub][lang] ?? T[k][sub].zh) : t(key); }
+function buildThead(table, cols){
+  table.querySelector('thead').innerHTML = '<tr>' + cols.map(c =>
+    '<th class="'+(c.num?'num':'')+'"'+(c.tk?' title="'+esc(tt(c.tk))+'"':'')+'>'+esc(t(c.k))+'</th>').join('') + '</tr>';
 }
+const DYN_COLS = [
+  {k:'c_model'}, {k:'c_link'}, {k:'c_reqs', num:1},
+  {k:'c_tokens', num:1, tk:'c_tokens._t'}, {k:'c_ttft', num:1, tk:'c_ttft._t'},
+  {k:'c_lat', num:1, tk:'c_lat._t'}, {k:'c_rate', num:1, tk:'c_rate._t'},
+  {k:'c_cache', num:1, tk:'c_cache._t'}, {k:'c_tools', num:1, tk:'c_tools._t'},
+];
 function renderDyn(){
+  buildThead(document.getElementById('dyn'), DYN_COLS);
   const db = document.querySelector('#dyn tbody');
   const rows = Object.entries(state.stats).slice(0, 50).map(([id, s]) => {
     const keys = Object.keys(state.health).filter(k => k.split('\u001f')[0] === id);
     const link = keys.length === 0 ? '<span style="color:var(--dim)">-</span>'
-      : (keys.some(k => state.health[k].available) ? '<span class="pill badge ok">up</span>'
+      : (keys.some(k => state.health[k].available) ? '<span class="pill badge ok">'+t('available')+'</span>'
          : '<span class="pill badge dead">down</span>');
     const tc = s.tool_calls || {};
-    const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total)) + '%' : '-';
-    return `<tr><td title="${esc(id)}">${esc(id.length>34?id.slice(0,33)+'…':id)}</td>
-      <td>${link}</td>
-      <td class="num">${s.requests}(${s.success})</td>
-      <td class="num">${fmtK(s.prompt_tokens??0)}</td>
-      <td class="num">${fmtK(s.completion_tokens??0)}</td>
-      <td class="num">${fmtMs(s.avg_ttft_ms)}</td>
-      <td class="num">${fmtMs(s.last_ttft_ms)}</td>
-      <td class="num">${fmtMs(s.avg_total_ms)}</td>
-      <td class="num">${fmtMs(s.last_total_ms)}</td>
-      <td class="num">${s.avg_rate_tok_s==null?'-':s.avg_rate_tok_s.toFixed(1)}</td>
-      <td class="num">${s.last_rate_tok_s==null?'-':s.last_rate_tok_s.toFixed(1)}</td>
-      <td class="num">${fmtK(s.cached_tokens||0)}</td>
-      <td class="num">${fmtK(s.cache_write_tokens||0)}</td>
-      <td class="num">${toolRate}</td></tr>`;
+    const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total))+'%' : '-';
+    const tok = '<div>'+fmtK(s.prompt_tokens??0)+t('s_in')+' '+fmtK(s.completion_tokens??0)+t('s_out')+'</div>' +
+      '<div class="dim2">'+t('s_read')+fmtK(s.cached_tokens||0)+' · '+t('s_write')+fmtK(s.cache_write_tokens||0)+'</div>';
+    return '<tr><td title="'+esc(id)+'">'+esc(id.length>30?id.slice(0,29)+'…':id)+'</td>' +
+      '<td>'+link+'</td>' +
+      '<td class="num">'+s.requests+'('+s.success+')</td>' +
+      '<td class="num">'+tok+'</td>' +
+      '<td class="num">'+pair(s.avg_ttft_ms, s.last_ttft_ms, fmtMs)+'</td>' +
+      '<td class="num">'+pair(s.avg_total_ms, s.last_total_ms, fmtMs)+'</td>' +
+      '<td class="num">'+pair(s.avg_rate_tok_s, s.last_rate_tok_s, fmtRate)+'</td>' +
+      '<td class="num">'+(s.cache_hit_rate==null?'-':Math.round(s.cache_hit_rate*100)+'%')+'</td>' +
+      '<td class="num">'+toolRate+'</td></tr>';
   });
-  db.innerHTML = rows.join('') || '<tr><td colspan="14" style="color:var(--dim)">暂无流量</td></tr>';
+  db.innerHTML = rows.join('') || '<tr><td colspan="9" style="color:var(--dim)">'+t('noflow')+'</td></tr>';
 }
+const HEALTH_COLS = [{k:'c_mk'},{k:'c_status'},{k:'c_detail'}];
+const QUOTA_COLS  = [{k:'c_mk'},{k:'c_window'},{k:'c_remain',num:1},{k:'c_reset',num:1}];
 function renderHealthQuota(){
+  buildThead(document.getElementById('health'), HEALTH_COLS);
+  buildThead(document.getElementById('quota'), QUOTA_COLS);
   const hb = document.querySelector('#health tbody');
   const hentries = Object.entries(state.health);
-  hb.innerHTML = hentries.length ? hentries.map(([id,h]) => `<tr>
-    <td>${esc(id)}</td>
-    <td><span class="pill badge ${h.available?'ok':'dead'}">${h.available?'可用':esc(h.kind)}</span></td>
-    <td style="color:var(--dim)">${esc(h.message||'')}${h.cooldown_remaining_ms?` (${Math.round(h.cooldown_remaining_ms/1000)}s)`:''}</td></tr>`).join('')
-    : '<tr><td colspan="3" style="color:var(--dim)">全部正常（无异常记录）</td></tr>';
+  hb.innerHTML = hentries.length ? hentries.map(([id,h]) => '<tr>' +
+    '<td>'+esc(id)+'</td>' +
+    '<td><span class="pill badge '+(h.available?'ok':'dead')+'">'+(h.available?t('available'):esc(h.kind))+'</span></td>' +
+    '<td style="color:var(--dim)">'+esc(h.message||'')+(h.cooldown_remaining_ms?' ('+Math.round(h.cooldown_remaining_ms/1000)+'s)':'')+'</td></tr>').join('')
+    : '<tr><td colspan="3" style="color:var(--dim)">'+t('allnormal')+'</td></tr>';
   const qb = document.querySelector('#quota tbody');
   const qrows = Object.entries(state.quota).flatMap(([id, ws]) => (ws||[]).map(w => {
     const human = id.split('\u001f')[0] + (id.includes('\u001f') ? '['+id.split('\u001f')[1]+']' : '');
-    const reset = w.reset_epoch_ms ? new Date(w.reset_epoch_ms).toLocaleTimeString('zh-CN',{hour12:false}) : '-';
-    return `<tr><td>${esc(human)}</td><td>${esc(w.scope)}</td><td class="num">${fmtK(w.remaining)}</td><td class="num">${reset}</td></tr>`;
+    return '<tr><td>'+esc(human)+'</td><td>'+esc(w.scope)+'</td><td class="num">'+fmtK(w.remaining)+'</td><td class="num">'+(w.reset_epoch_ms?timeStr(new Date(w.reset_epoch_ms)):'-')+'</td></tr>';
   }));
-  qb.innerHTML = qrows.length ? qrows.join('') : '<tr><td colspan="4" style="color:var(--dim)">尚未观测到限额头</td></tr>';
+  qb.innerHTML = qrows.length ? qrows.join('') : '<tr><td colspan="4" style="color:var(--dim)">'+t('noquota')+'</td></tr>';
 }
+const WHEEL_COLS = [
+  {k:'c_model'},
+  {k:'w_bench', num:1, tk:'w_bench._t'}, {k:'w_rel', num:1, tk:'w_rel._t'},
+  {k:'w_calib', num:1, tk:'w_calib._t'}, {k:'w_speed', num:1, tk:'w_speed._t'},
+  {k:'w_bias', num:1, tk:'w_bias._t'}, {k:'w_sr', num:1, tk:'w_sr._t'},
+  {k:'w_cache', num:1, tk:'w_cache._t'}, {k:'w_cost', num:1, tk:'w_cost._t'},
+  {k:'w_samples', num:1, tk:'w_samples._t'}, {k:'w_fb', num:1, tk:'w_fb._t'},
+  {k:'w_weight', num:1, tk:'w_weight._t'},
+];
+function tt(key){ const [k, sub] = key.split('.'); return T[k] && T[k][sub] ? (T[k][sub][lang] ?? T[k][sub].zh) : key; }
 function renderWheel(){
+  buildThead(document.getElementById('wheel'), WHEEL_COLS);
   const applied = state.bench.applied || {};
   const wb = document.querySelector('#wheel tbody');
   const entries = Object.entries(state.stats).sort((a,b) => {
@@ -181,31 +264,95 @@ function renderWheel(){
     return (b[1].dynamic_score??0) - (a[1].dynamic_score??0);
   }).slice(0, 15);
   const rows = entries.map(([id, s]) => {
-    const t = s.telemetry || {};
+    const tr = s.telemetry || {};
     const bt = (applied[id] || {}).tiers || {};
     const pct = x => x==null ? '-' : Math.round(x*100)+'%';
     const uw = s.user_weight ?? 1;
-    const lb = t.learned_bias;
-    const w = (uw === 1 && (lb == null || lb === 1)) ? '—' : uw.toFixed(2) + '×' + (lb ?? 1).toFixed(2);
+    const lb = tr.learned_bias;
+    const w = (uw === 1 && (lb == null || lb === 1)) ? '—' : uw.toFixed(2)+'×'+(lb ?? 1).toFixed(2);
     const fb = s.feedback || {ok:0,total:0};
-    const sr = s.success_rate==null ? '-' : Math.round(s.success_rate*100)+'%';
-    const chr = s.cache_hit_rate==null ? '-' : Math.round(s.cache_hit_rate*100)+'%';
-    const cost = fmtCost(s.est_cost, s.currency);
-    return `<tr><td title="${esc(id)}">${esc(id.length>32?id.slice(0,31)+'…':id)}</td>
-      <td class="num">${pct(bt.coding)}/${pct(bt.reasoning)}/${pct(bt.agentic)}</td>
-      <td class="num">${t.reliability==null?'-':t.reliability.toFixed(2)}</td>
-      <td class="num">${t.calibration==null?'-':'×'+t.calibration.toFixed(2)}</td>
-      <td class="num">${t.speed_obs==null?'-':t.speed_obs.toFixed(2)}</td>
-      <td class="num">${t.learned_bias==null?'-':t.learned_bias.toFixed(2)}</td>
-      <td class="num">${sr}</td>
-      <td class="num">${chr}</td>
-      <td class="num">${cost}</td>
-      <td class="num">${s.samples??0}</td>
-      <td class="num">${fb.ok}/${fb.total}</td>
-      <td class="num">${w}</td></tr>`;
+    return '<tr><td title="'+esc(id)+'">'+esc(id.length>28?id.slice(0,27)+'…':id)+'</td>' +
+      '<td class="num">'+pct(bt.coding)+'/'+pct(bt.reasoning)+'/'+pct(bt.agentic)+'</td>' +
+      '<td class="num">'+(tr.reliability==null?'-':tr.reliability.toFixed(2))+'</td>' +
+      '<td class="num">'+(tr.calibration==null?'-':'×'+tr.calibration.toFixed(2))+'</td>' +
+      '<td class="num">'+(tr.speed_obs==null?'-':tr.speed_obs.toFixed(2))+'</td>' +
+      '<td class="num">'+(tr.learned_bias==null?'-':tr.learned_bias.toFixed(2))+'</td>' +
+      '<td class="num">'+(s.success_rate==null?'-':Math.round(s.success_rate*100)+'%')+'</td>' +
+      '<td class="num">'+(s.cache_hit_rate==null?'-':Math.round(s.cache_hit_rate*100)+'%')+'</td>' +
+      '<td class="num">'+fmtCost(s.est_cost, s.currency)+'</td>' +
+      '<td class="num">'+(s.samples??0)+'</td>' +
+      '<td class="num">'+fb.ok+'/'+fb.total+'</td>' +
+      '<td class="num">'+w+'</td></tr>';
   });
-  wb.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="12" style="color:var(--dim)">飞轮经验积累中…</td></tr>';
+  wb.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="12" style="color:var(--dim)">'+t('wheelcold')+'</td></tr>';
 }
+function renderChips(){
+  const all = Object.values(state.stats);
+  const reqs = all.reduce((a,s) => a+(s.requests||0), 0);
+  const ok = all.reduce((a,s) => a+(s.success||0), 0);
+  const byCur = {};
+  all.forEach(s => { if (s.est_cost) byCur[s.currency||'USD'] = (byCur[s.currency||'USD']||0)+s.est_cost; });
+  const cost = Object.entries(byCur).map(([c,v]) => fmtCost(v, c)).join(' · ') || '-';
+  const active = all.filter(s => (s.requests||0) > 0).length;
+  document.getElementById('chips').innerHTML =
+    '<span class="chip">'+t('chip_reqs')+' <b>'+reqs+'</b>'+(reqs?' <b>'+Math.round(100*ok/reqs)+'%</b>':'')+'</span>' +
+    '<span class="chip">'+t('chip_cost')+' <b>'+cost+'</b></span>' +
+    '<span class="chip">'+t('chip_active')+' <b>'+active+'</b>/'+all.length+'</span>';
+}
+
+async function refresh(){
+  try {
+    const [statsR, healthR, quotaR, benchR] = await Promise.all([
+      fetch('/api/stats'), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks')]);
+    state.stats  = (await statsR.json()).models  || {};
+    state.health = (await healthR.json()).models || {};
+    state.quota  = (await quotaR.json()).windows || {};
+    state.bench  = (await benchR.json()) || {};
+    renderChips();
+    renderDyn();
+    renderHealthQuota();
+    renderWheel();
+  } catch(_){}
+}
+
+const es = new EventSource('/api/stream');
+const dot = document.getElementById('sse-dot');
+let sseState = 'conn';
+function updateSse(){
+  const map = {ok:['ok','sse_ok'], err:['err','sse_retry'], conn:['','sse_conn']};
+  const [cls, key] = map[sseState];
+  dot.className = 'dot ' + cls;
+  document.getElementById('sse-status').textContent = t(key);
+}
+es.onopen  = () => { sseState = 'ok';  updateSse(); };
+es.onerror = () => { sseState = 'err'; updateSse(); };
+es.onmessage = ev => { try { addRow(JSON.parse(ev.data)); } catch(_){} };
+
+const sel = document.getElementById('lang-sel');
+const LANG_LABEL = {zh:'中文', en:'English', ko:'한국어', ja:'日本語', es:'Español', fr:'Français'};
+LANGS.forEach(l => { const o = document.createElement('option'); o.value = l; o.textContent = LANG_LABEL[l]; sel.appendChild(o); });
+sel.value = lang;
+function applyLang(){
+  document.documentElement.lang = lang;
+  document.title = t('title');
+  document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
+  sel.value = lang;
+  updateSse();
+  renderChips(); renderDyn(); renderHealthQuota(); renderWheel();
+}
+sel.addEventListener('change', () => {
+  lang = sel.value;
+  localStorage.setItem('mr-lang', lang);
+  applyLang();
+});
+
+(async () => {
+  try {
+    const evs = await (await fetch('/api/events?limit=30')).json();
+    if (Array.isArray(evs)) evs.forEach(addRow);
+  } catch(_){}
+})();
+applyLang();
 refresh();
 setInterval(refresh, 3000);
 </script>
