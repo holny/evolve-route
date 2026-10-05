@@ -224,6 +224,8 @@ pub struct Decision {
     pub scores: BTreeMap<String, f32>,
     pub judgment: JudgmentSet,
     pub filtered: Vec<FilteredOut>,
+    /// 决策漏斗：目录总数→硬约束后→质量及格后→评分排序→选中
+    pub funnel: [u32; 4],
     pub sticky: bool,
     pub est_input_tokens: u64,
     pub difficulty_eff: f32,

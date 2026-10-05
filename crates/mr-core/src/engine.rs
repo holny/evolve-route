@@ -110,6 +110,7 @@ impl Engine {
                     0.0,
                     input.session_key,
                     Some(sticky),
+                    [0, 0, 0, 0],
                 );
             }
         }
@@ -210,14 +211,16 @@ impl Engine {
                     format!("catalog empty; cannot route est {} tok", est),
                     BTreeMap::new(),
                     j,
-                    filtered,
+                    filtered.clone(),
                     false,
                     est,
                     difficulty_eff,
                     input.session_key,
                     None,
+                    [0, 0, 0, 0],
                 );
             };
+            let filtered_count = filtered.len() as u32;
             return self.finish(
                 best.id.clone(),
                 vec![best.id.clone()],
@@ -233,6 +236,7 @@ impl Engine {
                 difficulty_eff,
                 input.session_key,
                 None,
+                [self.catalog.models.len() as u32, filtered_count, 0, 0],
             );
         }
 
@@ -303,6 +307,12 @@ impl Engine {
             if filtered_note.is_empty() { "-".into() } else { filtered_note.join("; ") }
         );
 
+        let funnel = [
+            self.catalog.models.len() as u32,
+            candidates.len() as u32,
+            eligible.len() as u32,
+            scores.len() as u32,
+        ];
         self.finish(
             chosen.model_id.clone(),
             chain,
@@ -318,6 +328,7 @@ impl Engine {
             difficulty_eff,
             input.session_key,
             None,
+            funnel,
         )
     }
 
@@ -335,7 +346,9 @@ impl Engine {
         difficulty_eff: f32,
         _session: &str,
         _sticky_state: Option<&StickyState>,
+        funnel: [u32; 4],
     ) -> Decision {
+        let _ = funnel; // 由各调用点传入，此处仅透传
         let n = self.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -359,6 +372,7 @@ impl Engine {
             sticky,
             est_input_tokens: est,
             difficulty_eff,
+            funnel,
         }
     }
 }

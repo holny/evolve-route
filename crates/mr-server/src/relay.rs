@@ -505,6 +505,7 @@ fn resolve_target(st: &AppState, model_field: &str) -> Result<Target, Response> 
                 session_depth: 0.0,
             },
             filtered: vec![],
+            funnel: [0, 0, 0, 0],
             sticky: false,
             est_input_tokens: 0,
             difficulty_eff: 0.0,

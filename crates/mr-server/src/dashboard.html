@@ -80,38 +80,36 @@ function fmtK(n){ return n==null ? '-' : (n >= 1000 ? (n/1000).toFixed(1)+'k' : 
 function fmtCost(n, cur){ if (n==null) return '-'; const sym = cur==='CNY' ? '¥' : '$'; return sym + (n>=100 ? n.toFixed(0) : n.toFixed(n<1 ? 3 : 2)); }
 function fmtMs(ms){ return ms==null ? '-' : (ms >= 1000 ? (ms/1000).toFixed(1)+'s' : Math.round(ms)+'ms'); }
 function addRow(e){
-  if (e.kind === 'upstream_error') {
-    const row = document.createElement('div');
-    row.className = 'feed-row';
-    const time = new Date().toLocaleTimeString('zh-CN', {hour12:false});
-    row.innerHTML = `<span class="t">${time}</span>
-      <span class="pill badge dead">${e.status||''}</span>
-      <span class="m" style="color:var(--red)" title="${esc(e.message||'')}">✗ ${esc(e.model||'')}</span>
-      <span class="sk">${esc(e.health||'')}</span>
-      <span class="ms">重路由</span>`;
-    feed.prepend(row);
-    while (feed.children.length > 200) feed.lastChild.remove();
-    return;
-  }
   if (e.kind !== 'chat') return;
-  const row = document.createElement('div');
-  row.className = 'feed-row';
   const time = new Date().toLocaleTimeString('zh-CN', {hour12:false});
   const badge = (200<=e.status && e.status<300) ? 'ok' : 'dead';
-  row.innerHTML = `<span class="t">${time}</span>
-    <span class="pill badge ${badge}">${e.status}</span>
-    <span class="m" title="${esc(e.chosen)}">${esc(e.chosen)}</span>
-    <span title="本次请求输入tokens(估算)">入${fmtK(e.prompt_tokens ?? e.est_tokens)}</span>
-    <span title="输出tokens">出${fmtK(e.completion_tokens ?? 0)}</span>
-    ${e.cached_tokens ? `<span title="缓存读(命中折扣)">⚡${fmtK(e.cached_tokens)}</span>` : ''}
-    ${e.cache_write_tokens ? `<span title="缓存写">✎${fmtK(e.cache_write_tokens)}</span>` : ''}
-    ${e.cached_tokens ? `<span title="缓存读(命中折扣)">⚡${fmtK(e.cached_tokens)}</span>` : ''}
-    ${e.cache_write_tokens ? `<span title="缓存写(计入计价)">✎${fmtK(e.cache_write_tokens)}</span>` : ''}
-    ${e.translated ? `<span class="sk" title="协议已翻译">⇄${esc(e.translated)}</span>` : ''}
-    <span class="sk">${e.skipped ? 'fallback' : ''}</span>
-    <span class="ms">${fmtMs(e.total_ms)}</span>`;
+  const tokens = fmtK(e.prompt_tokens ?? e.est_tokens) + '入 / ' + fmtK(e.completion_tokens ?? 0) + '出' +
+    (e.cached_tokens ? ' ⚡' + fmtK(e.cached_tokens) : '') +
+    (e.cache_write_tokens ? ' ✎' + fmtK(e.cache_write_tokens) : '');
+  const detail = esc(e.reason || '') +
+    (e.funnel ? '<br>决策漏斗: ' + e.funnel.join(' → ') : '') +
+    (e.filtered && e.filtered.length ? '<br>剔除: ' + e.filtered.map(function(f) { return esc(f.model + ' (' + f.cause + ')'); }).join('、 ') : '');
+  const row = document.createElement('div');
+  row.innerHTML = '<div class="feed-row" style="cursor:pointer">' +
+    '<span class="t">' + time + '</span>' +
+    '<span class="pill badge ' + badge + '">' + e.status + '</span>' +
+    '<span class="m" title="' + esc(e.chosen) + '">' + esc(e.chosen) + '</span>' +
+    '<span>' + tokens + '</span>' +
+    (e.translated ? '<span class="sk" title="协议翻译">⇄' + esc(e.translated) + '</span>' : '') +
+    (e.skipped ? '<span class="sk" title="降级链">↩' + esc(e.skipped) + '</span>' : '') +
+    '<span class="ms">' + fmtMs(e.total_ms) + '</span>' +
+    '</div><div class="feed-detail" style="display:none;padding:4px 12px;color:var(--dim);font-size:11px;border-left:2px solid var(--border);margin:2px 0 4px 8px">' + detail + '</div>';
+  row.querySelector('.feed-row').addEventListener('click', function() {
+    var d = row.querySelector('.feed-detail');
+    if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
+  });
   feed.prepend(row);
-  while (feed.children.length > 200) feed.lastChild.remove();
+  while (feed.children.length > 400) { if (feed.lastChild) feed.removeChild(feed.lastChild); }
+}
+function detail_placeholder(row) {
+  // 返回归因链 detail div（放在 row 后面）
+  // 这里只是占位——实际的 detail div 在 addRow 里拼入 row 后面
+  return null;
 }
 const es = new EventSource('/api/stream');
 es.onopen = () => document.getElementById('sse-status').textContent = 'SSE 已连接';
