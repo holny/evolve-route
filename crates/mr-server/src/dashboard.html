@@ -107,12 +107,12 @@ const T = {
   c_reqs:   {zh:'请求(成功)', en:'Reqs(ok)', ko:'요청(성공)', ja:'リクエスト(成功)', es:'Solicitudes(ok)', fr:'Requêtes(ok)'},
   c_tokens: {zh:'Tokens 入/出/缓存读/缓存写', en:'Tokens in/out/c.read/c.write', ko:'토큰 입/출/캐시읽/캐시쓰', ja:'トークン 入/出/ｷｬｯｼｭ読/書', es:'Tokens ent/sal/lee/esc', fr:'Jetons entr/sor/lect/éc',
     _t:{zh:'输入 / 输出 / 缓存读(折扣命中) / 缓存写(计入计价)', en:'prompt / completion / cache read (discounted) / cache write (billed)', ko:'입력 / 출력 / 캐시 읽기(할인) / 캐시 쓰기(과금)', ja:'入力 / 出力 / キャッシュ読み(割引) / キャッシュ書き(課金)', es:'entrada / salida / lectura caché (descuento) / escritura caché (facturada)', fr:'entrée / sortie / lecture cache (remise) / écriture cache (facturée)'}},
-  c_ttft:   {zh:'TTFT 均/近', en:'TTFT avg/last', ko:'TTFT 평균/최근', ja:'TTFT 平均/最新', es:'TTFT prom/últ', fr:'TTFT moy/dern',
-    _t:{zh:'首字延迟：平均 / 最近', en:'time-to-first-token: avg / last', ko:'첫 토큰 지연: 평균 / 최근', ja:'初トークン遅延: 平均 / 最新', es:'tiempo al primer token: prom/últ', fr:'délai au 1er jeton: moy/dern'}},
-  c_lat:    {zh:'耗时 均/近', en:'Latency avg/last', ko:'지연 평균/최근', ja:'レイテンシ 平均/最新', es:'Latencia prom/últ', fr:'Latence moy/dern',
-    _t:{zh:'总耗时：平均 / 最近', en:'total latency: avg / last', ko:'총 지연: 평균 / 최근', ja:'合計時間: 平均 / 最新', es:'latencia total: prom/últ', fr:'latence totale: moy/dern'}},
-  c_rate:   {zh:'tok/s 均/近', en:'tok/s avg/last', ko:'tok/s 평균/최근', ja:'tok/s 平均/最新', es:'tok/s prom/últ', fr:'tok/s moy/dern',
-    _t:{zh:'吐 token 速率：平均 / 最近（完成 tokens ÷ 生成窗口）', en:'generation speed: avg / last (completion tokens ÷ gen window)', ko:'토큰 생성 속도: 평균 / 최근(완료 토큰 ÷ 생성 구간)', ja:'トークン生成速度: 平均 / 最新（完成 ÷ 生成窓）', es:'velocidad: prom/últ (tokens ÷ ventana gen)', fr:'vitesse: moy/dern (jetons ÷ fenêtre gén)'}},
+  c_ttft:   {zh:'平均TTFT', en:'avg TTFT', ko:'평균 TTFT', ja:'平均TTFT', es:'TTFT prom', fr:'TTFT moy',
+    _t:{zh:'首字延迟的平均值（各次请求 TTFT 均值）；单次 TTFT 看实时决策流', en:'average time-to-first-token across requests; per-request TTFT lives in the live feed', ko:'요청별 첫 토큰 지연의 평균; 개별 TTFT는 실시간 스트림에서', ja:'各リクエスト TTFT の平均。個別はリアルタイムストリームで', es:'promedio del tiempo al primer token; el TTFT por petición está en el flujo en vivo', fr:'moyenne du délai au 1er jeton ; le TTFT par requête est dans le flux live'}},
+  c_lat:    {zh:'平均耗时', en:'avg latency', ko:'평균 지연', ja:'平均時間', es:'latencia prom', fr:'latence moy',
+    _t:{zh:'总耗时的平均值（各次请求均值）；单次耗时看实时决策流', en:'average total latency across requests; per-request latency lives in the live feed', ko:'요청별 총 지연의 평균; 개별 지연은 실시간 스트림에서', ja:'各リクエストの合計時間の平均。個別はリアルタイムストリームで', es:'promedio de latencia total; la latencia por petición está en el flujo en vivo', fr:'moyenne de la latence totale ; la latence par requête est dans le flux live'}},
+  c_rate:   {zh:'平均tok/s', en:'avg tok/s', ko:'평균 tok/s', ja:'平均tok/s', es:'tok/s prom', fr:'tok/s moy',
+    _t:{zh:'平均吐 token 速率 = 补全 tokens ÷ 生成窗口（总耗时−TTFT），各次请求取均值', en:'average generation speed = completion tokens ÷ generation window (total − TTFT), averaged over requests', ko:'평균 토큰 생성 속도 = 완료 토큰 ÷ 생성 구간(총−TTFT), 요청 평균', ja:'平均生成速度 = 完成トークン ÷ 生成窓（合計−TTFT）、リクエスト平均', es:'velocidad media = tokens completados ÷ ventana de generación (total − TTFT), promedio', fr:'vitesse moyenne = jetons complétés ÷ fenêtre de génération (total − TTFT), en moyenne'}},
   c_cache:  {zh:'缓存%', en:'Cache%', ko:'캐시%', ja:'ｷｬｯｼｭ%', es:'Caché%', fr:'Cache%',
     _t:{zh:'缓存命中率 = 缓存 tokens ÷ prompt tokens', en:'cache hit rate = cached ÷ prompt tokens', ko:'캐시 적중률 = 캐시 토큰 ÷ 프롬프트 토큰', ja:'命中率 = キャッシュ ÷ プロンプトトークン', es:'tasa de acierto = caché ÷ prompt', fr:'taux de succès = cache ÷ prompt'}},
   c_tools:  {zh:'工具%', en:'Tools%', ko:'도구%', ja:'ツール%', es:'Herram%', fr:'Outils%',
@@ -159,6 +159,10 @@ const T = {
   t_est:     {zh:'请求发出前的输入 tokens 估算（用于窗口/配额/粘性检查）；行内「入」是上游实报用量，两者可能不同', en:'input-token estimate made before the request (drives window/quota/sticky checks); the in/out in the row are actual usage reported by upstream and may differ', ko:'요청 전 입력 토큰 추정(윈도우/쿼터/스티키 검사용); 행의 입/출은 업스트림 실제 사용량으로 다를 수 있음', ja:'リクエスト前の入力トークン推定（窓/クォータ/スティキー検査用）；行内の入/出は上流の実使用量で異なり得る', es:'estimación de tokens de entrada antes de la solicitud (ventana/cuota/sticky); lo in/out de la fila es uso real reportado por el upstream', fr:'estimation des jetons d\'entrée avant la requête (fenêtre/quota/sticky) ; le entr/sort de la ligne est l\'usage réel remonté, qui peut différer'},
   t_actual:  {zh:'入=上游实报的总输入 tokens（读是其中命中缓存、按折扣计价的部分；写=新增缓存计费；出=补全）。入的大小由发送内容决定：全新短请求几十 token、带全部历史的长会话几十万都正常', en:'in = total input tokens reported by upstream (r = the cached subset, billed at discount; w = new cache written, billed; out = completion). Size follows content: a fresh short request is tens of tokens, a long session with full history is hundreds of thousands', ko:'입=업스트림이 보고한 총 입력 토큰(읽=그중 캐시 적중 부분, 할인 과금; 쓰=신규 캐시 기록, 과금; 출=보완). 크기는 내용에 비례: 새 짧은 요청은 수십 토큰, 전체 히스토리를 실Long 세션은 수십만', ja:'入=上流が報告する総入力トークン（読=うちキャッシュ適中部分、割引課金；書=新規キャッシュ書き込み、課金；出=補完）。大きさは内容次第：全新の短いリクエストは数十トークン、全履歴を含む長いセッションは数十万', es:'ent = total de tokens de entrada reportados por el upstream (lee = parte en caché, con descuento; esc = caché nueva, facturada; sal = complementación). El tamaño sigue al contenido: una petición corta nueva son decenas de tokens, una sesión larga con historial son cientos de miles', fr:'entr = total des jetons d\'entrée remontés (lect = partie en cache, facturée au rabais ; éc = cache nouvelle, facturée ; sor = complétion). La taille suit le contenu : une requête courte neuve fait des dizaines de jetons, une longue session avec historique en fait des centaines de milliers'},
   s_incl: {zh:'其中读', en:'incl. r', ko:'이중 읽', ja:'内 読', es:'incl. lee', fr:'dont lect'},
+  f_cache_util: {zh:'缓存利用', en:'cache util', ko:'캐시 활용', ja:'ｷｬｯｼｭ利用', es:'uso caché', fr:'util. cache'},
+  t_cache_util: {zh:'缓存利用率 = 缓存读 ÷ 总输入 tokens（读是入的子集，折扣计价；越高越省钱）', en:'cache utilisation = cached read ÷ total input tokens (read is a subset of input, billed at discount; higher is cheaper)', ko:'캐시 활용률 = 캐시 읽기 ÷ 총 입력 토큰(읽은 입력의 부분집합, 할인; 높을수록 저렴)', ja:'キャッシュ利用率 = キャッシュ読み ÷ 総入力トークン（読みは入力の部分集合、割引。高いほど安い）', es:'uso de caché = lectura caché ÷ total de tokens de entrada (la lectura es subconjunto de la entrada, con descuento; más alto es más barato)', fr:'utilisation du cache = lecture cache ÷ total des jetons d\'entrée (la lecture fait partie de l\'entrée, au rabais ; plus haut = moins cher)'},
+  f_tools:   {zh:'工具', en:'tools', ko:'도구', ja:'ツール', es:'herram.', fr:'outils'},
+  t_rate_f:  {zh:'吐 token 速率 = 补全 tokens ÷ 生成窗口（总耗时 − TTFT）', en:'generation speed = completion tokens ÷ generation window (total − TTFT)', ko:'토큰 생성 속도 = 완료 토큰 ÷ 생성 구간(총 − TTFT)', ja:'生成速度 = 完成トークン ÷ 生成窓（合計 − TTFT）', es:'velocidad = tokens completados ÷ ventana de generación (total − TTFT)', fr:'vitesse = jetons complétés ÷ fenêtre de génération (total − TTFT)'},
   p_scores:  {zh:'评分', en:'scores', ko:'점수', ja:'スコア', es:'puntajes', fr:'scores'},
   p_session: {zh:'会话', en:'session', ko:'세션', ja:'セッション', es:'sesión', fr:'session'},
   st_why:    {zh:'为什么选', en:'Why', ko:'왜', ja:'なぜ', es:'Por qué', fr:'Pourquoi'},
@@ -224,7 +228,6 @@ function fmtK(n){ return n==null ? '-' : (n>=1e6 ? (n/1e6).toFixed(1)+'M' : n>=1
 function fmtCost(n, cur){ if (n==null) return '-'; const sym = cur==='CNY' ? '¥' : '$'; return sym + (n>=100 ? n.toFixed(0) : n.toFixed(n<1 ? 3 : 2)); }
 function fmtMs(ms){ return ms==null ? '-' : (ms>=10000 ? (ms/1000).toFixed(0)+'s' : ms>=1000 ? (ms/1000).toFixed(1)+'s' : Math.round(ms)+'ms'); }
 function fmtRate(r){ return r==null ? '-' : r.toFixed(1); }
-function pair(a, b, f){ return (a==null&&b==null) ? '-' : f(a)+' / '+f(b); }
 function timeStr(d){ return d.toLocaleTimeString(LOCALE[lang], {hour12:false}); }
 function feedTokens(e){
   let s = fmtK(e.prompt_tokens ?? e.est_tokens)+t('s_in')+' '+fmtK(e.completion_tokens ?? 0)+t('s_out');
@@ -312,6 +315,26 @@ function decisionDetail(e){
   L.push('<div style="opacity:.6;margin-top:3px">'+esc(t('p_session'))+': '+esc(e.session||'-')+'</div>');
   return L.join('');
 }
+function feedMetrics(e){
+  const parts = [];
+  const agent = (e.agent||'').replace(/\/.*$/, '');
+  if (agent || e.session) {
+    const src = esc(agent) + (agent && e.session ? ' · ' : '') + esc(e.session||'');
+    parts.push('<span title="'+esc(t('p_session'))+'">'+src+'</span>');
+  }
+  if (e.ttft_ms != null) parts.push('<span>TTFT '+fmtMs(e.ttft_ms)+'</span>');
+  if (e.ttft_ms != null && e.total_ms > e.ttft_ms && (e.completion_tokens||0) > 0) {
+    const rate = e.completion_tokens / ((e.total_ms - e.ttft_ms) / 1000);
+    parts.push('<span title="'+esc(t('t_rate_f'))+'">'+rate.toFixed(1)+' tok/s</span>');
+  }
+  if ((e.prompt_tokens||0) > 0 && e.cached_tokens)
+    parts.push('<span title="'+esc(t('t_cache_util'))+'">'+esc(t('f_cache_util'))+' '+Math.round(100*e.cached_tokens/e.prompt_tokens)+'%</span>');
+  const tools = e.tools || [];
+  const qc = ((e.quality||{}).tool_calls_total) || 0;
+  if (tools.length) parts.push('<span title="'+esc(t('f_tools'))+'">'+esc(t('f_tools'))+': '+tools.map(x => esc(x.length>20?x.slice(0,19)+'…':x)).join(', ')+'</span>');
+  else if (qc) parts.push('<span title="'+esc(t('f_tools'))+'">'+esc(t('f_tools'))+' ×'+qc+'</span>');
+  return parts.join('<span class="dim2"> · </span>');
+}
 function addRow(e){
   if (e.kind !== 'chat') return;
   const badge = (200<=e.status && e.status<300) ? 'ok' : 'dead';
@@ -324,6 +347,7 @@ function addRow(e){
     '<span class="tk">'+feedTokens(e)+'</span>' +
     (e.translated ? '<span class="tk" title="'+t('translated')+'">⇄'+esc(e.translated)+'</span>' : '') +
     '<span class="ms">'+fmtMs(e.total_ms)+'</span></div>' +
+    '<div class="feed-path">'+feedMetrics(e)+'</div>' +
     '<div class="feed-path">'+decisionPath(e)+'</div>' +
     '<div class="feed-detail" style="display:none">'+decisionDetail(e)+'</div>';
   row.querySelector('.feed-row').addEventListener('click', () => {
@@ -363,9 +387,9 @@ function renderDyn(){
       '<td>'+link+'</td>' +
       '<td class="num">'+s.requests+'('+s.success+')</td>' +
       '<td class="num">'+tok+'</td>' +
-      '<td class="num">'+pair(s.avg_ttft_ms, s.last_ttft_ms, fmtMs)+'</td>' +
-      '<td class="num">'+pair(s.avg_total_ms, s.last_total_ms, fmtMs)+'</td>' +
-      '<td class="num">'+pair(s.avg_rate_tok_s, s.last_rate_tok_s, fmtRate)+'</td>' +
+      '<td class="num">'+fmtMs(s.avg_ttft_ms)+'</td>' +
+      '<td class="num">'+fmtMs(s.avg_total_ms)+'</td>' +
+      '<td class="num">'+fmtRate(s.avg_rate_tok_s)+'</td>' +
       '<td class="num">'+(s.cache_hit_rate==null?'-':Math.round(s.cache_hit_rate*100)+'%')+'</td>' +
       '<td class="num">'+toolRate+'</td></tr>';
   });

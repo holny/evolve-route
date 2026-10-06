@@ -24,6 +24,8 @@ pub struct Telemetry {
     pub est_cost_usd: Option<f64>,
     pub translated: Option<String>,
     pub extra: Option<Value>,
+    /// 来源客户端：优先 x-mr-client，回退 User-Agent（截断），供面板展示
+    pub agent: Option<String>,
 }
 
 impl Telemetry {
@@ -43,6 +45,7 @@ impl Telemetry {
             "total_ms": total_ms,
             "bytes": self.bytes,
             "usage": self.usage,
+            "agent": self.agent,
         });
         if let Some(u) = &self.usage {
             let (p, c, cached, cwrite) = extract_usage_fields(u);
@@ -353,6 +356,14 @@ impl Drop for Finalizer {
             t.extra = match t.extra.take() {
                 Some(mut ex) => {
                     ex["quality"] = serde_json::to_value(&q).unwrap_or_default();
+                    let mut names: Vec<String> =
+                        self.acc.tool_calls.values().map(|(_, n, _)| n.clone()).collect();
+                    names.sort();
+                    names.dedup();
+                    names.truncate(5);
+                    if !names.is_empty() {
+                        ex["tools"] = serde_json::json!(names);
+                    }
                     Some(ex)
                 }
                 None => Some(json!({"quality": q})),

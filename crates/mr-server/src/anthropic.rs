@@ -22,6 +22,11 @@ const MAX_ERROR_BODY: usize = 8 * 1024;
 
 pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
     let started = Instant::now();
+    let agent_hdr = headers
+        .get("x-mr-client")
+        .or_else(|| headers.get("user-agent"))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.chars().take(40).collect::<String>());
     let Ok(parsed) = serde_json::from_slice::<Value>(&body) else {
         return mr_error(StatusCode::BAD_REQUEST, "invalid json body");
     };
@@ -257,6 +262,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             usage: None,
             est_cost_usd: None,
             translated: to_openai.then(|| "openai->anthropic".to_string()),
+            agent: agent_hdr,
             extra: Some(json!({
                 "reason": decision.reason,
                 "scores": decision.scores,

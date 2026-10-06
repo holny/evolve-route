@@ -25,6 +25,13 @@ pub async fn chat_completions(
     body: Bytes,
 ) -> Response {
     let started = Instant::now();
+    let agent_hdr = || {
+        headers
+            .get("x-mr-client")
+            .or_else(|| headers.get("user-agent"))
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.chars().take(40).collect::<String>())
+    };
     let Ok(parsed) = serde_json::from_slice::<Value>(&body) else {
         return json_error(StatusCode::BAD_REQUEST, "invalid json body");
     };
@@ -295,6 +302,7 @@ pub async fn chat_completions(
             usage: None,
             est_cost_usd: None,
             translated: cross.then(|| "anthropic->openai".to_string()),
+            agent: agent_hdr(),
             extra: {
                 let mut ex = json!({
                     "reason": decision.reason,
