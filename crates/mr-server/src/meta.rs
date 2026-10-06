@@ -163,6 +163,14 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
             .then(|| s.cached_tokens as f32 / s.prompt_tokens as f32);
         let cat_model = st.engine.catalog.get(id);
         let currency = cat_model.map(|m| m.currency.clone()).unwrap_or_default();
+        let tiers = cat_model.map(|m| {
+            json!({
+                "coding": ((m.tiers.coding as f64) * 100.0).round() / 100.0,
+                "reasoning": ((m.tiers.reasoning as f64) * 100.0).round() / 100.0,
+                "agentic": ((m.tiers.agentic as f64) * 100.0).round() / 100.0,
+            })
+        });
+        let source = cat_model.map(|m| m.source.label());
         let est_cost: Option<f32> = match cat_model.map(|m| (m.plan, m.cost)) {
             Some((true, _)) | Some((false, None)) => Some(0.0),
             Some((false, Some(c))) => Some(
@@ -197,6 +205,8 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                 "cache_hit_rate": cache_hit_rate,
                 "est_cost": est_cost,
                 "currency": currency,
+                "tiers": tiers,
+                "source": source,
                 "samples": s.requests,
                 "last_seen_ms": (s.last_seen_ms > 0).then_some(s.last_seen_ms),
                 "last_total_ms": (s.last_total_ms > 0).then_some(s.last_total_ms),

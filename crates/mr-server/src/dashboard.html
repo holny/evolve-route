@@ -18,7 +18,7 @@ body { background:var(--bg); color:var(--fg); font:13px/1.5 -apple-system,"PingF
 .chip { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:2px 10px; font-size:12px; color:var(--dim); font-variant-numeric:tabular-nums; }
 .chip b { color:var(--fg); font-weight:normal; }
 .lang-sel { background:var(--card); color:var(--fg); border:1px solid var(--border); border-radius:12px; padding:3px 8px; font-size:12px; cursor:pointer; }
-.grid { display:grid; grid-template-columns: minmax(300px,1fr) 2.2fr; gap:14px; align-items:start; }
+.grid { display:grid; grid-template-columns: 1.2fr 1fr; gap:14px; align-items:start; }
 @media (max-width:1100px){ .grid { grid-template-columns:1fr; } }
 .card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:14px; }
 .card h2 { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
@@ -59,12 +59,12 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-spac
   <div class="chips" id="chips"></div>
   <select class="lang-sel" id="lang-sel"></select>
 </header>
-<main class="grid">
+<main>
   <section class="card">
     <h2 data-i18n="feed">实时决策流</h2>
     <div id="feed"></div>
   </section>
-  <div>
+  <div class="grid">
     <section class="card">
       <h2><span data-i18n="dyn">模型动态</span><span class="note" data-i18n="dyn_note">有流量在前按流量排序，无流量按优先度</span></h2>
       <table id="dyn"><thead></thead><tbody></tbody></table>
@@ -103,7 +103,12 @@ const T = {
   translated:{zh:'协议翻译', en:'protocol translated', ko:'프로토콜 번역', ja:'プロトコル翻訳', es:'protocolo traducido', fr:'protocole traduit'},
   skipped:   {zh:'降级链', en:'fallback chain', ko:'폴백 체인', ja:'フォールバック連鎖', es:'cadena de reserva', fr:'chaîne de repli'},
   c_model:  {zh:'模型', en:'Model', ko:'모델', ja:'モデル', es:'Modelo', fr:'Modèle'},
-  c_link:   {zh:'链路', en:'Link', ko:'링크', ja:'リンク', es:'Enlace', fr:'Lien'},
+  c_source: {zh:'来源', en:'Source', ko:'출처', ja:'ソース', es:'Fuente', fr:'Source',
+    _t:{zh:'模型来自哪一层：用户配置 / agent 发现 / 远程拉取 / 内置先验；异常时附 ⚠', en:'which layer provided the model: user config / agent discovery / remote fetch / builtin prior; ⚠ if unhealthy', ko:'모델 출처 레이어: 사용자 설정/에이전트 발견/원격/내장; 비정상 시 ⚠', ja:'モデルの提供元：ユーザー設定/エージェント発見/リモート/内蔵。異常時は⚠', es:'capa de origen del modelo: config de usuario / descubrimiento / remoto / incorporado; ⚠ si no está sano', fr:'couche d\'origine du modèle : config utilisateur / découverte agent / distant / intégré ; ⚠ si unhealthy'}},
+  src_user: {zh:'用户', en:'user', ko:'사용자', ja:'ユーザー', es:'usuario', fr:'utilisateur'},
+  src_disc: {zh:'发现', en:'discovered', ko:'발견', ja:'発見', es:'descubierto', fr:'découvert'},
+  src_remote:{zh:'远程', en:'remote', ko:'원격', ja:'リモート', es:'remoto', fr:'distant'},
+  src_builtin:{zh:'内置', en:'builtin', ko:'내장', ja:'内蔵', es:'incorporado', fr:'intégré'},
   c_reqs:   {zh:'请求(成功)', en:'Reqs(ok)', ko:'요청(성공)', ja:'リクエスト(成功)', es:'Solicitudes(ok)', fr:'Requêtes(ok)'},
   c_tokens: {zh:'Tokens 入/出/缓存读/缓存写', en:'Tokens in/out/c.read/c.write', ko:'토큰 입/출/캐시읽/캐시쓰', ja:'トークン 入/出/ｷｬｯｼｭ読/書', es:'Tokens ent/sal/lee/esc', fr:'Jetons entr/sor/lect/éc',
     _t:{zh:'输入 / 输出 / 缓存读(折扣命中) / 缓存写(计入计价)', en:'prompt / completion / cache read (discounted) / cache write (billed)', ko:'입력 / 출력 / 캐시 읽기(할인) / 캐시 쓰기(과금)', ja:'入力 / 出力 / キャッシュ読み(割引) / キャッシュ書き(課金)', es:'entrada / salida / lectura caché (descuento) / escritura caché (facturada)', fr:'entrée / sortie / lecture cache (remise) / écriture cache (facturée)'}},
@@ -125,7 +130,7 @@ const T = {
   c_reset:  {zh:'重置', en:'Reset', ko:'리셋', ja:'リセット', es:'Reinicio', fr:'Réinitialisation'},
   available:{zh:'可用', en:'available', ko:'사용 가능', ja:'利用可能', es:'disponible', fr:'disponible'},
   w_bench:  {zh:'榜单c/r/a', en:'Bench c/r/a', ko:'벤치 c/r/a', ja:'指標 c/r/a', es:'Bench c/r/a', fr:'Bench c/r/a',
-    _t:{zh:'榜单能力分（coding/reasoning/agentic，0-100%）：内置策展或外部榜单源，经别名置信度匹配后作为能力先验', en:'benchmark tiers (coding/reasoning/agentic) used as capability prior', ko:'벤치마크 능력 점수(coding/reasoning/agentic) — 라우팅 능력 사전으로 사용', ja:'ベンチマーク能力スコア（coding/reasoning/agentic）— 能力事前値', es:'niveles de benchmark (coding/reasoning/agentic) como prior', fr:'niveaux de benchmark (coding/reasoning/agentic) comme a priori'}},
+    _t:{zh:'能力先验 coding/reasoning/agentic（0-100%）：配置了外部榜单源时显示榜单学习覆盖值，否则显示目录/发现层先验基线；作为评分的能力项参与路由', en:'capability priors coding/reasoning/agentic (0-100%): shows learned benchmark overlay when configured, otherwise the catalog/discovery prior baseline; feeds the capability term of scoring', ko:'능력 사전 coding/reasoning/agentic(0-100%): 벤치 오버레이가 설정되면 학습값, 없으면 카탈로그/발견 기본값, 점수의 능력 항목에 사용', ja:'能力事前値 coding/reasoning/agentic（0-100%）：ベンチ学習の上書きがあれば優先、なければカタログ/発見の基準値。スコアの能力項に使用', es:'priors de capacidad coding/reasoning/agentic (0-100%): muestra la superposición de benchmarks si está configurada, si no la base del catálogo/descubrimiento; alimenta el término de capacidad', fr:'a priori de capacité coding/reasoning/agentic (0-100%) : affiche la surcouche benchmark si configurée, sinon la base catalogue/découverte ; alimente le terme de capacité du score'}},
   w_rel:    {zh:'rel', en:'rel', ko:'rel', ja:'rel', es:'rel', fr:'rel',
     _t:{zh:'实测可靠性 = 传输成功率 × 工具调用质量，再按会话确认与插件反馈融合（0-1）', en:'observed reliability (0-1)', ko:'측정 신뢰성(0-1): 전송 성공률 × 도구 품질, 세션·플러그인 피드백 융합', ja:'実測信頼性(0-1): 転送成功率 × ツール品質、セッション確認と融合', es:'fiabilidad observada (0-1)', fr:'fiabilité observée (0-1)'}},
   w_calib:  {zh:'calib', en:'calib', ko:'calib', ja:'calib', es:'calib', fr:'calib',
@@ -235,6 +240,12 @@ function feedTokens(e){
   if (e.cache_write_tokens) s += ' · '+t('s_write')+fmtK(e.cache_write_tokens);
   return s;
 }
+
+function srcLine(e){
+  const agent = (e.agent||'').replace(/\/.*$/, '');
+  if (!agent && !e.session) return '';
+  return '<span class="dim2">'+esc(t('c_source'))+':</span> '+esc(agent + (agent && e.session ? ' · ' : '') + (e.session||''));
+}
 function judgeBadge(e){
   const map = {'decision_model':'bj_model', 'decision_model+rules':'bj_hybrid', 'heuristic':'bj_heur', 'explicit':'bj_explicit'};
   const k = map[e.judge];
@@ -317,11 +328,7 @@ function decisionDetail(e){
 }
 function feedMetrics(e){
   const parts = [];
-  const agent = (e.agent||'').replace(/\/.*$/, '');
-  if (agent || e.session) {
-    const src = esc(agent) + (agent && e.session ? ' · ' : '') + esc(e.session||'');
-    parts.push('<span title="'+esc(t('p_session'))+'">'+src+'</span>');
-  }
+  parts.push('<span title="'+esc(t('t_actual'))+'">'+feedTokens(e)+'</span>');
   if (e.ttft_ms != null) parts.push('<span>TTFT '+fmtMs(e.ttft_ms)+'</span>');
   if (e.ttft_ms != null && e.total_ms > e.ttft_ms && (e.completion_tokens||0) > 0) {
     const rate = e.completion_tokens / ((e.total_ms - e.ttft_ms) / 1000);
@@ -344,10 +351,10 @@ function addRow(e){
     '<span class="t">'+timeStr(new Date())+'</span>' +
     '<span class="pill badge '+badge+'">'+e.status+'</span>' +
     '<span class="m" title="'+esc(e.chosen)+'">'+esc(e.chosen)+'</span>' +
-    '<span class="tk">'+feedTokens(e)+'</span>' +
+    feedMetrics(e) +
     (e.translated ? '<span class="tk" title="'+t('translated')+'">⇄'+esc(e.translated)+'</span>' : '') +
     '<span class="ms">'+fmtMs(e.total_ms)+'</span></div>' +
-    '<div class="feed-path">'+feedMetrics(e)+'</div>' +
+    '<div class="feed-path">'+srcLine(e)+'</div>' +
     '<div class="feed-path">'+decisionPath(e)+'</div>' +
     '<div class="feed-detail" style="display:none">'+decisionDetail(e)+'</div>';
   row.querySelector('.feed-row').addEventListener('click', () => {
@@ -366,7 +373,7 @@ function buildThead(table, cols){
     '<th class="'+(c.num?'num':'')+'"'+(c.tk?' title="'+esc(tt(c.tk))+'"':'')+'>'+esc(t(c.k))+'</th>').join('') + '</tr>';
 }
 const DYN_COLS = [
-  {k:'c_model'}, {k:'c_link'}, {k:'c_reqs', num:1},
+  {k:'c_model'}, {k:'c_source', tk:'c_source._t'}, {k:'c_reqs', num:1},
   {k:'c_tokens', num:1, tk:'c_tokens._t'}, {k:'c_ttft', num:1, tk:'c_ttft._t'},
   {k:'c_lat', num:1, tk:'c_lat._t'}, {k:'c_rate', num:1, tk:'c_rate._t'},
   {k:'c_cache', num:1, tk:'c_cache._t'}, {k:'c_tools', num:1, tk:'c_tools._t'},
@@ -374,17 +381,17 @@ const DYN_COLS = [
 function renderDyn(){
   buildThead(document.getElementById('dyn'), DYN_COLS);
   const db = document.querySelector('#dyn tbody');
+  const srcLabel = k => ({user:t('src_user'), discovered:t('src_disc'), remote:t('src_remote'), builtin:t('src_builtin')})[k] || k || '-';
   const rows = Object.entries(state.stats).slice(0, 50).map(([id, s]) => {
     const keys = Object.keys(state.health).filter(k => k.split('\u001f')[0] === id);
-    const link = keys.length === 0 ? '<span style="color:var(--dim)">-</span>'
-      : (keys.some(k => state.health[k].available) ? '<span class="pill badge ok">'+t('available')+'</span>'
-         : '<span class="pill badge dead">down</span>');
+    const degraded = keys.length > 0 && !keys.some(k => state.health[k].available);
+    const src = '<span'+(degraded?' style="color:var(--red)" title="⚠ '+esc(t('allnormal')).replace(/（.*/,'')+'"':'')+'>'+esc(srcLabel(s.source))+(degraded?' ⚠':'')+'</span>';
     const tc = s.tool_calls || {};
     const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total))+'%' : '-';
     const tok = '<div title="'+esc(t('t_actual'))+'">'+fmtK(s.prompt_tokens??0)+t('s_in')+' '+fmtK(s.completion_tokens??0)+t('s_out')+'</div>' +
       '<div class="dim2" title="'+esc(t('t_actual'))+'">'+t('s_incl')+fmtK(s.cached_tokens||0)+' · '+t('s_write')+fmtK(s.cache_write_tokens||0)+'</div>';
     return '<tr><td title="'+esc(id)+'">'+esc(id.length>30?id.slice(0,29)+'…':id)+'</td>' +
-      '<td>'+link+'</td>' +
+      '<td>'+src+'</td>' +
       '<td class="num">'+s.requests+'('+s.success+')</td>' +
       '<td class="num">'+tok+'</td>' +
       '<td class="num">'+fmtMs(s.avg_ttft_ms)+'</td>' +
@@ -435,11 +442,11 @@ function renderWheel(){
   }).slice(0, 15);
   const rows = entries.map(([id, s]) => {
     const tr = s.telemetry || {};
-    const bt = (applied[id] || {}).tiers || {};
+    const bt = (applied[id] || {}).tiers || s.tiers || {};
     const pct = x => x==null ? '-' : Math.round(x*100)+'%';
     const uw = s.user_weight ?? 1;
-    const lb = tr.learned_bias;
-    const w = (uw === 1 && (lb == null || lb === 1)) ? '—' : uw.toFixed(2)+'×'+(lb ?? 1).toFixed(2);
+    const lb = tr.learned_bias ?? 1;
+    const w = uw.toFixed(2)+'×'+lb.toFixed(2);
     const fb = s.feedback || {ok:0,total:0};
     return '<tr><td title="'+esc(id)+'">'+esc(id.length>28?id.slice(0,27)+'…':id)+'</td>' +
       '<td class="num">'+pct(bt.coding)+'/'+pct(bt.reasoning)+'/'+pct(bt.agentic)+'</td>' +
