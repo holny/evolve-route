@@ -156,6 +156,41 @@ const T = {
   p_est:     {zh:'估', en:'est', ko:'추정', ja:'推定', es:'est', fr:'est'},
   p_scores:  {zh:'评分', en:'scores', ko:'점수', ja:'スコア', es:'puntajes', fr:'scores'},
   p_session: {zh:'会话', en:'session', ko:'세션', ja:'セッション', es:'sesión', fr:'session'},
+  st_why:    {zh:'为什么选', en:'Why', ko:'왜', ja:'なぜ', es:'Por qué', fr:'Pourquoi'},
+  st_task:   {zh:'任务判定：{d}类请求，难度{w}（{v}/3）', en:'Task: {d}, difficulty {w} ({v}/3)', ko:'작업 판정: {d}류 요청, 난이도 {w}({v}/3)', ja:'タスク判定：{d}系リクエスト、難度{w}（{v}/3）', es:'Tarea: {d}, dificultad {w} ({v}/3)', fr:'Tâche : {d}, difficulté {w} ({v}/3)'},
+  st_hard_pass: {zh:'{n} 个候选模型全部通过硬性检查（上下文窗口、健康状态、配额、凭据）', en:'all {n} candidates passed the hard checks (context window, health, quota, credentials)', ko:'{n}개 후보 모두 하드 체크 통과(컨텍스트 윈도우/헬스/쿼터/자격)', ja:'{n}個の候補がすべてハードチェック通過（コンテキスト窓/ヘルス/クォータ/認証）', es:'los {n} candidatos pasaron las comprobaciones duras (ventana, salud, cuota, credenciales)', fr:'les {n} candidats ont passé les contrôles durs (fenêtre, santé, quota, identifiants)'},
+  st_hard_some: {zh:'{a} 个候选中 {b} 个通过硬性检查（上下文窗口、健康状态、配额、凭据），其余已剔除', en:'{b} of {a} candidates passed the hard checks (context window, health, quota, credentials), the rest were filtered out', ko:'{a}개 중 {b}개가 하드 체크 통과(윈도우/헬스/쿼터/자격), 나머지는 제외', ja:'{a}候補中 {b}個がハードチェック通過（窓/ヘルス/クォータ/認証）、残りは除外', es:'{b} de {a} candidatos pasaron las comprobaciones (ventana, salud, cuota, credenciales), el resto fue filtrado', fr:'{b} sur {a} candidats ont passé les contrôles (fenêtre, santé, quota, identifiants), le reste a été filtré'},
+  st_score_top: {zh:'综合评分第一（{s}）：加权考量榜单能力、实测速度与可靠性、价格与订阅优势、你的权重', en:'composite score #1 ({s}): blends benchmark capability, observed speed & reliability, price/plan edge, and your weight', ko:'종합 점수 1위({s}): 벤치 능력·실측 속도·신뢰성·가격(플랜 우대)·사용자 가중치를 가중합산', ja:'総合スコア1位（{s}）：ベンチ能力・実測速度・信頼性・価格（プラン優遇）・重みを加重合算', es:'puntaje compuesto #1 ({s}): combina capacidad de benchmark, velocidad y fiabilidad observadas, precio/plan y tu peso', fr:'score composite n°1 ({s}) : mélange capacité benchmark, vitesse et fiabilité observées, prix/plan, votre poids'},
+  st_second: {zh:'领先第二名 {m}（{s}）', en:'ahead of runner-up {m} ({s})', ko:'차점 {m}({s})보다 앞섬', ja:'次点 {m}（{s}）をリード', es:'por delante de {m} ({s})', fr:'devant {m} ({s})'},
+  st_explore: {zh:'ε 探索：按 10% 概率改试次优模型，为飞轮采集对比样本', en:'ε-greedy: switched to the runner-up (10% chance) to gather comparative samples for the flywheel', ko:'ε 탐색: 10% 확률로 차점 모델로 바꿔 시험, 플라이휠 비교 샘플 수집', ja:'ε探索：10%の確率で次点モデルに切替、フライホイール用の比較サンプルを収集', es:'ε-greedy: cambió al segundo modelo (10%) para recolectar muestras comparativas del volante', fr:'ε-greedy : passé au 2e modèle (10%) pour recueillir des échantillons comparatifs du volant'},
+  st_sticky_1: {zh:'同一会话此前已选它——粘性窗口内直接沿用，不必每次重新决策', en:'the same session already picked it — reused within the sticky window, no re-decision per turn', ko:'같은 세션이 이미 선택함 — 스티키 윈도우 내 재사용, 매번 재판단 불필요', ja:'同一セッションが既に選択 — スティキー窓内で再利用、毎回の再判定は不要', es:'la misma sesión ya lo eligió — reutilizado dentro de la ventana sticky, sin redecidir cada turno', fr:'la même session l\'a déjà choisi — réutilisé dans la fenêtre sticky, sans redécider à chaque tour'},
+  st_sticky_2: {zh:'本次约 {n} tokens：模型窗口装得下、服务健康、配额充足', en:'~{n} tokens this turn: fits the window, service healthy, quota sufficient', ko:'이번 약 {n} 토큰: 윈도우에 들어감, 서비스 정상, 쿼터 충분', ja:'今回約 {n} トークン：窓に収まる、サービス正常、クォータ十分', es:'~{n} tokens esta vez: cabe en la ventana, servicio sano, cuota suficiente', fr:'~{n} jetons ce tour : tient dans la fenêtre, service sain, quota suffisant'},
+  st_sticky_3: {zh:'请求量级与工具需求和上次相近 → 跳过决策调用直接复用，省时省钱', en:'request band & tools match the previous turn → reuse without a decision call, saving time and cost', ko:'요청 밴드·도구가 직전과 유사 → 결정 호출 없이 재사용, 시간·비용 절감', ja:'リクエスト量級・ツールが前回と一致 → 判定呼び出しを省いて再利用、時間とコストを削減', es:'banda de solicitud y herramientas como el turno anterior → reutiliza sin llamada de decisión, ahorra tiempo y coste', fr:'bande de requête et outils identiques au tour précédent → réutilisation sans appel de décision, gain de temps et de coût'},
+  st_filtered_head: {zh:'未通过硬性检查', en:'failed hard checks', ko:'하드 체크 실패', ja:'ハードチェック不通過', es:'fallaron las comprobaciones', fr:'échec des contrôles'},
+  dom_Code:      {zh:'代码', en:'coding', ko:'코딩', ja:'コーディング', es:'código', fr:'code'},
+  dom_MathLogic: {zh:'数学逻辑', en:'math & logic', ko:'수학·논리', ja:'数学・論理', es:'matemáticas y lógica', fr:'maths et logique'},
+  dom_Writing:   {zh:'写作', en:'writing', ko:'글쓰기', ja:'ライティング', es:'escritura', fr:'rédaction'},
+  dom_Lookup:    {zh:'资料查找', en:'lookup', ko:'자료 조회', ja:'情報検索', es:'búsqueda', fr:'recherche'},
+  dom_Data:      {zh:'数据处理', en:'data', ko:'데이터', ja:'データ処理', es:'datos', fr:'données'},
+  dom_Chitchat:  {zh:'闲聊', en:'chitchat', ko:'잡담', ja:'雑談', es:'charla', fr:'bavardage'},
+  dom_AgentOps:  {zh:'Agent 操作', en:'agent ops', ko:'에이전트 작업', ja:'エージェント操作', es:'operaciones de agente', fr:'opérations d\'agent'},
+  dom_Other:     {zh:'通用', en:'general', ko:'일반', ja:'汎用', es:'general', fr:'général'},
+  diff_low:  {zh:'低', en:'low', ko:'낮음', ja:'低', es:'baja', fr:'faible'},
+  diff_mid:  {zh:'中', en:'medium', ko:'보통', ja:'中', es:'media', fr:'moyenne'},
+  diff_high: {zh:'高', en:'high', ko:'높음', ja:'高', es:'alta', fr:'élevée'},
+  ca_cred:    {zh:'无凭据', en:'no credentials', ko:'자격 증명 없음', ja:'認証情報なし', es:'sin credenciales', fr:'pas d\'identifiants'},
+  ca_vision:  {zh:'不支持图像输入', en:'no vision support', ko:'비전 미지원', ja:'画像入力非対応', es:'sin soporte de visión', fr:'pas de support vision'},
+  ca_window:  {zh:'上下文窗口装不下本次请求', en:'context window too small for this request', ko:'컨텍스트 윈도우에 들어가지 않음', ja:'コンテキスト窓に収まらない', es:'ventana de contexto muy pequeña', fr:'fenêtre de contexte trop petite'},
+  ca_proven:  {zh:'窗口未知：实测仅证明可接受 {n} tokens', en:'unknown window: only proven up to {n} tokens', ko:'윈도우 미지: {n} 토큰까지만 입증됨', ja:'窓不明：実績は {n} トークンまで', es:'ventana desconocida: probado solo hasta {n} tokens', fr:'fenêtre inconnue : prouvé seulement jusqu\'à {n} jetons'},
+  ca_quota:   {zh:'配额剩余 {a}，不够本次估算的 {b}', en:'quota left {a} < estimated {b}', ko:'쿼터 잔여 {a} < 추정 {b}', ja:'クォータ残り {a} < 推定 {b}', es:'cuota restante {a} < estimado {b}', fr:'quota restant {a} < estimé {b}'},
+  ca_cooldown:{zh:'冷却 {n}s', en:'cooldown {n}s', ko:'쿨다운 {n}s', ja:'クールダウン {n}s', es:'enfriamiento {n}s', fr:'refroidissement {n}s'},
+  hk_auth_failed:       {zh:'鉴权失败', en:'auth failed', ko:'인증 실패', ja:'認証失敗', es:'fallo de autenticación', fr:'échec d\'authentification'},
+  hk_no_credit:         {zh:'余额不足', en:'no credit', ko:'잔액 없음', ja:'残高不足', es:'sin saldo', fr:'sans crédit'},
+  hk_quota_exhausted:   {zh:'配额耗尽', en:'quota exhausted', ko:'쿼터 소진', ja:'クォータ枯渇', es:'cuota agotada', fr:'quota épuisé'},
+  hk_rate_limited:      {zh:'被限流', en:'rate limited', ko:'레이트 리밋', ja:'レート制限', es:'limitado', fr:'limité'},
+  hk_model_unsupported: {zh:'模型不支持', en:'model unsupported', ko:'미지원 모델', ja:'非対応モデル', es:'modelo no soportado', fr:'modèle non pris en charge'},
+  hk_context_overflow:  {zh:'上下文溢出', en:'context overflow', ko:'컨텍스트 오버플로', ja:'コンテキスト溢れ', es:'desbordamiento de contexto', fr:'débordement de contexte'},
+  hk_transient_error:   {zh:'暂时错误', en:'transient error', ko:'일시 오류', ja:'一時的エラー', es:'error transitorio', fr:'erreur transitoire'},
   chip_reqs:  {zh:'请求', en:'reqs', ko:'요청', ja:'リクエスト', es:'solicitudes', fr:'requêtes'},
   chip_cost:  {zh:'累计费用', en:'cost', ko:'누적 비용', ja:'累計費用', es:'coste', fr:'coût'},
   chip_active:{zh:'活跃模型', en:'active', ko:'활성 모델', ja:'アクティブ', es:'activos', fr:'actifs'},
@@ -199,21 +234,56 @@ function decisionPath(e){
   if (e.est_tokens) parts.push('<span class="pdim">'+esc(t('p_est'))+' '+fmtK(e.est_tokens)+' tok</span>');
   return parts.join('');
 }
+function shortId(m){ return m.length>26 ? m.slice(0,25)+'…' : m; }
+function causeLocal(c){
+  const paren = s => lang==='zh'||lang==='ja'||lang==='ko' ? '（'+s+'）' : '('+s+')';
+  let m;
+  if (c === 'no credential') return t('ca_cred');
+  if (c === 'no vision support') return t('ca_vision');
+  if (c === 'context window too small') return t('ca_window');
+  if ((m = c.match(/^unknown context window \(proven max accepted (\d+) tok\)$/)))
+    return t('ca_proven').replace('{n}', fmtK(+m[1]));
+  if ((m = c.match(/^quota remaining (\d+) < est (\d+)$/)))
+    return t('ca_quota').replace('{a}', fmtK(+m[1])).replace('{b}', fmtK(+m[2]));
+  if ((m = c.match(/^(auth failed|no credit|quota exhausted|rate limited|model unsupported|context overflow|transient error)(?: for (\d+)s)? \((.*)\)$/))) {
+    const hk = T['hk_'+m[1].replace(/ /g,'_')];
+    let s = hk ? (hk[lang] ?? hk.zh) : m[1];
+    if (m[2]) s += ' · ' + t('ca_cooldown').replace('{n}', m[2]);
+    return s + paren(m[3]);
+  }
+  return c;
+}
 function decisionDetail(e){
-  let h = '<b>'+esc(t('p_session'))+'</b> '+esc(e.session||'-') + ' · ' + esc(e.reason||'');
-  const sc = Object.entries(e.scores||{}).sort((a,b) => b[1]-a[1]);
-  if (sc.length) {
-    const top = sc.slice(0, 5);
-    if (sc.length > 5 && !top.some(([m]) => m === e.chosen)) {
-      const ci = sc.findIndex(([m]) => m === e.chosen);
-      if (ci > 0) top.push(sc[ci]);
+  const L = [];
+  const push = h => L.push('<div style="margin:1px 0">· '+h+'</div>');
+  L.push('<b>'+t('st_why')+' '+esc(shortId(e.chosen))+(lang==='zh'?'？':'?')+'</b>');
+  if (e.sticky) {
+    push(esc(t('st_sticky_1')));
+    push(esc(t('st_sticky_2').replace('{n}', fmtK(e.est_tokens||e.prompt_tokens||0))));
+    push(esc(t('st_sticky_3')));
+  } else {
+    const dm = (e.reason||'').match(/domain=(\w+)/);
+    if (dm) {
+      const dk = T['dom_'+dm[1]];
+      const diff = +e.difficulty_eff || 0;
+      const dw = diff < 1 ? t('diff_low') : diff < 2 ? t('diff_mid') : t('diff_high');
+      push(esc(t('st_task').replace('{d}', dk ? (dk[lang] ?? dk.zh) : dm[1]).replace('{w}', dw).replace('{v}', diff.toFixed(1))));
     }
-    h += '<br><b>'+esc(t('p_scores'))+'</b>(top '+top.length+'/'+sc.length+') ' +
-      top.map(([m,v],i) => (m===e.chosen?'<b>':'')+esc(m.length>26?m.slice(0,25)+'…':m)+' '+(+v).toFixed(2)+(m===e.chosen?'</b>':'')).join(' · ');
+    const f = e.funnel || [];
+    if (f.length === 4 && f[0] > 0)
+      push(esc(f[1] === f[2] ? t('st_hard_pass').replace('{n}', f[2]) : t('st_hard_some').replace('{a}', f[1]).replace('{b}', f[2])));
+    const sc = Object.entries(e.scores||{}).sort((a,b) => b[1]-a[1]);
+    const mine = sc.find(([m]) => m === e.chosen);
+    if (mine) push(esc(t('st_score_top').replace('{s}', (+mine[1]).toFixed(2))));
+    const second = sc.find(([m]) => m !== e.chosen);
+    if (second) push(esc(t('st_second').replace('{m}', shortId(second[0])).replace('{s}', (+second[1]).toFixed(2))));
+    if ((e.reason||'').includes('[exploring]')) push(esc(t('st_explore')));
   }
   if (e.filtered && e.filtered.length)
-    h += '<br><b>'+esc(t('filtered'))+'</b> ' + e.filtered.map(f => esc(f.model+' ('+f.cause+')')).join('、 ');
-  return h;
+    push('<span style="color:var(--dim)">'+esc(t('st_filtered_head'))+'：' +
+      e.filtered.map(f => esc(shortId(f.model))+'（'+esc(causeLocal(f.cause))+'）').join('、 ')+'</span>');
+  L.push('<div style="opacity:.6;margin-top:3px">'+esc(t('p_session'))+': '+esc(e.session||'-')+'</div>');
+  return L.join('');
 }
 function addRow(e){
   if (e.kind !== 'chat') return;
