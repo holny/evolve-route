@@ -43,6 +43,13 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-spac
 .feed-row .ms { margin-left:auto; color:var(--dim); }
 .pill { border-radius:10px; padding:0 8px; font-size:11px; }
 .feed-path { display:flex; gap:10px; flex-wrap:wrap; align-items:baseline; padding:2px 0 1px 2px; font-size:11px; color:var(--dim); }
+.feed-group { border:1px solid var(--border); border-radius:8px; margin-bottom:8px; overflow:hidden; background:var(--card); }
+.feed-group-h { display:flex; gap:8px; align-items:baseline; padding:4px 10px; background:#1a2029; cursor:pointer; font-size:11px; color:var(--dim); white-space:nowrap; }
+.feed-group-h:hover { color:var(--fg); }
+.feed-group-h b { color:var(--fg); font-weight:normal; }
+.feed-group-h .cnt { margin-left:auto; font-variant-numeric:tabular-nums; }
+.feed-group-b .feed-ev { border-bottom:1px solid #21262d; }
+.feed-group-b .feed-ev:last-child { border-bottom:0; }
 .pbadge { border-radius:4px; padding:0 6px; background:#1c2431; color:var(--blue); white-space:nowrap; }
 .pbadge.explore { color:var(--amber); }
 .pbadge.warn { color:var(--red); background:#2d1a1c; }
@@ -167,6 +174,7 @@ const T = {
   f_cache_util: {zh:'缓存利用', en:'cache util', ko:'캐시 활용', ja:'ｷｬｯｼｭ利用', es:'uso caché', fr:'util. cache'},
   t_cache_util: {zh:'缓存利用率 = 缓存读 ÷ 总输入 tokens（读是入的子集，折扣计价；越高越省钱）', en:'cache utilisation = cached read ÷ total input tokens (read is a subset of input, billed at discount; higher is cheaper)', ko:'캐시 활용률 = 캐시 읽기 ÷ 총 입력 토큰(읽은 입력의 부분집합, 할인; 높을수록 저렴)', ja:'キャッシュ利用率 = キャッシュ読み ÷ 総入力トークン（読みは入力の部分集合、割引。高いほど安い）', es:'uso de caché = lectura caché ÷ total de tokens de entrada (la lectura es subconjunto de la entrada, con descuento; más alto es más barato)', fr:'utilisation du cache = lecture cache ÷ total des jetons d\'entrée (la lecture fait partie de l\'entrée, au rabais ; plus haut = moins cher)'},
   f_tools:   {zh:'工具', en:'tools', ko:'도구', ja:'ツール', es:'herram.', fr:'outils'},
+  f_entries: {zh:'条', en:'entries', ko:'건', ja:'件', es:'reg.', fr:'entrées'},
   t_rate_f:  {zh:'吐 token 速率 = 补全 tokens ÷ 生成窗口（总耗时 − TTFT）', en:'generation speed = completion tokens ÷ generation window (total − TTFT)', ko:'토큰 생성 속도 = 완료 토큰 ÷ 생성 구간(총 − TTFT)', ja:'生成速度 = 完成トークン ÷ 生成窓（合計 − TTFT）', es:'velocidad = tokens completados ÷ ventana de generación (total − TTFT)', fr:'vitesse = jetons complétés ÷ fenêtre de génération (total − TTFT)'},
   p_scores:  {zh:'评分', en:'scores', ko:'점수', ja:'スコア', es:'puntajes', fr:'scores'},
   p_session: {zh:'会话', en:'session', ko:'세션', ja:'セッション', es:'sesión', fr:'session'},
@@ -241,11 +249,6 @@ function feedTokens(e){
   return s;
 }
 
-function srcLine(e){
-  const agent = (e.agent||'').replace(/\/.*$/, '');
-  if (!agent && !e.session) return '';
-  return '<span class="dim2">'+esc(t('c_source'))+':</span> '+esc(agent + (agent && e.session ? ' · ' : '') + (e.session||''));
-}
 function judgeBadge(e){
   const map = {'decision_model':'bj_model', 'decision_model+rules':'bj_hybrid', 'heuristic':'bj_heur', 'explicit':'bj_explicit'};
   const k = map[e.judge];
@@ -342,6 +345,37 @@ function feedMetrics(e){
   else if (qc) parts.push('<span title="'+esc(t('f_tools'))+'">'+esc(t('f_tools'))+' ×'+qc+'</span>');
   return parts.join('<span class="dim2"> · </span>');
 }
+const groups = new Map();
+function groupKey(e){
+  const agent = (e.agent||'').replace(/\/.*$/, '');
+  return (agent||'-')+'\u001f'+(e.session||'-');
+}
+function shortMid(s){ return s.length>24 ? s.slice(0,14)+'…'+s.slice(-6) : s; }
+function groupBlock(e){
+  const key = groupKey(e);
+  let g = groups.get(key);
+  if (!g) {
+    const el = document.createElement('div');
+    el.className = 'feed-group';
+    el.dataset.key = key;
+    const agent = (e.agent||'').replace(/\/.*$/, '');
+    const h = document.createElement('div');
+    h.className = 'feed-group-h';
+    h.innerHTML = '<span class="garrow">▾</span> <b>'+esc(agent||'-')+'</b> · <span title="'+esc(e.session||'')+'">'+esc(shortMid(e.session||'-'))+'</span><span class="cnt"></span>';
+    const b = document.createElement('div');
+    b.className = 'feed-group-b';
+    h.addEventListener('click', () => {
+      const hidden = b.style.display === 'none';
+      b.style.display = hidden ? '' : 'none';
+      h.querySelector('.garrow').textContent = hidden ? '▾' : '▸';
+    });
+    el.appendChild(h); el.appendChild(b);
+    g = {el, b, h, count:0};
+    groups.set(key, g);
+  }
+  feed.prepend(g.el);
+  return g;
+}
 function addRow(e){
   if (e.kind !== 'chat') return;
   const badge = (200<=e.status && e.status<300) ? 'ok' : 'dead';
@@ -354,15 +388,23 @@ function addRow(e){
     feedMetrics(e) +
     (e.translated ? '<span class="tk" title="'+t('translated')+'">⇄'+esc(e.translated)+'</span>' : '') +
     '<span class="ms">'+fmtMs(e.total_ms)+'</span></div>' +
-    '<div class="feed-path">'+srcLine(e)+'</div>' +
     '<div class="feed-path">'+decisionPath(e)+'</div>' +
     '<div class="feed-detail" style="display:none">'+decisionDetail(e)+'</div>';
   row.querySelector('.feed-row').addEventListener('click', () => {
     const d = row.querySelector('.feed-detail');
     if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
   });
-  feed.prepend(row);
-  while (feed.children.length > 200) { if (feed.lastChild) feed.removeChild(feed.lastChild); }
+  const g = groupBlock(e);
+  g.count++;
+  g.h.querySelector('.cnt').textContent = g.count+' '+t('f_entries')+' · '+timeStr(new Date());
+  g.b.prepend(row);
+  while (g.b.children.length > 50) { if (g.b.lastChild) g.b.removeChild(g.b.lastChild); }
+  while (feed.children.length > 24) {
+    const last = feed.lastChild;
+    if (!last) break;
+    if (last.dataset && last.dataset.key) groups.delete(last.dataset.key);
+    feed.removeChild(last);
+  }
 }
 
 const state = { stats:{}, bench:{}, health:{}, quota:{} };
