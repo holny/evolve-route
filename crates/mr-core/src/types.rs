@@ -337,7 +337,7 @@ impl HealthKind {
             HealthKind::AuthFailed | HealthKind::PaymentRequired => 30 * 60 * 1000,
             HealthKind::Unsupported => 24 * 60 * 60 * 1000,
             HealthKind::ContextOverflow => 2 * 60 * 1000,
-            HealthKind::QuotaExhausted => 5 * 60 * 1000,
+            HealthKind::QuotaExhausted => 30 * 60 * 1000,
             HealthKind::RateLimited => 60 * 1000,
             HealthKind::Transient => 30 * 1000,
         }
@@ -366,6 +366,21 @@ impl HealthEntry {
 }
 
 pub type HealthMap = std::collections::HashMap<String, HealthEntry>;
+
+/// 模型级可用性：HealthMap 键是 `模型⟨sep⟩keyidx`（多 key 池）或裸模型 id。
+/// 任一 key 可用即视为可用；该模型无任何记录视为可用。
+pub fn model_available(map: &HealthMap, id: &str, now_epoch_ms: u64) -> bool {
+    let mut seen = false;
+    for (k, e) in map {
+        if k.split('\u{1f}').next() == Some(id) {
+            seen = true;
+            if e.available(now_epoch_ms) {
+                return true;
+            }
+        }
+    }
+    !seen
+}
 
 /// Observed per-model telemetry snapshot fed back into scoring (flywheel).
 #[derive(Debug, Clone, Default, Serialize)]

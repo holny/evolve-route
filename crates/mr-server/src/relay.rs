@@ -529,6 +529,25 @@ pub async fn chat_completions(
     } else {
         json_error(status, "all routed upstreams failed; see x-mr-skipped for per-model reasons")
     };
+    // 引导调用方退避：按链上模型已知的最短冷却给 Retry-After，
+    // 让 opencode 等客户端按此退避而不是立即重撞
+    {
+        let snap = st.health.snapshot();
+        let now_ms = mr_memory::health::now();
+        let mut ra: Option<u64> = None;
+        for cand in &attempts {
+            for (k, h) in &snap {
+                if k.split(KEY_SEP).next() == Some(cand.as_str())
+                    && let Some(ms) = h.cooldown_remaining_ms(now_ms)
+                {
+                    ra = Some(ra.map_or(ms, |x: u64| x.min(ms)));
+                }
+            }
+        }
+        if let Some(secs) = ra {
+            insert_header(resp.headers_mut(), "retry-after", &(secs.div_ceil(1000)).to_string());
+        }
+    }
     if !skipped.is_empty() {
         insert_header(resp.headers_mut(), "x-mr-skipped", &skipped.join(","));
     }

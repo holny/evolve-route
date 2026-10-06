@@ -83,7 +83,7 @@ impl Engine {
                 .get(&sticky.chosen)
                 .map(|m| {
                     scoring::context_fits(m, est, max_output).is_ok()
-                        && input.health.get(&sticky.chosen).map(|h| h.available(now)).unwrap_or(true)
+                        && model_available(input.health, &sticky.chosen, now)
                         && input.quota.get(&sticky.chosen).map(|r| *r >= est).unwrap_or(true)
                 })
                 .unwrap_or(false);
@@ -142,18 +142,24 @@ impl Engine {
                 .filter(|c| *c > 0.1)
                 .unwrap_or(1.0);
             let m_est = ((est as f32 * calib) as u64).max(est / 2);
-            if let Some(h) = input.health.get(&m.id)
-                && !h.available(now) {
-                    let remaining = h
-                        .cooldown_remaining_ms(now)
-                        .map(|ms| format!(" for {}s", ms / 1000))
-                        .unwrap_or_default();
-                    filtered.push(FilteredOut {
-                        model: m.id.clone(),
-                        cause: format!("{}{} ({})", h.kind.label(), remaining, h.message),
-                    });
-                    continue;
-                }
+            if !model_available(input.health, &m.id, now) {
+                let remaining = input
+                    .health
+                    .get(&m.id)
+                    .and_then(|h| h.cooldown_remaining_ms(now))
+                    .map(|ms| format!(" for {}s", ms / 1000))
+                    .unwrap_or_default();
+                let (kind, message) = input
+                    .health
+                    .get(&m.id)
+                    .map(|h| (h.kind, h.message.clone()))
+                    .unwrap_or((HealthKind::Transient, "cooling down".into()));
+                filtered.push(FilteredOut {
+                    model: m.id.clone(),
+                    cause: format!("{}{} ({})", kind.label(), remaining, message),
+                });
+                continue;
+            }
             if !m.has_credential() {
                 filtered.push(FilteredOut { model: m.id.clone(), cause: "no credential".into() });
                 continue;
@@ -203,12 +209,19 @@ impl Engine {
 
         if candidates.is_empty() {
             // best-effort: route to the LARGEST known window (upstream may
-            // still accept more than declared); clear reason if all fail
+            // still accept more than declared). Models in health cooldown
+            // are excluded — best-effort must not hammer known-dead
+            // upstreams (quota-exhausted etc.); if everything is cooling
+            // down, fail fast so the caller backs off.
+            let now_be = now_epoch_ms();
             let best = self
                 .catalog
                 .models
                 .iter()
                 .filter(|m| m.context_window.is_some())
+                .filter(|m| {
+                    model_available(input.health, &m.id, now_be)
+                })
                 .max_by_key(|m| m.context_window.unwrap())
                 .or_else(|| self.catalog.models.first());
             let Some(best) = best else {
