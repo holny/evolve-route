@@ -312,12 +312,17 @@ pub async fn api_feedback(
 ) -> Response {
     let ok = body.get("ok").and_then(|o| o.as_bool());
     let session = body.get("session").and_then(|s| s.as_str()).unwrap_or("");
+    let agent = body
+        .get("agent")
+        .and_then(|a| a.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "-".into());
     // plugins don't know which model served the session; the gateway does
     let model = body
         .get("model")
         .and_then(|m| m.as_str())
         .map(|s| s.to_string())
-        .or_else(|| st.sessions.get(session).map(|s| s.chosen))
+        .or_else(|| st.sessions.get_by_session(&[agent], session).map(|s| s.chosen))
         .unwrap_or_default();
     if model.is_empty() || ok.is_none() {
         return (

@@ -351,7 +351,9 @@ impl Drop for Finalizer {
             if let Some(sessions) = &self.sessions {
                 let ids: Vec<String> =
                     self.acc.tool_calls.values().map(|(id, _, _)| id.clone()).collect();
-                sessions.set_pending(&t.session.clone(), &t.chosen, ids);
+                // 与 relay 的 sticky_key 同构：agent 前缀隔离跨 agent 同名会话
+                let pkey = format!("{}\u{1f}{}", t.agent.clone().unwrap_or_default(), t.session);
+                sessions.set_pending(&pkey, &t.chosen, ids);
             }
             t.extra = match t.extra.take() {
                 Some(mut ex) => {

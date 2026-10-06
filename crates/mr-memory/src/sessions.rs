@@ -65,6 +65,17 @@ impl SessionStore {
         })
     }
 
+    /// 反馈解析：插件通常不知道 agent，按候选 agent 前缀逐个尝试，
+    /// 最后回退旧式纯 session 键（兼容 2026-10-06 之前写入的状态）
+    pub fn get_by_session(&self, agents: &[String], session: &str) -> Option<StickyState> {
+        for a in agents {
+            if let Some(s) = self.get(&format!("{}\u{1f}{}", a, session)) {
+                return Some(s);
+            }
+        }
+        self.get(session)
+    }
+
     pub fn put(&self, key: &str, state: StickyState) {
         let Ok(mut map) = self.inner.map.lock() else { return };
         if map.len() >= CAPACITY && !map.contains_key(key)

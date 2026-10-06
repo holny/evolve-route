@@ -37,6 +37,8 @@ pub async fn chat_completions(
     };
 
     let session_key = session_key_of(&st, &headers, &parsed);
+    // 内部状态（粘性/L3 反馈）按 agent 隔离：跨 agent 同名会话绝不共享状态
+    let sticky_key = format!("{}\u{1f}{}", agent_hdr, session_key);
     let header_policy = headers
         .get("x-mr-policy")
         .and_then(|v| v.to_str().ok())
@@ -50,14 +52,14 @@ pub async fn chat_completions(
 
     let mut decision = match &target {
         Target::Auto(alias_policy) => {
-            let sticky = st.sessions.get(&session_key);
+            let sticky = st.sessions.get(&sticky_key);
             let health = st.health.snapshot();
             let telemetry = st.flywheel.telemetry_snapshot();
             let quota_view = st.quota.best_remaining_by_models();
 
             // L3 session-loop: did the previous turn's tool calls come back
             // executed as role=tool messages? (gateway-side semantic signal)
-            if let Some(pending) = st.sessions.take_pending(&session_key) {
+            if let Some(pending) = st.sessions.take_pending(&sticky_key) {
                 let ids: Vec<&str> = parsed
                     .get("messages")
                     .and_then(|m| m.as_array())
@@ -93,7 +95,7 @@ pub async fn chat_completions(
             };
             let d = st.engine.decide(input);
             st.sessions.put(
-                &session_key,
+                &sticky_key,
                 StickyState {
                     chosen: d.chosen.clone(),
                     est_tokens_band: tok::tokens_band(est),
@@ -103,7 +105,7 @@ pub async fn chat_completions(
                 },
             );
             if d.sticky {
-                st.sessions.decrement_turns(&session_key);
+                st.sessions.decrement_turns(&sticky_key);
             }
             d
         }
@@ -425,7 +427,7 @@ pub async fn chat_completions(
                     })
                     .unwrap_or_default();
                 let chosen = t.chosen.clone();
-                st.sessions.set_pending(&session_key, &chosen, ids);
+                st.sessions.set_pending(&sticky_key, &chosen, ids);
             }
         } // guard dropped before finalize (which locks telem itself)
 

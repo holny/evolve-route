@@ -33,6 +33,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
     };
 
     let session_key = session_key_of(&st, &headers, &parsed);
+    let sticky_key = format!("{}\u{1f}{}", agent_hdr, session_key);
     let header_policy = headers
         .get("x-mr-policy")
         .and_then(|v| v.to_str().ok())
@@ -48,11 +49,11 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
 
     let mut decision = match &target {
         Target::Auto(alias_policy) => {
-            let sticky = st.sessions.get(&session_key);
+            let sticky = st.sessions.get(&sticky_key);
             let health = st.health.snapshot();
             let telemetry = st.flywheel.telemetry_snapshot();
             let quota_view = st.quota.best_remaining_by_models();
-            if let Some(pending) = st.sessions.take_pending(&session_key) {
+            if let Some(pending) = st.sessions.take_pending(&sticky_key) {
                 let returned = returned_tool_result_ids(&parsed);
                 let total = pending.call_ids.len() as u64;
                 let matched = pending.call_ids.iter().filter(|id| returned.contains(id)).count() as u64;
@@ -78,7 +79,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             };
             let d = st.engine.decide(input);
             st.sessions.put(
-                &session_key,
+                &sticky_key,
                 StickyState {
                     chosen: d.chosen.clone(),
                     est_tokens_band: tok::tokens_band(est),
@@ -88,7 +89,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                 },
             );
             if d.sticky {
-                st.sessions.decrement_turns(&session_key);
+                st.sessions.decrement_turns(&sticky_key);
             }
             d
         }
@@ -383,7 +384,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                         .unwrap_or_default()
                 };
                 let chosen = t.chosen.clone();
-                st.sessions.set_pending(&session_key, &chosen, ids);
+                st.sessions.set_pending(&sticky_key, &chosen, ids);
             }
         } // guard dropped
 
