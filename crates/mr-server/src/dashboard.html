@@ -326,6 +326,8 @@ function decisionDetail(e){
   if (e.filtered && e.filtered.length)
     push('<span style="color:var(--dim)">'+esc(t('st_filtered_head'))+'：' +
       e.filtered.map(f => esc(shortId(f.model))+'（'+esc(causeLocal(f.cause))+'）').join('、 ')+'</span>');
+  if (e.skipped && e.skipped.length)
+    push('<span style="color:var(--red)">'+esc(t('skipped'))+'：'+e.skipped.map(s => esc(s)).join(' → ')+'</span>');
   L.push('<div style="opacity:.6;margin-top:3px">'+esc(t('p_session'))+': '+esc(e.session||'-')+'</div>');
   return L.join('');
 }

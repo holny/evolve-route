@@ -118,15 +118,33 @@ pub async fn chat_completions(
 
     // Candidate chain: auto decisions try the ranked chain on quota/auth
     // failures; explicit model selections return the upstream error as-is.
+    // Chain exhausted → keep pulling from the full eligible ranking (scores,
+    // desc) up to fallback_depth so a top-3 outage never takes the whole
+    // provider fleet down with it.
     let attempts: Vec<String> = match &target {
         Target::Auto(_) => {
             let mut seen = std::collections::HashSet::new();
-            decision
+            let mut list: Vec<String> = decision
                 .chain
                 .iter()
                 .filter(|c| seen.insert((*c).clone()))
                 .cloned()
-                .collect()
+                .collect();
+            let depth = st.config.policy.fallback_depth.max(3) as usize;
+            if list.len() < depth && !decision.scores.is_empty() {
+                let mut ranked: Vec<(String, f32)> =
+                    decision.scores.iter().map(|(k, v)| (k.clone(), *v)).collect();
+                ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                for (m, _) in ranked {
+                    if list.len() >= depth {
+                        break;
+                    }
+                    if seen.insert(m.clone()) {
+                        list.push(m);
+                    }
+                }
+            }
+            list
         }
         Target::Direct(_) => vec![decision.chosen.clone()],
     };
@@ -138,8 +156,15 @@ pub async fn chat_completions(
     let mut min_context_needed: Option<u64> = None;
 
     // Cross-protocol: OpenAI ingress -> Anthropic upstream (Switchyard IR)
+    // provider 账户级熔断：配额/余额/鉴权/限流是 provider 级共享资源，
+    // 同 provider 的其他模型不再重复尝试（本请求内）
+    let mut dead_providers: std::collections::HashSet<String> = std::collections::HashSet::new();
     for cand in &attempts {
         let Some(record) = st.engine.catalog.get(cand).cloned() else { continue };
+        if dead_providers.contains(&record.provider) {
+            skipped.push(format!("{cand}(provider {} account-level failure)", record.provider));
+            continue;
+        }
         if let Some(need) = min_context_needed
             && record.context_window.map(|w| w < need).unwrap_or(true)
         {
@@ -256,6 +281,15 @@ pub async fn chat_completions(
             };
             if failure.kind == HealthKind::ContextOverflow {
                 min_context_needed = Some(est.max(1));
+            }
+            if matches!(
+                failure.kind,
+                HealthKind::QuotaExhausted
+                    | HealthKind::PaymentRequired
+                    | HealthKind::AuthFailed
+                    | HealthKind::RateLimited
+            ) {
+                dead_providers.insert(record.provider.clone());
             }
             st.health.mark_failure(&health_id, failure);
             let kind_label = {
@@ -445,6 +479,43 @@ pub async fn chat_completions(
 
     // every candidate failed: explicit selections get the raw upstream
     // error back; auto routing gets a summary of what was skipped and why
+    // 全灭也落事件（含 x-mr-skipped 明细），否则面板回看不到这次失败
+    {
+        let status = last_error.as_ref().map(|(s, _)| s.as_u16()).unwrap_or(502);
+        let filtered_note: Vec<String> = decision
+            .filtered
+            .iter()
+            .take(4)
+            .map(|f| format!("{} ({})", f.model, f.cause))
+            .collect();
+        let mut detail = if skipped.is_empty() {
+            "all routed upstreams failed".to_string()
+        } else {
+            format!("all routed upstreams failed: {}", skipped.join("; "))
+        };
+        if !filtered_note.is_empty() {
+            detail.push_str(&format!(" | filtered: {}", filtered_note.join("; ")));
+        }
+        let telem = crate::stream::Telemetry {
+            decision_id: decision.id.clone(),
+            session: session_key.clone(),
+            chosen: original_choice.clone(),
+            upstream_model: String::new(),
+            est_tokens: decision.est_input_tokens,
+            sticky: decision.sticky,
+            stream: false,
+            started,
+            ttft_ms: None,
+            bytes: 0,
+            status,
+            usage: None,
+            est_cost_usd: None,
+            translated: None,
+            extra: Some(json!({"reason": detail, "skipped": skipped, "filtered": decision.filtered})),
+            agent: Some(crate::identity::agent_identity(&headers, &st.config.telemetry.agent_header)),
+        };
+        crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.bus, &telem);
+    }
     let direct_raw = matches!(target, Target::Direct(_)) && last_error.is_some();
     let (status, err_body) = last_error.unwrap_or((StatusCode::BAD_GATEWAY, Bytes::new()));
     let mut resp = if direct_raw {

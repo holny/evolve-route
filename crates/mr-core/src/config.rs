@@ -17,6 +17,8 @@ pub struct PolicyCfg {
     pub default: String,
     pub weights: PolicyWeights,
     pub sticky_turns: u32,
+    /// 失败降级链深度：链耗尽后从合格集合评分序继续补位（含链本身）
+    pub fallback_depth: u32,
     pub confidence_gate: f32,
     /// ε-greedy exploration: share of full-pipeline requests that try the
     /// runner-up so the flywheel gathers comparative samples (0 disables).
@@ -29,6 +31,7 @@ impl Default for PolicyCfg {
             default: "balanced".into(),
             weights: PolicyWeights::balanced(),
             sticky_turns: 6,
+            fallback_depth: 6,
             confidence_gate: 0.35,
             explore_ratio: 0.0,
         }

@@ -48,7 +48,7 @@ async fn spawn_mock_upstream() -> u16 {
 fn test_config(upstream_port: u16) -> FileConfig {
     let mk = |id: &str, upstream: &str, window: u64, inp: f32, outp: f32, coding: f32, speed: f32| ModelEntry {
         id: id.into(),
-        provider: "mock".into(),
+        provider: format!("mock-{id}"),
         base_url: format!("http://127.0.0.1:{upstream_port}/v1"),
         api_key_env: None,
         upstream_model: Some(upstream.into()),

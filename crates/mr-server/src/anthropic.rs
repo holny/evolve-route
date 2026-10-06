@@ -104,7 +104,27 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
     let attempts: Vec<String> = match &target {
         Target::Auto(_) => {
             let mut seen = std::collections::HashSet::new();
-            decision.chain.iter().filter(|c| seen.insert((*c).clone())).cloned().collect()
+            let mut list: Vec<String> = decision
+                .chain
+                .iter()
+                .filter(|c| seen.insert((*c).clone()))
+                .cloned()
+                .collect();
+            let depth = st.config.policy.fallback_depth.max(3) as usize;
+            if list.len() < depth && !decision.scores.is_empty() {
+                let mut ranked: Vec<(String, f32)> =
+                    decision.scores.iter().map(|(k, v)| (k.clone(), *v)).collect();
+                ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                for (m, _) in ranked {
+                    if list.len() >= depth {
+                        break;
+                    }
+                    if seen.insert(m.clone()) {
+                        list.push(m);
+                    }
+                }
+            }
+            list
         }
         Target::Direct(_) => vec![decision.chosen.clone()],
     };
@@ -113,8 +133,14 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
     let mut last_error: Option<(StatusCode, Bytes)> = None;
     let mut min_context_needed: Option<u64> = None;
 
+    // provider 账户级熔断（与 relay 同规则）
+    let mut dead_providers: std::collections::HashSet<String> = std::collections::HashSet::new();
     for cand in &attempts {
         let Some(record) = st.engine.catalog.get(cand).cloned() else { continue };
+        if dead_providers.contains(&record.provider) {
+            skipped.push(format!("{cand}(provider {} account-level failure)", record.provider));
+            continue;
+        }
         if let Some(need) = min_context_needed
             && record.context_window.map(|w| w < need).unwrap_or(true)
         {
@@ -219,6 +245,15 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             }));
             if failure.kind == HealthKind::ContextOverflow {
                 min_context_needed = Some(est.max(1));
+            }
+            if matches!(
+                failure.kind,
+                HealthKind::QuotaExhausted
+                    | HealthKind::PaymentRequired
+                    | HealthKind::AuthFailed
+                    | HealthKind::RateLimited
+            ) {
+                dead_providers.insert(record.provider.clone());
             }
             st.health.mark_failure(&health_id, failure);
             let kind_label = {
