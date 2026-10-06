@@ -22,11 +22,7 @@ const MAX_ERROR_BODY: usize = 8 * 1024;
 
 pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
     let started = Instant::now();
-    let agent_hdr = headers
-        .get("x-mr-client")
-        .or_else(|| headers.get("user-agent"))
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.chars().take(40).collect::<String>());
+    let agent_hdr = crate::identity::agent_identity(&headers, &st.config.telemetry.agent_header);
     let Ok(parsed) = serde_json::from_slice::<Value>(&body) else {
         return mr_error(StatusCode::BAD_REQUEST, "invalid json body");
     };
@@ -36,7 +32,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
         Err(resp) => return resp,
     };
 
-    let session_key = session_key_of(&headers, &parsed);
+    let session_key = session_key_of(&st, &headers, &parsed);
     let header_policy = headers
         .get("x-mr-policy")
         .and_then(|v| v.to_str().ok())
@@ -262,7 +258,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             usage: None,
             est_cost_usd: None,
             translated: to_openai.then(|| "openai->anthropic".to_string()),
-            agent: agent_hdr,
+            agent: Some(agent_hdr),
             extra: Some(json!({
                 "reason": decision.reason,
                 "scores": decision.scores,
@@ -519,9 +515,9 @@ fn mr_error(status: StatusCode, msg: &str) -> Response {
         .into_response()
 }
 
-fn session_key_of(headers: &HeaderMap, parsed: &Value) -> String {
-    if let Some(v) = headers.get("x-mr-session").and_then(|v| v.to_str().ok()) {
-        return v.to_string();
+fn session_key_of(st: &AppState, headers: &HeaderMap, parsed: &Value) -> String {
+    if let Some(v) = crate::identity::session_identity(headers, parsed, &st.config.telemetry.session_header) {
+        return v;
     }
     let mut hasher = Sha256::new();
     if let Some(system) = parsed.get("system") {

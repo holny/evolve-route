@@ -1,5 +1,6 @@
 pub mod anthropic;
 pub mod config;
+pub mod identity;
 pub mod meta;
 pub mod quality;
 pub mod relay;

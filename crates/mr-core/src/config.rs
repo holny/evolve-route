@@ -152,6 +152,22 @@ impl Default for ModelEntry {
     }
 }
 
+/// agent/会话标识提取：自定义请求头 + 内置已知 agent 逻辑
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct TelemetryCfg {
+    /// 会话提取的自定义请求头（优先级最高）
+    pub session_header: String,
+    /// agent 提取的自定义请求头（优先级最高）
+    pub agent_header: String,
+}
+
+impl Default for TelemetryCfg {
+    fn default() -> Self {
+        Self { session_header: "x-mr-session".into(), agent_header: "x-mr-client".into() }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct FileConfig {
@@ -163,6 +179,7 @@ pub struct FileConfig {
     pub data: DataCfg,
     pub discovery: DiscoveryCfg,
     pub benchmarks: BenchmarksCfg,
+    pub telemetry: TelemetryCfg,
     pub models: Vec<ModelEntry>,
 }
 

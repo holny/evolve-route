@@ -69,6 +69,7 @@ fn test_config(upstream_port: u16) -> FileConfig {
         data: DataCfg { dir: std::env::temp_dir().join(format!("mr-test-{}", std::process::id())) .to_string_lossy().into_owned() },
         discovery: DiscoveryCfg { agents: vec![] },
         benchmarks: BenchmarksCfg { enabled: false, interval_hours: 24, sources: vec![] },
+        telemetry: Default::default(),
         models: vec![
             mk("mini", "mock-mini", 32_000, 0.1, 0.4, 0.45, 0.95),
             mk("standard", "mock-standard", 128_000, 0.6, 2.4, 0.75, 0.7),
