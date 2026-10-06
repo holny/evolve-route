@@ -153,10 +153,25 @@ const T = {
   p_funnel:  {zh:'漏斗', en:'funnel', ko:'퍼널', ja:'ファネル', es:'embudo', fr:'entonnoir'},
   p_alt:     {zh:'备选', en:'runner-ups', ko:'차점', ja:'次点', es:'alternos', fr:'alternatives'},
   p_diff:    {zh:'难度', en:'difficulty', ko:'난이도', ja:'難度', es:'dificultad', fr:'difficulté'},
-  p_est:     {zh:'估', en:'est', ko:'추정', ja:'推定', es:'est', fr:'est'},
+  p_est:     {zh:'预估入', en:'est in', ko:'추정 입', ja:'推定入', es:'ent est.', fr:'entr est.'},
+  t_est:     {zh:'请求发出前的输入 tokens 估算（用于窗口/配额/粘性检查）；行内「入」是上游实报用量，两者可能不同', en:'input-token estimate made before the request (drives window/quota/sticky checks); the in/out in the row are actual usage reported by upstream and may differ', ko:'요청 전 입력 토큰 추정(윈도우/쿼터/스티키 검사용); 행의 입/출은 업스트림 실제 사용량으로 다를 수 있음', ja:'リクエスト前の入力トークン推定（窓/クォータ/スティキー検査用）；行内の入/出は上流の実使用量で異なり得る', es:'estimación de tokens de entrada antes de la solicitud (ventana/cuota/sticky); lo in/out de la fila es uso real reportado por el upstream', fr:'estimation des jetons d\'entrée avant la requête (fenêtre/quota/sticky) ; le entr/sort de la ligne est l\'usage réel remonté, qui peut différer'},
+  t_actual:  {zh:'入=上游实报的总输入 tokens（读是其中命中缓存、按折扣计价的部分；写=新增缓存计费；出=补全）。入的大小由发送内容决定：全新短请求几十 token、带全部历史的长会话几十万都正常', en:'in = total input tokens reported by upstream (r = the cached subset, billed at discount; w = new cache written, billed; out = completion). Size follows content: a fresh short request is tens of tokens, a long session with full history is hundreds of thousands', ko:'입=업스트림이 보고한 총 입력 토큰(읽=그중 캐시 적중 부분, 할인 과금; 쓰=신규 캐시 기록, 과금; 출=보완). 크기는 내용에 비례: 새 짧은 요청은 수십 토큰, 전체 히스토리를 실Long 세션은 수십만', ja:'入=上流が報告する総入力トークン（読=うちキャッシュ適中部分、割引課金；書=新規キャッシュ書き込み、課金；出=補完）。大きさは内容次第：全新の短いリクエストは数十トークン、全履歴を含む長いセッションは数十万', es:'ent = total de tokens de entrada reportados por el upstream (lee = parte en caché, con descuento; esc = caché nueva, facturada; sal = complementación). El tamaño sigue al contenido: una petición corta nueva son decenas de tokens, una sesión larga con historial son cientos de miles', fr:'entr = total des jetons d\'entrée remontés (lect = partie en cache, facturée au rabais ; éc = cache nouvelle, facturée ; sor = complétion). La taille suit le contenu : une requête courte neuve fait des dizaines de jetons, une longue session avec historique en fait des centaines de milliers'},
+  s_incl: {zh:'其中读', en:'incl. r', ko:'이중 읽', ja:'内 読', es:'incl. lee', fr:'dont lect'},
   p_scores:  {zh:'评分', en:'scores', ko:'점수', ja:'スコア', es:'puntajes', fr:'scores'},
   p_session: {zh:'会话', en:'session', ko:'세션', ja:'セッション', es:'sesión', fr:'session'},
   st_why:    {zh:'为什么选', en:'Why', ko:'왜', ja:'なぜ', es:'Por qué', fr:'Pourquoi'},
+  st_by_model: {zh:'由决策模型语义评估全部候选后选出', en:'selected after the decision model semantically evaluated all candidates', ko:'결정 모델이 모든 후보를 의미 평가한 뒤 선택', ja:'判断モデルが全候補を意味評価して選出', es:'elegido tras evaluación semántica de todos los candidatos por el modelo de decisión', fr:'choisi après évaluation sémantique de tous les candidats par le modèle de décision'},
+  st_by_hybrid: {zh:'决策模型 + 规则双判官评估（冲突取严，防中文误判）', en:'dual-judge evaluation (decision model + rules; conservative on conflict)', ko:'이중 판정(결정 모델+규칙, 충돌 시 보수적으로)', ja:'二重判定（判断モデル＋規則、衝突時は保守的に）', es:'evaluación con doble juez (modelo de decisión + reglas, conservador en conflictos)', fr:'évaluation à double juge (modèle de décision + règles, conservateur en cas de conflit)'},
+  st_by_heur: {zh:'决策模型不可用：本次由规则引擎判定兜底（路由不被阻塞）', en:'decision model unavailable: the rule engine judged this request as fallback (routing never blocked)', ko:'결정 모델 불가: 규칙 엔진이 폴백 판정(라우팅은 차단 없음)', ja:'判断モデル利用不可：規則エンジンがフォールバック判定（ルーティングは止まらない）', es:'modelo de decisión no disponible: el motor de reglas juzgó como respaldo (el enrutamiento nunca se bloquea)', fr:'modèle de décision indisponible : le moteur de règles a jugé en secours (le routage n\'est jamais bloqué)'},
+  st_by_explicit: {zh:'你在请求中显式指定了该模型（未走路由决策）', en:'you explicitly named this model in the request (no routing decision involved)', ko:'요청에서 이 모델을 명시적으로 지정(라우팅 결정 없음)', ja:'リクエストでこのモデルを明示指定（ルーティング判定なし）', es:'indicaste explícitamente este modelo en la solicitud (sin decisión de enrutamiento)', fr:'vous avez explicitement nommé ce modèle dans la requête (sans décision de routage)'},
+  bj_model:    {zh:'决策模型', en:'decision model', ko:'결정 모델', ja:'判断モデル', es:'modelo de decisión', fr:'modèle de décision'},
+  t_bj_model:  {zh:'本条路由由决策模型语义评估决定', en:'this route was decided by semantic evaluation of the decision model', ko:'이 라우팅은 결정 모델의 의미 평가로 결정됨', ja:'このルーティングは判断モデルの意味評価で決定', es:'ruta decidida por evaluación semántica del modelo de decisión', fr:'route décidée par évaluation sémantique du modèle de décision'},
+  bj_hybrid:   {zh:'决策模型+规则', en:'model+rules', ko:'모델+규칙', ja:'モデル＋規則', es:'modelo+reglas', fr:'modèle+règles'},
+  t_bj_hybrid: {zh:'双判官融合：决策模型为主、规则为独立第二意见，冲突取严（专治中文误判）', en:'dual-judge fusion: decision model primary, rules as independent second opinion, conservative on conflict', ko:'이중 판정 융합: 결정 모델 주판정, 규칙은 독립 제2의견, 충돌 시 보수적', ja:'二重判定融合：判断モデルが主、規則は独立の第二意見、衝突時は保守的', es:'fusión de doble juez: modelo de decisión principal, reglas como segunda opinión, conservador en conflictos', fr:'fusion à double juge : modèle de décision principal, règles en seconde opinion, conservateur en conflit'},
+  bj_heur:     {zh:'规则判定', en:'rule-based', ko:'규칙 판정', ja:'規則判定', es:'por reglas', fr:'par règles'},
+  t_bj_heur:   {zh:'决策模型不可用时由规则引擎兜底判定（决策失败永不阻塞路由）', en:'rule-engine fallback when the decision model is unavailable (decision failure never blocks routing)', ko:'결정 모델 불가 시 규칙 엔진 폴백 판정(결정 실패가 라우팅을 막지 않음)', ja:'判断モデル不可時は規則エンジンがフォールバック判定（判定失敗でルーティングを止めない）', es:'motor de reglas como respaldo si el modelo de decisión no está disponible (un fallo nunca bloquea el enrutamiento)', fr:'moteur de règles en secours si le modèle de décision est indisponible (un échec ne bloque jamais le routage)'},
+  bj_explicit: {zh:'指定模型', en:'explicit', ko:'지정 모델', ja:'指定モデル', es:'explícito', fr:'explicite'},
+  t_bj_explicit: {zh:'请求里显式指定了该模型，未走路由决策', en:'the request explicitly named this model; no routing decision involved', ko:'요청이 이 모델을 명시 지정, 라우팅 결정 없음', ja:'リクエストがこのモデルを明示指定、ルーティング判定なし', es:'la solicitud nombró explícitamente este modelo, sin decisión de enrutamiento', fr:'la requête a explicitement nommé ce modèle, sans décision de routage'},
   st_task:   {zh:'任务判定：{d}类请求，难度{w}（{v}/3）', en:'Task: {d}, difficulty {w} ({v}/3)', ko:'작업 판정: {d}류 요청, 난이도 {w}({v}/3)', ja:'タスク判定：{d}系リクエスト、難度{w}（{v}/3）', es:'Tarea: {d}, dificultad {w} ({v}/3)', fr:'Tâche : {d}, difficulté {w} ({v}/3)'},
   st_hard_pass: {zh:'{n} 个候选模型全部通过硬性检查（上下文窗口、健康状态、配额、凭据）', en:'all {n} candidates passed the hard checks (context window, health, quota, credentials)', ko:'{n}개 후보 모두 하드 체크 통과(컨텍스트 윈도우/헬스/쿼터/자격)', ja:'{n}個の候補がすべてハードチェック通過（コンテキスト窓/ヘルス/クォータ/認証）', es:'los {n} candidatos pasaron las comprobaciones duras (ventana, salud, cuota, credenciales)', fr:'les {n} candidats ont passé les contrôles durs (fenêtre, santé, quota, identifiants)'},
   st_hard_some: {zh:'{a} 个候选中 {b} 个通过硬性检查（上下文窗口、健康状态、配额、凭据），其余已剔除', en:'{b} of {a} candidates passed the hard checks (context window, health, quota, credentials), the rest were filtered out', ko:'{a}개 중 {b}개가 하드 체크 통과(윈도우/헬스/쿼터/자격), 나머지는 제외', ja:'{a}候補中 {b}個がハードチェック通過（窓/ヘルス/クォータ/認証）、残りは除外', es:'{b} de {a} candidatos pasaron las comprobaciones (ventana, salud, cuota, credenciales), el resto fue filtrado', fr:'{b} sur {a} candidats ont passé les contrôles (fenêtre, santé, quota, identifiants), le reste a été filtré'},
@@ -211,9 +226,14 @@ function pair(a, b, f){ return (a==null&&b==null) ? '-' : f(a)+' / '+f(b); }
 function timeStr(d){ return d.toLocaleTimeString(LOCALE[lang], {hour12:false}); }
 function feedTokens(e){
   let s = fmtK(e.prompt_tokens ?? e.est_tokens)+t('s_in')+' '+fmtK(e.completion_tokens ?? 0)+t('s_out');
-  if (e.cached_tokens)      s += ' '+t('s_read')+fmtK(e.cached_tokens);
-  if (e.cache_write_tokens) s += ' '+t('s_write')+fmtK(e.cache_write_tokens);
+  if (e.cached_tokens)      s += ' · '+t('s_incl')+fmtK(e.cached_tokens);
+  if (e.cache_write_tokens) s += ' · '+t('s_write')+fmtK(e.cache_write_tokens);
   return s;
+}
+function judgeBadge(e){
+  const map = {'decision_model':'bj_model', 'decision_model+rules':'bj_hybrid', 'heuristic':'bj_heur', 'explicit':'bj_explicit'};
+  const k = map[e.judge];
+  return k ? '<span class="pbadge" title="'+esc(t('t_'+k))+'">'+esc(t(k))+'</span>' : '';
 }
 function decisionPath(e){
   const parts = [];
@@ -221,6 +241,7 @@ function decisionPath(e){
   if (e.sticky) {
     parts.push('<span class="pbadge" title="'+esc(t('p_sticky_hint'))+'">'+esc(t('p_sticky'))+'</span>');
   } else {
+    parts.push(judgeBadge(e));
     if ((e.reason||'').includes('[exploring]'))
       parts.push('<span class="pbadge explore" title="'+esc(t('t_explore'))+'">'+esc(t('p_explore'))+'</span>');
     const f = e.funnel || [];
@@ -231,7 +252,7 @@ function decisionPath(e){
   }
   const alts = (e.chain || []).filter(m => m !== e.chosen).slice(0, 2);
   if (alts.length) parts.push('<span class="pdim" title="'+esc(t('p_alt'))+'">'+esc(t('p_alt'))+' '+alts.map(a => esc(a.length>22?a.slice(0,21)+'…':a)).join(' ▸ ')+'</span>');
-  if (e.est_tokens) parts.push('<span class="pdim">'+esc(t('p_est'))+' '+fmtK(e.est_tokens)+' tok</span>');
+  if (e.est_tokens) parts.push('<span class="pdim" title="'+esc(t('t_est'))+'">'+esc(t('p_est'))+' '+fmtK(e.est_tokens)+' tok</span>');
   return parts.join('');
 }
 function shortId(m){ return m.length>26 ? m.slice(0,25)+'…' : m; }
@@ -262,6 +283,8 @@ function decisionDetail(e){
     push(esc(t('st_sticky_2').replace('{n}', fmtK(e.est_tokens||e.prompt_tokens||0))));
     push(esc(t('st_sticky_3')));
   } else {
+    const bym = {'decision_model':'st_by_model', 'decision_model+rules':'st_by_hybrid', 'heuristic':'st_by_heur', 'explicit':'st_by_explicit'}[e.judge];
+    if (bym) push(esc(t(bym)));
     const dm = (e.reason||'').match(/domain=(\w+)/);
     if (dm) {
       const dk = T['dom_'+dm[1]];
@@ -330,8 +353,8 @@ function renderDyn(){
          : '<span class="pill badge dead">down</span>');
     const tc = s.tool_calls || {};
     const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total))+'%' : '-';
-    const tok = '<div>'+fmtK(s.prompt_tokens??0)+t('s_in')+' '+fmtK(s.completion_tokens??0)+t('s_out')+'</div>' +
-      '<div class="dim2">'+t('s_read')+fmtK(s.cached_tokens||0)+' · '+t('s_write')+fmtK(s.cache_write_tokens||0)+'</div>';
+    const tok = '<div title="'+esc(t('t_actual'))+'">'+fmtK(s.prompt_tokens??0)+t('s_in')+' '+fmtK(s.completion_tokens??0)+t('s_out')+'</div>' +
+      '<div class="dim2" title="'+esc(t('t_actual'))+'">'+t('s_incl')+fmtK(s.cached_tokens||0)+' · '+t('s_write')+fmtK(s.cache_write_tokens||0)+'</div>';
     return '<tr><td title="'+esc(id)+'">'+esc(id.length>30?id.slice(0,29)+'…':id)+'</td>' +
       '<td>'+link+'</td>' +
       '<td class="num">'+s.requests+'('+s.success+')</td>' +

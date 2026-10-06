@@ -129,6 +129,7 @@ impl HeuristicJudge {
             high_stakes,
             session_relevance,
             session_depth,
+            judge_source: "heuristic",
         }
     }
 }

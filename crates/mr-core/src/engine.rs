@@ -103,6 +103,7 @@ impl Engine {
                     high_stakes: 0.0,
                     session_relevance: 1.0,
                     session_depth: 0.0,
+                    judge_source: "sticky",
                 };
                 return self.finish(
                     sticky.chosen.clone(),

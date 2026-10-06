@@ -88,5 +88,6 @@ pub fn parse_judgment_response(v: &Value) -> Option<JudgmentSet> {
         high_stakes: noul("high_stakes"),
         session_relevance: noul("session_relevance"),
         session_depth: score("session_depth").clamp(0.0, 3.0),
+        judge_source: "decision_model",
     })
 }

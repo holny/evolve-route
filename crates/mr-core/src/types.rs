@@ -193,6 +193,9 @@ pub struct JudgmentSet {
     pub high_stakes: f32,
     pub session_relevance: f32,
     pub session_depth: f32,
+    /// 谁做的判定：decision_model / decision_model+rules / heuristic /
+    /// sticky / explicit——进事件供面板展示判定来源
+    pub judge_source: &'static str,
 }
 
 pub trait Judge: Send + Sync {
@@ -434,6 +437,7 @@ pub fn fuse_judgments(jev: &JudgmentSet, heur: &JudgmentSet) -> JudgmentSet {
         // 会话相关性取严：任一判官认为跑题即按跑题处理
         session_relevance: jev.session_relevance.min(heur.session_relevance),
         session_depth: take_max(jev.session_depth, heur.session_depth),
+        judge_source: "decision_model+rules",
     }
 }
 
