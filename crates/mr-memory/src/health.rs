@@ -47,9 +47,15 @@ impl HealthRegistry {
             updated_at: 0,
         });
         entry.hits += 1;
-        // escalate cooldown when repeat failures stack
-        let base = f.kind.default_cooldown_ms();
-        let cooldown = base.saturating_mul(entry.hits.min(4) as u64);
+        // escalate cooldown when repeat failures stack. Quota windows are
+        // periodic (coding-plan windows reset on their own schedule), so
+        // quota stays flat: probe every base interval, reset on each failure
+        let mult = if f.kind == HealthKind::QuotaExhausted {
+            1
+        } else {
+            entry.hits.min(4) as u64
+        };
+        let cooldown = f.kind.default_cooldown_ms().saturating_mul(mult);
         entry.kind = f.kind;
         entry.message = f.message;
         entry.until_epoch_ms = Some(now() + cooldown);
