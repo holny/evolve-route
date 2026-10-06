@@ -34,14 +34,20 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-spac
 .badge.dead { background:#3d1618; color:var(--red); }
 .badge.ok   { background:#12261e; color:var(--green); }
 #feed { max-height:520px; overflow-y:auto; }
-.feed-row { display:flex; gap:8px; padding:4px 0; border-bottom:1px solid #21262d; font-variant-numeric:tabular-nums; cursor:pointer; align-items:baseline; }
+.feed-ev { border-bottom:1px solid #21262d; padding:3px 0; }
+.feed-row { display:flex; gap:8px; padding:2px 0; font-variant-numeric:tabular-nums; cursor:pointer; align-items:baseline; }
 .feed-row:hover { background:#1c2129; }
 .feed-row .t { color:var(--dim); min-width:60px; font-size:11px; }
 .feed-row .m { color:var(--blue); min-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .feed-row .tk { font-size:11px; color:var(--dim); }
 .feed-row .ms { margin-left:auto; color:var(--dim); }
 .pill { border-radius:10px; padding:0 8px; font-size:11px; }
-.feed-detail { padding:4px 12px; color:var(--dim); font-size:11px; border-left:2px solid var(--border); margin:2px 0 4px 8px; }
+.feed-path { display:flex; gap:10px; flex-wrap:wrap; align-items:baseline; padding:2px 0 1px 2px; font-size:11px; color:var(--dim); }
+.pbadge { border-radius:4px; padding:0 6px; background:#1c2431; color:var(--blue); white-space:nowrap; }
+.pbadge.explore { color:var(--amber); }
+.pbadge.warn { color:var(--red); background:#2d1a1c; }
+.pdim { font-variant-numeric:tabular-nums; }
+.feed-detail { padding:4px 12px; color:var(--dim); font-size:11px; border-left:2px solid var(--border); margin:3px 0 3px 8px; }
 </style>
 </head>
 <body>
@@ -140,6 +146,16 @@ const T = {
     _t:{zh:'插件上报的工具执行反馈 ok/total（L4 最高精度信号）', en:'plugin-reported tool feedback ok/total (L4)', ko:'플러그인 보고 도구 실행 피드백 ok/total(L4 최고 정밀 신호)', ja:'プラグイン報告のツール実行フィードバック ok/total（L4）', es:'feedback de herramientas del plugin ok/total (L4)', fr:'retour d\'exécution des outils du plugin ok/total (L4)'}},
   w_weight: {zh:'权重', en:'Weight', ko:'가중치', ja:'重み', es:'Peso', fr:'Poids',
     _t:{zh:'最终权重 = 用户 weight × 学习偏置，开方软化后乘入评分', en:'final weight = user weight × learned bias, sqrt-softened into score', ko:'최종 가중치 = 사용자 weight × 학습 편향, 제곱근 완화 후 점수에 곱', ja:'最終重み = ユーザーweight × 学習バイアス、平方根緩和してスコアに乗算', es:'peso final = peso usuario × sesgo, suavizado con raíz', fr:'poids final = poids utilisateur × biais, adouci par racine'}},
+  p_sticky: {zh:'粘性复用', en:'sticky reuse', ko:'스티키 재사용', ja:'スティキー再利用', es:'reutilización sticky', fr:'réutilisation sticky'},
+  p_sticky_hint: {zh:'会话继续·窗口/健康/配额满足·量级与工具未变 → 直接沿用上次模型（零决策调用）', en:'session continues, window/health/quota OK, band & tools unchanged → previous model reused (no decision call)', ko:'세션 연속·윈도우/헬스/쿼터 충족·밴드/도구 불변 → 이전 모델 재사용(결정 호출 없음)', ja:'セッション継続・窓/ヘルス/クォータ満たす・量級とツール不変 → 前モデルを再利用（判定呼び出しなし）', es:'sesión continúa, ventana/salud/cuota OK, banda y herramientas iguales → modelo reutilizado (sin llamada)', fr:'session continue, fenêtre/santé/quota OK, bande et outils inchangés → modèle réutilisé (sans appel)'},
+  p_explore: {zh:'探索', en:'exploring', ko:'탐색', ja:'探索', es:'explorando', fr:'exploration'},
+  t_explore: {zh:'ε-greedy：10% 请求改用次优模型，采集对比样本（高危/hard 任务不探索）', en:'ε-greedy: 10% of requests try the runner-up for comparative samples (skipped on high-stakes)', ko:'ε-greedy: 요청의 10%가 차점 모델 시험(고위험 제외)', ja:'ε-greedy: リクエストの10%で次点モデルを試行（高リスクは除外）', es:'ε-greedy: 10% prueban el segundo modelo (alto riesgo excluido)', fr:'ε-greedy: 10% des requêtes essaient le 2e (haut risque exclu)'},
+  p_funnel:  {zh:'漏斗', en:'funnel', ko:'퍼널', ja:'ファネル', es:'embudo', fr:'entonnoir'},
+  p_alt:     {zh:'备选', en:'runner-ups', ko:'차점', ja:'次点', es:'alternos', fr:'alternatives'},
+  p_diff:    {zh:'难度', en:'difficulty', ko:'난이도', ja:'難度', es:'dificultad', fr:'difficulté'},
+  p_est:     {zh:'估', en:'est', ko:'추정', ja:'推定', es:'est', fr:'est'},
+  p_scores:  {zh:'评分', en:'scores', ko:'점수', ja:'スコア', es:'puntajes', fr:'scores'},
+  p_session: {zh:'会话', en:'session', ko:'세션', ja:'セッション', es:'sesión', fr:'session'},
   chip_reqs:  {zh:'请求', en:'reqs', ko:'요청', ja:'リクエスト', es:'solicitudes', fr:'requêtes'},
   chip_cost:  {zh:'累计费用', en:'cost', ko:'누적 비용', ja:'累計費用', es:'coste', fr:'coût'},
   chip_active:{zh:'活跃模型', en:'active', ko:'활성 모델', ja:'アクティブ', es:'activos', fr:'actifs'},
@@ -164,28 +180,61 @@ function feedTokens(e){
   if (e.cache_write_tokens) s += ' '+t('s_write')+fmtK(e.cache_write_tokens);
   return s;
 }
+function decisionPath(e){
+  const parts = [];
+  if (e.skipped) parts.push('<span class="pbadge warn" title="'+t('skipped')+'">↩ '+esc(e.skipped)+'</span>');
+  if (e.sticky) {
+    parts.push('<span class="pbadge" title="'+esc(t('p_sticky_hint'))+'">'+esc(t('p_sticky'))+'</span>');
+  } else {
+    if ((e.reason||'').includes('[exploring]'))
+      parts.push('<span class="pbadge explore" title="'+esc(t('t_explore'))+'">'+esc(t('p_explore'))+'</span>');
+    const f = e.funnel || [];
+    if (f.length === 4 && f.some(x => x > 0))
+      parts.push('<span class="pdim" title="'+esc(t('funnel'))+'">'+esc(t('p_funnel'))+' '+f.join('→')+'</span>');
+    if (e.difficulty_eff != null)
+      parts.push('<span class="pdim">'+esc(t('p_diff'))+' '+(+e.difficulty_eff).toFixed(1)+'</span>');
+  }
+  const alts = (e.chain || []).filter(m => m !== e.chosen).slice(0, 2);
+  if (alts.length) parts.push('<span class="pdim" title="'+esc(t('p_alt'))+'">'+esc(t('p_alt'))+' '+alts.map(a => esc(a.length>22?a.slice(0,21)+'…':a)).join(' ▸ ')+'</span>');
+  if (e.est_tokens) parts.push('<span class="pdim">'+esc(t('p_est'))+' '+fmtK(e.est_tokens)+' tok</span>');
+  return parts.join('');
+}
+function decisionDetail(e){
+  let h = '<b>'+esc(t('p_session'))+'</b> '+esc(e.session||'-') + ' · ' + esc(e.reason||'');
+  const sc = Object.entries(e.scores||{}).sort((a,b) => b[1]-a[1]);
+  if (sc.length) {
+    const top = sc.slice(0, 5);
+    if (sc.length > 5 && !top.some(([m]) => m === e.chosen)) {
+      const ci = sc.findIndex(([m]) => m === e.chosen);
+      if (ci > 0) top.push(sc[ci]);
+    }
+    h += '<br><b>'+esc(t('p_scores'))+'</b>(top '+top.length+'/'+sc.length+') ' +
+      top.map(([m,v],i) => (m===e.chosen?'<b>':'')+esc(m.length>26?m.slice(0,25)+'…':m)+' '+(+v).toFixed(2)+(m===e.chosen?'</b>':'')).join(' · ');
+  }
+  if (e.filtered && e.filtered.length)
+    h += '<br><b>'+esc(t('filtered'))+'</b> ' + e.filtered.map(f => esc(f.model+' ('+f.cause+')')).join('、 ');
+  return h;
+}
 function addRow(e){
   if (e.kind !== 'chat') return;
   const badge = (200<=e.status && e.status<300) ? 'ok' : 'dead';
-  const detail = esc(e.reason || '') +
-    (e.funnel ? '<br>'+t('funnel')+': ' + e.funnel.join(' → ') : '') +
-    (e.filtered && e.filtered.length ? '<br>'+t('filtered')+': ' + e.filtered.map(f => esc(f.model+' ('+f.cause+')')).join('、 ') : '');
   const row = document.createElement('div');
+  row.className = 'feed-ev';
   row.innerHTML = '<div class="feed-row">' +
     '<span class="t">'+timeStr(new Date())+'</span>' +
     '<span class="pill badge '+badge+'">'+e.status+'</span>' +
     '<span class="m" title="'+esc(e.chosen)+'">'+esc(e.chosen)+'</span>' +
     '<span class="tk">'+feedTokens(e)+'</span>' +
     (e.translated ? '<span class="tk" title="'+t('translated')+'">⇄'+esc(e.translated)+'</span>' : '') +
-    (e.skipped ? '<span class="tk" title="'+t('skipped')+'">↩'+esc(e.skipped)+'</span>' : '') +
     '<span class="ms">'+fmtMs(e.total_ms)+'</span></div>' +
-    '<div class="feed-detail" style="display:none">'+detail+'</div>';
+    '<div class="feed-path">'+decisionPath(e)+'</div>' +
+    '<div class="feed-detail" style="display:none">'+decisionDetail(e)+'</div>';
   row.querySelector('.feed-row').addEventListener('click', () => {
     const d = row.querySelector('.feed-detail');
     if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
   });
   feed.prepend(row);
-  while (feed.children.length > 400) { if (feed.lastChild) feed.removeChild(feed.lastChild); }
+  while (feed.children.length > 200) { if (feed.lastChild) feed.removeChild(feed.lastChild); }
 }
 
 const state = { stats:{}, bench:{}, health:{}, quota:{} };

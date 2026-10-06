@@ -299,6 +299,7 @@ pub async fn chat_completions(
                 let mut ex = json!({
                     "reason": decision.reason,
                     "scores": decision.scores,
+                    "chain": decision.chain,
                     "difficulty_eff": decision.difficulty_eff,
                     "filtered": decision.filtered,
                     "funnel": decision.funnel,

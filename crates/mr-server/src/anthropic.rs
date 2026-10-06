@@ -260,8 +260,10 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             extra: Some(json!({
                 "reason": decision.reason,
                 "scores": decision.scores,
+                "chain": decision.chain,
                 "difficulty_eff": decision.difficulty_eff,
                 "filtered": decision.filtered,
+                "funnel": decision.funnel,
             })),
         }));
 
