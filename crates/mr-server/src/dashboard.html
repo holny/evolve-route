@@ -151,6 +151,8 @@ const T = {
   p_explore: {zh:'探索', en:'exploring', ko:'탐색', ja:'探索', es:'explorando', fr:'exploration'},
   t_explore: {zh:'ε-greedy：10% 请求改用次优模型，采集对比样本（高危/hard 任务不探索）', en:'ε-greedy: 10% of requests try the runner-up for comparative samples (skipped on high-stakes)', ko:'ε-greedy: 요청의 10%가 차점 모델 시험(고위험 제외)', ja:'ε-greedy: リクエストの10%で次点モデルを試行（高リスクは除外）', es:'ε-greedy: 10% prueban el segundo modelo (alto riesgo excluido)', fr:'ε-greedy: 10% des requêtes essaient le 2e (haut risque exclu)'},
   p_funnel:  {zh:'漏斗', en:'funnel', ko:'퍼널', ja:'ファネル', es:'embudo', fr:'entonnoir'},
+  t_funnel:  {zh:'漏斗四层：目录 {a} → 候选 {b}（硬检查：健康/凭据/上下文窗口/配额）→ 合格 {c}（质量底线随难度提高）→ 评分 {d}（综合排序选出首选）', en:'funnel, 4 stages: catalog {a} → candidates {b} (hard checks: health/credentials/context window/quota) → eligible {c} (quality floor rises with difficulty) → scored {d} (composite ranking picks the top)', ko:'퍼널 4단계: 카탈로그 {a} → 후보 {b}(하드 체크: 헬스/자격/윈도우/쿼터) → 적격 {c}(품질 기준은 난이도에 비례) → 점수 {d}(종합 정렬로 선택)', ja:'ファネル4段階：カタログ {a} → 候補 {b}（ハードチェック：ヘルス/認証/窓/クォータ）→ 適格 {c}（品質基準は難度に連動）→ スコア {d}（総合ソートで選出）', es:'embudo de 4 etapas: catálogo {a} → candidatos {b} (controles duros: salud/credenciales/ventana/cuota) → aptos {c} (el piso de calidad sube con la dificultad) → puntuados {d} (el orden compuesto elige al primero)', fr:'entonnoir à 4 étages : catalogue {a} → candidats {b} (contrôles durs : santé/identifiants/fenêtre/quota) → aptes {c} (plancher de qualité selon la difficulté) → notés {d} (le classement composite choisit le 1er)'},
+  t_diff:    {zh:'任务难度 0-3：由判定器（决策模型+规则）评估请求复杂度，随会话深度略增。用途：难度越高质量底线越高（弱模型先出局）、≥2 取消 ε 探索、影响评分权重', en:'task difficulty 0-3, judged by the decision model + rules, rises slightly with session depth. Used for: higher quality floor at higher difficulty (weak models drop first), no ε-exploration at ≥2, and scoring weights', ko:'작업 난이도 0-3: 결정 모델+규칙이 평가, 세션 깊이에 따라 소폭 증가. 용도: 난이도가 높을수록 품질 기준 상승(약한 모델 먼저 탈락), ≥2면 ε 탐색 중단, 점수 가중치 영향', ja:'タスク難度 0-3：判断モデル＋規則がリクエスト複雑度を評価、セッション深度で微増。用途：難度が高いほど品質基準上昇（弱いモデルから脱落）、≥2でε探索中止、スコア重みに影響', es:'dificultad de la tarea 0-3, evaluada por el modelo de decisión + reglas, sube algo con la profundidad de la sesión. Usos: a más dificultad, más piso de calidad (los débiles caen primero), sin exploración ε si ≥2, afecta los pesos', fr:'difficulté de tâche 0-3, évaluée par le modèle de décision + règles, augmente un peu avec la profondeur de session. Usages : difficulté plus haute ⇒ plancher plus haut (les faibles sortent d\'abord), pas d\'exploration ε si ≥2, influence les poids'},
   p_alt:     {zh:'备选', en:'runner-ups', ko:'차점', ja:'次点', es:'alternos', fr:'alternatives'},
   p_diff:    {zh:'难度', en:'difficulty', ko:'난이도', ja:'難度', es:'dificultad', fr:'difficulté'},
   p_est:     {zh:'预估入', en:'est in', ko:'추정 입', ja:'推定入', es:'ent est.', fr:'entr est.'},
@@ -245,10 +247,12 @@ function decisionPath(e){
     if ((e.reason||'').includes('[exploring]'))
       parts.push('<span class="pbadge explore" title="'+esc(t('t_explore'))+'">'+esc(t('p_explore'))+'</span>');
     const f = e.funnel || [];
-    if (f.length === 4 && f.some(x => x > 0))
-      parts.push('<span class="pdim" title="'+esc(t('funnel'))+'">'+esc(t('p_funnel'))+' '+f.join('→')+'</span>');
+    if (f.length === 4 && f.some(x => x > 0)) {
+      const tip = t('t_funnel').replace('{a}',f[0]).replace('{b}',f[1]).replace('{c}',f[2]).replace('{d}',f[3]);
+      parts.push('<span class="pdim" title="'+esc(tip)+'">'+esc(t('p_funnel'))+' '+f.join('→')+'</span>');
+    }
     if (e.difficulty_eff != null)
-      parts.push('<span class="pdim">'+esc(t('p_diff'))+' '+(+e.difficulty_eff).toFixed(1)+'</span>');
+      parts.push('<span class="pdim" title="'+esc(t('t_diff'))+'">'+esc(t('p_diff'))+' '+(+e.difficulty_eff).toFixed(1)+'</span>');
   }
   const alts = (e.chain || []).filter(m => m !== e.chosen).slice(0, 2);
   if (alts.length) parts.push('<span class="pdim" title="'+esc(t('p_alt'))+'">'+esc(t('p_alt'))+' '+alts.map(a => esc(a.length>22?a.slice(0,21)+'…':a)).join(' ▸ ')+'</span>');
