@@ -245,7 +245,7 @@ pub async fn chat_completions(
                 tracing::warn!(model = %cand, error = %e, "upstream transport failure");
                 st.health.mark_failure(
                     cand,
-                    Failure { kind: HealthKind::Transient, message: "transport error".into() },
+                    Failure { kind: HealthKind::Transient, message: "transport error".into(), until_epoch_ms: None },
                 );
                 skipped.push(format!("{cand}(transport)"));
                 last_error = Some((StatusCode::BAD_GATEWAY, Bytes::new()));
@@ -256,12 +256,27 @@ pub async fn chat_completions(
         let status = resp.status();
 
         if fallback_eligible(status.as_u16()) {
+            // 重置时间提取：retry-after(秒) 优先，回退 x-ratelimit-reset-*（纪元 ms 或时长 ms）
             let retry_after_ms = resp
                 .headers()
                 .get("retry-after")
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse::<u64>().ok())
-                .map(|s| s * 1000);
+                .map(|s| s * 1000)
+                .or_else(|| {
+                    ["x-ratelimit-reset-requests", "x-ratelimit-reset-tokens", "x-ratelimit-reset"]
+                        .iter()
+                        .find_map(|h| resp.headers().get(*h))
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .map(|n| {
+                            if n > 1_000_000_000_000 {
+                                n.saturating_sub(mr_memory::health::now())
+                            } else {
+                                n
+                            }
+                        })
+                });
             let err_body = resp.bytes().await.unwrap_or_default();
             let snippet =
                 String::from_utf8_lossy(&err_body.slice(..err_body.len().min(MAX_ERROR_BODY))).into_owned();

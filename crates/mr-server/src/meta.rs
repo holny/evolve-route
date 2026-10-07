@@ -162,6 +162,9 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
         let cache_hit_rate = (s.prompt_tokens > 0)
             .then(|| s.cached_tokens as f32 / s.prompt_tokens as f32);
         let cat_model = st.engine.catalog.get(id);
+        let plan_kind = cat_model
+            .and_then(|m| mr_core::plans::plan_for(&m.base_url))
+            .map(|p| p.plan_kind.to_string());
         let currency = cat_model.map(|m| m.currency.clone()).unwrap_or_default();
         let tiers = cat_model.map(|m| {
             json!({
@@ -205,6 +208,7 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                 "cache_hit_rate": cache_hit_rate,
                 "est_cost": est_cost,
                 "currency": currency,
+                "plan_kind": plan_kind,
                 "tiers": tiers,
                 "source": source,
                 "samples": s.requests,
@@ -440,6 +444,8 @@ pub async fn api_policy_weights_set(
 /// 配额方案注册表：按 baseUrl 匹配 provider 官方接入方案 + 用户订正
 pub async fn api_plans(State(st): State<AppState>) -> Response {
     let ov = crate::state::load_overrides(&st.config.data.dir);
+    let health = st.health.snapshot();
+    let now_ms = mr_memory::health::now();
     let mut groups: std::collections::BTreeMap<String, serde_json::Value> = std::collections::BTreeMap::new();
     for m in &st.engine.catalog.models {
         let profile = mr_core::plans::plan_for(&m.base_url);
@@ -450,6 +456,7 @@ pub async fn api_plans(State(st): State<AppState>) -> Response {
             json!({
                 "key": key,
                 "provider": if p.key.is_empty() { m.provider.clone() } else { p.provider.to_string() },
+                "plan_kind": p.plan_kind.to_string(),
                 "scheme": pov.and_then(|o| o.scheme.clone()).unwrap_or_else(|| p.scheme_key.to_string()),
                 "windows": pov.and_then(|o| o.windows.clone()).unwrap_or_else(|| p.windows.to_string()),
                 "models_note": p.models_note.to_string(),
@@ -462,6 +469,26 @@ pub async fn api_plans(State(st): State<AppState>) -> Response {
         if let Some(arr) = e.get_mut("models").and_then(|m| m.as_array_mut()) {
             arr.push(json!(m.id));
         }
+    }
+    // 下次窗口重置：组内模型的健康冷却（配额/限流）取最近者
+    for (key, e) in groups.iter_mut() {
+        let mut min_until: Option<u64> = None;
+        for (hid, h) in &health {
+            let hid_model = hid.split('\u{1f}').next().unwrap_or(hid);
+            let in_group = e.get("models").and_then(|m| m.as_array()).map(|arr| {
+                arr.iter().filter_map(|x| x.as_str()).any(|id| id == hid_model)
+            }).unwrap_or(false);
+            if !in_group {
+                continue;
+            }
+            if matches!(h.kind, mr_core::types::HealthKind::QuotaExhausted | mr_core::types::HealthKind::RateLimited)
+                && let Some(until) = h.until_epoch_ms
+                && until > now_ms
+            {
+                min_until = Some(min_until.map_or(until, |u| u.min(until)));
+            }
+        }
+        e["next_reset_epoch_ms"] = json!(min_until);
     }
     (axum::Json(json!({"providers": groups.values().collect::<Vec<_>>()}))).into_response()
 }

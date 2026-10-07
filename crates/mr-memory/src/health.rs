@@ -12,6 +12,14 @@ pub struct HealthRegistry {
 pub struct Failure {
     pub kind: HealthKind,
     pub message: String,
+    /// 上游明确告知的窗口重置时间（如 retry-after/限额头）——优先于默认冷却
+    pub until_epoch_ms: Option<u64>,
+}
+
+impl Default for Failure {
+    fn default() -> Self {
+        Self { kind: HealthKind::Transient, message: String::new(), until_epoch_ms: None }
+    }
 }
 
 impl HealthRegistry {
@@ -55,7 +63,11 @@ impl HealthRegistry {
         } else {
             entry.hits.min(4) as u64
         };
-        let cooldown = f.kind.default_cooldown_ms().saturating_mul(mult);
+        // 上游明确给出重置时间（retry-after/限额头）时优先采用，封顶 24h
+        let cooldown = match f.until_epoch_ms {
+            Some(until) => until.saturating_sub(now()).min(24 * 3600 * 1000),
+            None => f.kind.default_cooldown_ms().saturating_mul(mult),
+        };
         entry.kind = f.kind;
         entry.message = f.message;
         entry.until_epoch_ms = Some(now() + cooldown);
@@ -81,12 +93,14 @@ pub fn classify_failure(status: u16, body_snippet: &str, retry_after_ms: Option<
         413 => Failure {
             kind: HealthKind::ContextOverflow,
             message: "request body exceeds context".into(),
+            until_epoch_ms: None,
         },
         404 => Failure {
             kind: HealthKind::Unsupported,
             message: first_hit(&lower, &["unsupported", "not support", "does not exist", "not found"])
                 .unwrap_or("model not found on upstream")
                 .into(),
+            until_epoch_ms: None,
         },
         400 if ["context", "too long", "maximum context", "context length",
                 "exceeds", "prompt is too long", "上下文", "超出了模型"]
@@ -96,6 +110,7 @@ pub fn classify_failure(status: u16, body_snippet: &str, retry_after_ms: Option<
             Failure {
                 kind: HealthKind::ContextOverflow,
                 message: "context window exceeded".into(),
+                until_epoch_ms: None,
             }
         }
         401 | 403 => Failure {
@@ -103,16 +118,20 @@ pub fn classify_failure(status: u16, body_snippet: &str, retry_after_ms: Option<
             message: first_hit(&lower, &["invalid", "unauthorized", "forbidden", "无权", "鉴权"])
                 .unwrap_or("auth rejected by upstream")
                 .into(),
+            until_epoch_ms: None,
         },
         402 => Failure {
             kind: HealthKind::PaymentRequired,
             message: first_hit(&lower, &no_credit).unwrap_or("payment required").into(),
+            until_epoch_ms: None,
         },
         429 => {
+            let until = retry_after_ms.map(|ms| now() + ms);
             if no_credit.iter().any(|k| lower.contains(k)) {
-                Failure { kind: HealthKind::PaymentRequired, message: "no credit".into() }
+                Failure { kind: HealthKind::PaymentRequired, message: "no credit".into(), until_epoch_ms: None }
             } else if quota.iter().any(|k| lower.contains(k)) {
-                Failure { kind: HealthKind::QuotaExhausted, message: "quota window exhausted".into() }
+                // 上游告知重置时间时精确冷却；否则固定 5 分钟探测节奏
+                Failure { kind: HealthKind::QuotaExhausted, message: "quota window exhausted".into(), until_epoch_ms: until }
             } else {
                 Failure {
                     kind: HealthKind::RateLimited,
@@ -120,11 +139,12 @@ pub fn classify_failure(status: u16, body_snippet: &str, retry_after_ms: Option<
                         Some(ms) => format!("retry after {}s", ms / 1000),
                         None => "rate limited".into(),
                     },
+                    until_epoch_ms: until,
                 }
             }
         }
-        s if s >= 500 => Failure { kind: HealthKind::Transient, message: format!("upstream {s}") },
-        _ => Failure { kind: HealthKind::Transient, message: format!("upstream {status}") },
+        s if s >= 500 => Failure { kind: HealthKind::Transient, message: format!("upstream {s}"), until_epoch_ms: None },
+        _ => Failure { kind: HealthKind::Transient, message: format!("upstream {status}"), until_epoch_ms: None },
     }
 }
 

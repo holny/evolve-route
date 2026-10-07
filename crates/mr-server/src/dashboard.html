@@ -249,6 +249,11 @@ const T = {
   scheme_dollar: {zh:'月度美元 · 按模型', en:'monthly $ · per model', ko:'월별 $ · 모델별', ja:'月次$ · モデル別', es:'$ mensual · por modelo', fr:'$ mensuel · par modèle'},
   scheme_afp: {zh:'AFP 抵扣', en:'AFP deduction', ko:'AFP 공제', ja:'AFP控除', es:'deducción AFP', fr:'déduction AFP'},
   scheme_payg: {zh:'按量计费', en:'pay-as-you-go', ko:'종량제', ja:'従量課金', es:'pago por uso', fr:'paiement à l\'usage'},
+  plan_next_reset: {zh:'下次窗口重置', en:'Next window reset', ko:'다음 윈도우 리셋', ja:'次の窓リセット', es:'Próximo reinicio de ventana', fr:'Prochaine réinitialisation'},
+  pk_api:    {zh:'API', en:'API', ko:'API', ja:'API', es:'API', fr:'API'},
+  pk_coding: {zh:'Coding Plan', en:'Coding Plan', ko:'Coding Plan', ja:'Coding Plan', es:'Coding Plan', fr:'Coding Plan'},
+  pk_token:  {zh:'Token Plan', en:'Token Plan', ko:'Token Plan', ja:'Token Plan', es:'Token Plan', fr:'Token Plan'},
+  pk_agent:  {zh:'Agent Plan', en:'Agent Plan', ko:'Agent Plan', ja:'Agent Plan', es:'Agent Plan', fr:'Agent Plan'},
   plan_edit_tier: {zh:'输入档位（如 lite/pro/max/go/go-plus，留空清除）', en:'enter tier (e.g. lite/pro/max/go/go-plus, empty to clear)', ko:'등급 입력(예: lite/pro/max, 빈값清除)', ja:'ティアを入力（例: lite/pro/max、空で解除）', es:'introduce nivel (p.ej. lite/pro/max, vacío para borrar)', fr:'saisir le palier (ex. lite/pro/max, vide pour effacer)'},
   plan_edit_win: {zh:'订正窗口与额度说明', en:'correct windows & allowance note', ko:'윈도우·한도 설명 수정', ja:'窓と上限の説明を訂正', es:'corregir nota de ventanas y límites', fr:'corriger la note fenêtres et quotas'},
   st_why:    {zh:'为什么选', en:'Why', ko:'왜', ja:'なぜ', es:'Por qué', fr:'Pourquoi'},
@@ -550,7 +555,10 @@ function renderDyn(){
   const rows = Object.entries(state.stats).slice(0, 50).map(([id, s]) => {
     const keys = Object.keys(state.health).filter(k => k.split('\u001f')[0] === id);
     const degraded = keys.length > 0 && !keys.some(k => state.health[k].available);
-    const src = '<span'+(degraded?' style="color:var(--red)" title="⚠ '+esc(t('allnormal')).replace(/（.*/,'')+'"':'')+'>'+esc(srcLabel(s.source))+(degraded?' ⚠':'')+'</span>';
+    const pkShort = {'api':'API', coding:'CP', token:'TP', agent:'AP'}[s.plan_kind] || '';
+    const pkFull = {'api':'pk_api', coding:'pk_coding', token:'pk_token', agent:'pk_agent'}[s.plan_kind];
+    const pkBadge = pkShort ? ' <span class="pbadge dim2" title="'+esc(t(pkFull))+'">'+pkShort+'</span>' : '';
+    const src = '<span'+(degraded?' style="color:var(--red)" title="⚠ '+esc(t('allnormal')).replace(/（.*/,'')+'"':'')+'>'+esc(srcLabel(s.source))+(degraded?' ⚠':'')+'</span>'+pkBadge;
     const tc = s.tool_calls || {};
     const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total))+'%' : '-';
     const tok = '<div title="'+esc(t('t_actual'))+'">'+fmtK(s.prompt_tokens??0)+t('s_in')+' '+fmtK(s.completion_tokens??0)+t('s_out')+'</div>' +
@@ -666,6 +674,8 @@ const PLANS_COLS = [
   {k:'plan_provider'}, {k:'plan_scheme'}, {k:'plan_windows'}, {k:'plan_note'},
   {k:'plan_models', num:1}, {k:'plan_tier'}, {k:'plan_docs'},
 ];
+const PK_LABEL = {'api':'pk_api', coding:'pk_coding', token:'pk_token', agent:'pk_agent'};
+const PK_SHORT = {api:'API', coding:'CP', token:'TP', agent:'AP'};
 function renderPlans(){
   buildThead(document.getElementById('plans'), PLANS_COLS);
   const tb = document.querySelector('#plans tbody');
@@ -674,10 +684,14 @@ function renderPlans(){
     const docs = p.docs_url
       ? '<a href="'+esc(p.docs_url)+'" target="_blank" rel="noopener" style="color:var(--blue)">'+t('plan_docs')+'↗</a>'
       : '<span class="dim2">-</span>';
+    const pkLabel = t(PK_LABEL[p.plan_kind] || 'pk_api');
+    const reset = p.next_reset_epoch_ms
+      ? '<div class="la f" style="margin:2px 0 0">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(p.next_reset_epoch_ms))+'</div>'
+      : '';
     return '<tr data-pkey="'+esc(p.key)+'">' +
-      '<td>'+esc(p.provider)+'</td>' +
+      '<td>'+esc(p.provider)+' <span class="pbadge" title="'+esc(pkLabel)+'">'+esc(PK_SHORT[p.plan_kind]||'API')+'</span></td>' +
       '<td data-pedit="scheme" title="'+esc(t('plan_sub'))+'" class="wedit">'+schemeName(p.scheme)+'</td>' +
-      '<td data-pedit="windows" class="wedit" style="max-width:340px">'+esc(p.windows)+'</td>' +
+      '<td data-pedit="windows" class="wedit" style="max-width:340px">'+esc(p.windows)+reset+'</td>' +
       '<td style="max-width:280px" class="dim2">'+esc(p.models_note||'-')+'</td>' +
       '<td class="num">'+(p.models? p.models.length : 0)+'</td>' +
       '<td data-pedit="tier" class="wedit" title="'+esc(t('plan_edit_tier'))+'">'+esc(p.tier||'-')+'</td>' +

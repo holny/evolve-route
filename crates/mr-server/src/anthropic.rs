@@ -219,7 +219,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                 tracing::warn!(model = %cand, error = %e, "upstream transport failure");
                 st.health.mark_failure(
                     cand,
-                    Failure { kind: HealthKind::Transient, message: "transport error".into() },
+                    Failure { kind: HealthKind::Transient, message: "transport error".into(), until_epoch_ms: None },
                 );
                 skipped.push(format!("{cand}(transport)"));
                 last_error = Some((StatusCode::BAD_GATEWAY, Bytes::new()));

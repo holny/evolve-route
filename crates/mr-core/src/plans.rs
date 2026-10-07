@@ -19,6 +19,8 @@ pub struct PlanProfile {
     pub docs_url: &'static str,
     /// 常见档位（面板档位提示）
     pub tiers: &'static str,
+    /// 接入类型：api / coding / token / agent
+    pub plan_kind: &'static str,
 }
 impl PartialEq for PlanProfile {
     fn eq(&self, other: &Self) -> bool {
@@ -41,6 +43,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "积分=(入×系+缓存×系+出×系)/1w · GLM-5.3: 6.9/1.7/24 · Flash: 2.3/0.56/8 · 非高峰5折(高峰=周一~五14-18 UTC+8)",
         docs_url: "https://docs.bigmodel.cn/cn/coding-plan/overview",
         tiers: "lite / pro / max",
+        plan_kind: "coding",
     },
     PlanProfile {
         key: "zai-devpack",
@@ -51,6 +54,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "credits=(in×k+cached×k+out×k)/10k · GLM-5.3: 6.9/1.7/24 · Flash: 2.3/0.56/8 · off-peak 50% (peak=Mon-Fri 14-18 UTC+8)",
         docs_url: "https://docs.z.ai/devpack/overview",
         tiers: "lite / pro / max",
+        plan_kind: "coding",
     },
     PlanProfile {
         key: "opencode-go",
@@ -61,6 +65,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "Go/Plus 月限: Flash $60/$180 · GLM-5.3 $15/$120 · GLM-5.2 $60/$180 · Kimi-K3 $15/$60 · MiniMax-M3 $60/$180 · DeepSeek-V4-Pro $15/$60 (每模型独立)",
         docs_url: "https://opencode.ai/docs/go/",
         tiers: "go / go-plus",
+        plan_kind: "token",
     },
     PlanProfile {
         key: "volces-coding",
@@ -71,6 +76,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "抵扣系数按模型: (入×系+出×系)/1w · doubao-2.0-mini 0.25 · deepseek-v4-flash 0.5 · Kimi-K3 系数高仅建议 Pro · glm-5.3 系数较高 · 多模型 1M 上下文",
         docs_url: "https://docs.volcengine.com/docs/ark/coding-plan-personal-plan-overview?lang=zh",
         tiers: "lite / pro",
+        plan_kind: "coding",
     },
     PlanProfile {
         key: "volces-agent",
@@ -81,6 +87,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "Auto 模式系数 0.5(活动期) · deepseek-v4.1-flash 5折(活动期) · 全模态+专属 Harness",
         docs_url: "https://www.volcengine.com/docs/82379/1502001",
         tiers: "见官方活动页",
+        plan_kind: "agent",
     },
 ];
 
@@ -94,6 +101,7 @@ pub const PAYG: PlanProfile = PlanProfile {
     models_note: "",
     docs_url: "",
     tiers: "-",
+    plan_kind: "api",
 };
 
 pub fn plan_for(base_url: &str) -> Option<&'static PlanProfile> {
