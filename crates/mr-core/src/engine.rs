@@ -175,7 +175,6 @@ impl Engine {
                     .weights(),
             },
         };
-
         let mut filtered: Vec<FilteredOut> = Vec::new();
         let mut candidates: Vec<ModelRecord> = Vec::new();
         let now = now_epoch_ms();
@@ -328,8 +327,18 @@ impl Engine {
                 }
             }
         }
+        // 难度-费用联动（用户裁决）：简单任务成本权重加倍省钱优先，
+        // 复杂任务质量权重主导；调整后的权重随事件透出（链路视图②公式）
+        let eff_weights = scoring::difficulty_weights(&weights, difficulty_eff);
+        let eff_policy = PolicyWeights {
+            quality: eff_weights[0],
+            speed: eff_weights[1],
+            cost: eff_weights[2],
+            stability: eff_weights[3],
+            headroom: eff_weights[4],
+        };
         let mut scores = scoring::score_all(
-            &eligible.iter().collect::<Vec<_>>(), &j, difficulty_eff, est, est_output, &weights, input.telemetry);
+            &eligible.iter().collect::<Vec<_>>(), &j, difficulty_eff, est, est_output, &eff_policy, input.telemetry);
         scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut chosen = scores[0].clone();
@@ -406,7 +415,7 @@ impl Engine {
             None,
             funnel,
         );
-        decision.weights = weights.normalized();
+        decision.weights = eff_weights;
         decision
     }
 

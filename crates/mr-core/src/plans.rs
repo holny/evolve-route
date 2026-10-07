@@ -133,6 +133,58 @@ pub fn plan_for(base_url: &str) -> Option<&'static PlanProfile> {
     REGISTRY.iter().find(|p| !p.url_match.is_empty() && l.contains(p.url_match))
 }
 
+/// 订阅模型的配额消耗强度（合成价格，$/1M 量纲）：
+/// 同方案内两模型的比值 = "贵多少倍"（配额烧得快多少倍）。
+/// 来源为各官方文档的积分系数 / 月度美元价（模型名子串匹配）。
+/// 合成口径：输入系数 + 3×输出系数（输出对窗口/额度压力约 3 倍权重）。
+pub fn model_price_hint(base_url: &str, model_id: &str) -> Option<f32> {
+    let p = plan_for(base_url)?;
+    let m = model_id.to_lowercase();
+    let v = match p.key {
+        "zhipu-coding" | "zai-devpack" => {
+            if m.contains("flash") { 2.3 + 3.0 * 8.0 } else { 6.9 + 3.0 * 24.0 }
+        }
+        "opencode-go" => {
+            if m.contains("kimi-k3") {
+                3.0 + 3.0 * 15.0
+            } else if m.contains("v4-pro") {
+                0.66 + 3.0 * 1.98
+            } else if m.contains("v4-flash") || m.contains("v4.1") {
+                0.15 + 3.0 * 0.60
+            } else if m.contains("qwen3.8-max") {
+                2.0 + 3.0 * 6.0
+            } else if m.contains("qwen3.8-flash") {
+                0.15 + 3.0 * 0.47
+            } else if m.contains("qwen3.7") {
+                0.40 + 3.0 * 1.60
+            } else if m.contains("flash") {
+                0.15 + 3.0 * 0.50
+            } else if m.contains("5.3") || m.contains("5.2") {
+                1.40 + 3.0 * 4.40
+            } else if m.contains("kimi-k2") {
+                0.95 + 3.0 * 4.00
+            } else {
+                0.30 + 3.0 * 1.20 // minimax / longcat 等
+            }
+        }
+        "volces-coding" | "volces-agent" => {
+            if m.contains("kimi-k3") {
+                20.0
+            } else if m.contains("v4-pro") {
+                11.0
+            } else if m.contains("kimi-k2") || (m.contains("5.3") && !m.contains("flash")) {
+                9.0
+            } else if m.contains("evolving") || m.contains("2.1-pro") || m.contains("minimax") || m.contains("v4.1") {
+                5.0
+            } else {
+                1.0 // flash / 2.0-mini / v4-flash
+            }
+        }
+        _ => return None,
+    };
+    Some(v)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,5 +208,20 @@ mod tests {
             Some("volces-coding")
         );
         assert_eq!(plan_for("http://127.0.0.1:9101/v1"), None);
+    }
+
+    #[test]
+    fn plan_price_intensity_matches_official_ratios() {
+        let zhipu = "https://open.bigmodel.cn/api/coding/paas/v4";
+        let go = "https://opencode.ai/zen/go/v1/chat/completions";
+        let flash = model_price_hint(zhipu, "zhipuai-coding-plan/glm-5.3-flash").unwrap();
+        let big = model_price_hint(zhipu, "zhipuai-coding-plan/glm-5.3").unwrap();
+        // 官方系数 6.9/1.7/24 vs 2.3/0.56/8 → GLM-5.3 烧积分约 3 倍于 Flash
+        assert!((big / flash) > 2.5 && (big / flash) < 3.5, "ratio={}", big / flash);
+        let go_flash = model_price_hint(go, "opencode-go/glm-5.3-flash").unwrap();
+        let go_big = model_price_hint(go, "opencode-go/glm-5.3").unwrap();
+        // Go 官方月限 flash $60 vs 5.3 $15 → 4 倍差距
+        assert!((go_big / go_flash) > 3.0 && (go_big / go_flash) < 12.0, "ratio={}", go_big / go_flash);
+        assert!(model_price_hint("http://127.0.0.1:9101/v1", "x").is_none());
     }
 }

@@ -474,7 +474,7 @@ pub async fn api_plans(State(st): State<AppState>) -> Response {
         }
     }
     // 下次窗口重置：组内模型的健康冷却（配额/限流）取最近者
-    for (key, e) in groups.iter_mut() {
+    for e in groups.values_mut() {
         let mut min_until: Option<u64> = None;
         for (hid, h) in &health {
             let hid_model = hid.split('\u{1f}').next().unwrap_or(hid);
