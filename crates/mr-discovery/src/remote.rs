@@ -185,6 +185,15 @@ pub fn discover_remote_blocking(
         // every provider unreachable: keep stale cache usable next time
         return Vec::new();
     }
+    // 部分失败保护：全空（如某 group 200 但空 data + 其它网络错误）不覆盖
+    // last-good 缓存——否则 1h TTL 内持续返回空，重启后远程模型全消失
+    if all.is_empty() {
+        tracing::warn!("remote fetch yielded no models; keeping last-good cache");
+        return parse_cached(
+            &serde_json::from_str::<Value>(&std::fs::read_to_string(&path).unwrap_or_default())
+                .unwrap_or(Value::Null),
+        );
+    }
     let snap = serde_json::json!({ "models": all });
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);

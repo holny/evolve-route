@@ -96,21 +96,28 @@ pub async fn chat_completions(
                 plan_pressure: &plan_pressure,
             };
             let d = st.engine.decide(input);
+            // 粘性的度：仅非粘性的重新判定重置轮次；粘性延续扣减——
+            // 否则每轮 put 满额轮次，turns_left 永不触 0，粘性无度
+            let turns_left = if d.sticky {
+                st.sessions
+                    .get(&sticky_key)
+                    .map(|s| s.turns_left.saturating_sub(1))
+                    .unwrap_or(st.config.policy.sticky_turns)
+            } else {
+                st.config.policy.sticky_turns
+            };
             st.sessions.put(
                 &sticky_key,
                 StickyState {
                     chosen: d.chosen.clone(),
                     est_tokens_band: tok::tokens_band(est),
-                    turns_left: st.config.policy.sticky_turns,
+                    turns_left,
                     tools_sig,
                     domain: d.judgment.domain,
                     difficulty: d.difficulty_eff,
                     est_tokens: est,
                 },
             );
-            if d.sticky {
-                st.sessions.decrement_turns(&sticky_key);
-            }
             d
         }
         Target::Direct(dec) => dec.clone(),
@@ -163,8 +170,15 @@ pub async fn chat_completions(
     // provider 账户级熔断：配额/余额/鉴权/限流是 provider 级共享资源，
     // 同 provider 的其他模型不再重复尝试（本请求内）
     let mut dead_providers: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // 自递归防护（审查 M-6）：候选 base_url 指向自身监听地址时出局——
+    // 不依赖用户给网关条目起什么名字（命名约定不可靠）
+    let self_addr = format!("{}:{}", st.config.server.host, st.config.server.port);
     for cand in &attempts {
         let Some(record) = st.engine.catalog.get(cand).cloned() else { continue };
+        if record.base_url.contains(&self_addr) || record.base_url.contains("127.0.0.1:8787") {
+            skipped.push(format!("{cand}(self-loop: points back at this gateway)"));
+            continue;
+        }
         if dead_providers.contains(&record.provider) {
             skipped.push(format!("{cand}(provider {} account-level failure)", record.provider));
             continue;

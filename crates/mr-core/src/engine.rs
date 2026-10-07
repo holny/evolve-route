@@ -575,7 +575,7 @@ mod health_tests {
 
     #[test]
     fn dead_model_filtered_with_cause() {
-        let e = Engine::new(catalog1(), PolicyCfg::default(), Box::new(crate::heuristic::HeuristicJudge));
+        let e = Engine::new(catalog1(), det_policy(), Box::new(crate::heuristic::HeuristicJudge));
         let d = DigestSignals { last_user_text: "你好".into(), ..Default::default() };
         let mut health = HealthMap::new();
         health.insert(
@@ -674,7 +674,7 @@ mod unknown_window_tests {
         est: u64,
         tel: &TelemetrySnapshot,
     ) -> Decision {
-        let e = Engine::new(unknown_window_catalog(), PolicyCfg::default(), Box::new(crate::heuristic::HeuristicJudge));
+        let e = Engine::new(unknown_window_catalog(), det_policy(), Box::new(crate::heuristic::HeuristicJudge));
         let d = digest(text);
         let h = HealthMap::new();
         let mut inp = input(text, est, &d, None, &h);
@@ -722,7 +722,6 @@ mod unknown_window_tests {
 #[cfg(test)]
 mod tests {
     pub(super) use super::*;
-    pub(super) use crate::config::PolicyCfg;
 
     pub(super) fn catalog3() -> Catalog {
         Catalog::from_records(vec![
@@ -753,7 +752,7 @@ mod tests {
     }
 
     fn engine() -> Engine {
-        Engine::new(catalog3(), PolicyCfg::default(), Box::new(crate::heuristic::HeuristicJudge))
+        Engine::new(catalog3(), det_policy(), Box::new(crate::heuristic::HeuristicJudge))
     }
 
     pub(super) fn input<'a>(
@@ -891,7 +890,7 @@ mod tests {
     fn vision_required_filters_non_vision_models() {
         let mut cat = catalog3();
         cat.models[1].tiers.vision = 0.9;
-        let e = Engine::new(cat, PolicyCfg::default(), Box::new(crate::heuristic::HeuristicJudge));
+        let e = Engine::new(cat, det_policy(), Box::new(crate::heuristic::HeuristicJudge));
         let d = digest("看这张截图里的报错");
         let h = HealthMap::new();
         let mut inp = input("看这张截图里的报错", 2_000, &d, None, &h);
@@ -901,4 +900,9 @@ mod tests {
         assert!(dec.filtered.iter().any(|f| f.model == "mini" && f.cause.contains("vision")));
         assert!(dec.filtered.iter().any(|f| f.model == "frontier" && f.cause.contains("vision")));
     }
+}
+
+#[cfg(test)]
+pub(crate) fn det_policy() -> crate::config::PolicyCfg {
+    crate::config::PolicyCfg { explore_ratio: 0.0, ..Default::default() }
 }

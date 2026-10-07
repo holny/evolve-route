@@ -99,10 +99,12 @@ impl QuotaLedger {
         }
         // openai token window
         if let Some(remaining) = get("x-ratelimit-remaining-tokens") {
+            // reset-tokens 是相对时长（"6m0s"）——换算为绝对纪元，消费端按 epoch 比较
             let reset = headers
                 .get("x-ratelimit-reset-tokens")
                 .and_then(|v| v.to_str().ok())
-                .and_then(parse_duration_ms);
+                .and_then(parse_duration_ms)
+                .map(|ms| now.saturating_add(ms));
             out.push(WindowState {
                 scope: "tokens".into(),
                 remaining: Some(remaining),
@@ -224,9 +226,10 @@ pub fn health_model_id(health_id: &str) -> &str {
 /// RFC3339 (Z suffix) -> epoch ms. Minimal parser: 2026-09-29T12:34:56Z.
 fn parse_rfc3339_ms(s: &str) -> Option<u64> {
     // Tolerant RFC3339: accepts fractional seconds and +HH:MM/-HH:MM/Z offsets.
-    let (main, offset_ms) = match s.find(['+', '-']) {
-        // skip the leading sign position of the date itself (index 4 is '-')
-        Some(pos) if pos > 10 => {
+    // 偏移只会出现在时间部分（index ≥ 10）——从日期分隔符之后起找，
+    // 否则 "2026-10-07" 的 '-' 命中 index 4，时区偏移被永久丢弃
+    let (main, offset_ms) = match s[10..].find(['+', '-']).map(|p| p + 10) {
+        Some(pos) => {
             let (m, off) = s.split_at(pos);
             // off: +HH:MM or -HH:MM
             let sign = if off.starts_with('-') { -1i64 } else { 1i64 };
@@ -344,7 +347,15 @@ mod tests {
         let w = QuotaLedger::parse_headers(&h);
         assert_eq!(w.len(), 2);
         assert_eq!(w[0].scope, "tokens");
-        assert_eq!(w[0].reset_epoch_ms, Some(360_000));
+        // 相对时长换算为绝对纪元（now + 6m），消费端按 epoch 比较
+        let now = crate::quota::now_ms();
+        match w[0].reset_epoch_ms {
+            Some(t) => assert!(
+                t >= now + 350_000 && t <= now + 370_000,
+                "reset 应为 now+6m，实际 {t} (now={now})"
+            ),
+            None => panic!("reset_epoch_ms 应存在"),
+        }
         assert_eq!(w[1].scope, "requests");
     }
 

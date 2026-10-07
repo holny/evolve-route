@@ -20,8 +20,8 @@ pub struct PolicyCfg {
     /// 失败降级链深度：链耗尽后从合格集合评分序继续补位（含链本身）
     pub fallback_depth: u32,
     pub confidence_gate: f32,
-    /// ε-greedy exploration: share of full-pipeline requests that try the
-    /// runner-up so the flywheel gathers comparative samples (0 disables).
+    /// ε-greedy exploration: share of requests that try alternative models
+    /// (also drives sticky-escape re-evaluation). 0 disables both.
     pub explore_ratio: f32,
     /// 订阅方案预算软阈值（消耗占额度百分比，超过后模型渐进降权、粘性断开）
     pub plan_soft_pct: f32,
@@ -38,7 +38,7 @@ impl Default for PolicyCfg {
             sticky_turns: 2,
             fallback_depth: 6,
             confidence_gate: 0.35,
-            explore_ratio: 0.0,
+            explore_ratio: 0.05,
             plan_soft_pct: 60.0,
         }
     }

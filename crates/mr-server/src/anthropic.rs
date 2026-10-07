@@ -80,21 +80,28 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                 plan_pressure: &plan_pressure,
             };
             let d = st.engine.decide(input);
+            // 粘性的度：仅非粘性的重新判定重置轮次；粘性延续扣减——
+            // 否则每轮 put 满额轮次，turns_left 永不触 0，粘性无度
+            let turns_left = if d.sticky {
+                st.sessions
+                    .get(&sticky_key)
+                    .map(|s| s.turns_left.saturating_sub(1))
+                    .unwrap_or(st.config.policy.sticky_turns)
+            } else {
+                st.config.policy.sticky_turns
+            };
             st.sessions.put(
                 &sticky_key,
                 StickyState {
                     chosen: d.chosen.clone(),
                     est_tokens_band: tok::tokens_band(est),
-                    turns_left: st.config.policy.sticky_turns,
+                    turns_left,
                     tools_sig,
                     domain: d.judgment.domain,
                     difficulty: d.difficulty_eff,
                     est_tokens: est,
                 },
             );
-            if d.sticky {
-                st.sessions.decrement_turns(&sticky_key);
-            }
             d
         }
         Target::Direct(dec) => dec.clone(),

@@ -107,7 +107,7 @@ impl Translator {
 pub struct AnthropicToOpenaiStream {
     inner: Pin<Box<dyn StreamInner + Send>>,
     mapper: StreamTranslationState,
-    line_buf: String,
+    line_buf: Vec<u8>,
     out: std::collections::VecDeque<bytes::Bytes>,
     done: bool,
 }
@@ -133,7 +133,7 @@ impl AnthropicToOpenaiStream {
         Self {
             inner: Box::pin(inner),
             mapper: StreamTranslationState::default(),
-            line_buf: String::new(),
+            line_buf: Vec::new(),
             out: std::collections::VecDeque::new(),
             done: false,
         }
@@ -183,10 +183,12 @@ impl futures::Stream for AnthropicToOpenaiStream {
             }
             match Pin::new(&mut *self.inner).poll_next_inner(cx) {
                 std::task::Poll::Ready(Some(Ok(chunk))) => {
-                    let text = String::from_utf8_lossy(&chunk);
-                    self.line_buf.push_str(&text);
-                    while let Some(pos) = self.line_buf.find('\n') {
-                        let line: String = self.line_buf.drain(..=pos).collect();
+                    // 字节级缓冲：SSE chunk 边界可能切开多字节字符，
+                    // from_utf8_lossy 会产生 U+FFFD 进入客户端流（BUG-6 同源）
+                    self.line_buf.extend_from_slice(&chunk);
+                    while let Some(pos) = self.line_buf.iter().position(|&b| b == b'\n') {
+                        let line = String::from_utf8_lossy(&self.line_buf[..=pos]).into_owned();
+                        self.line_buf.drain(..=pos);
                         self.feed_line(line.trim_end());
                     }
                 }
@@ -211,7 +213,7 @@ impl futures::Stream for AnthropicToOpenaiStream {
 pub struct OpenaiToAnthropicStream {
     inner: Pin<Box<dyn StreamInner + Send>>,
     mapper: StreamTranslationState,
-    line_buf: String,
+    line_buf: Vec<u8>,
     out: std::collections::VecDeque<bytes::Bytes>,
     done: bool,
 }
@@ -221,7 +223,7 @@ impl OpenaiToAnthropicStream {
         Self {
             inner: Box::pin(inner),
             mapper: StreamTranslationState::default(),
-            line_buf: String::new(),
+            line_buf: Vec::new(),
             out: std::collections::VecDeque::new(),
             done: false,
         }
@@ -261,10 +263,12 @@ impl futures::Stream for OpenaiToAnthropicStream {
             }
             match Pin::new(&mut *self.inner).poll_next_inner(cx) {
                 std::task::Poll::Ready(Some(Ok(chunk))) => {
-                    let text = String::from_utf8_lossy(&chunk);
-                    self.line_buf.push_str(&text);
-                    while let Some(pos) = self.line_buf.find('\n') {
-                        let line: String = self.line_buf.drain(..=pos).collect();
+                    // 字节级缓冲：SSE chunk 边界可能切开多字节字符，
+                    // from_utf8_lossy 会产生 U+FFFD 进入客户端流（BUG-6 同源）
+                    self.line_buf.extend_from_slice(&chunk);
+                    while let Some(pos) = self.line_buf.iter().position(|&b| b == b'\n') {
+                        let line = String::from_utf8_lossy(&self.line_buf[..=pos]).into_owned();
+                        self.line_buf.drain(..=pos);
                         self.feed_line(line.trim_end());
                     }
                 }

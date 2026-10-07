@@ -38,19 +38,29 @@ impl EventLog {
     pub fn record(&self, mut event: Value) {
         const ROTATE_BYTES: u64 = 32 * 1024 * 1024;
         // simple size-based rotation: events.jsonl -> events.jsonl.1
-        if let Some(f) = &self.inner.file
-            && let Ok(meta) = f.lock().unwrap_or_else(|p| p.into_inner()).metadata()
-            && meta.len() > ROTATE_BYTES
+        // 锁守卫必须在独立作用域内释放：Rust2024 let-chain 守卫会存活到
+        // 整条 if 结束，块内再 lock 同一把锁会永久自死锁（32MB 后网关挂死）
+        let needs_rotate = match &self.inner.file {
+            Some(f) => {
+                let g = f.lock().unwrap_or_else(|p| p.into_inner());
+                g.metadata().map(|m| m.len() > ROTATE_BYTES).unwrap_or(false)
+            }
+            None => false,
+        };
+        if needs_rotate
             && let Some(path) = &self.inner.path
         {
             let rotated = path.with_extension("jsonl.1");
             let _ = std::fs::rename(path, &rotated);
-            if let Ok(nf) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-            {
-                *f.lock().unwrap_or_else(|p| p.into_inner()) = nf;
+            if let Some(f) = &self.inner.file {
+                let mut g = f.lock().unwrap_or_else(|p| p.into_inner());
+                if let Ok(nf) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                {
+                    *g = nf;
+                }
             }
         }
         if let Some(ts) = now_millis() {

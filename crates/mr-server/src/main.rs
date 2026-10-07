@@ -164,8 +164,25 @@ fn serve(config_path: Option<PathBuf>, port_override: Option<u16>) -> anyhow::Re
         let addr = format!("{host}:{port}");
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         tracing::info!("modelroute gateway listening on http://{addr}");
-        axum::serve(listener, app).await?;
+        // 优雅关闭：SIGINT/SIGTERM 后停止接新请求，flush 飞轮聚合再退出
+        // （此前 SIGINT 直接杀进程，flush 永远执行不到，每次重启丢 30s 聚合）
+        let shutdown = async {
+            let _ = tokio::signal::ctrl_c().await;
+            #[cfg(unix)]
+            {
+                let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("SIGTERM handler");
+                if term.recv().await.is_some() {
+                    return;
+                }
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        };
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await?;
         state.flywheel.flush();
+        tracing::info!("flywheel flushed, shutting down");
         anyhow::Ok(())
     })?;
     Ok(())

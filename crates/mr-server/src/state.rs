@@ -118,9 +118,10 @@ impl Inner {
                 && let Some(allowance) = budgets.get(key)
                 && let Some((i, c, o)) = sums.get(&m.id)
             {
+                // 同方案多模型共享账户额度——SUM 而非 MAX（MAX 会漏计并发燃烧）
                 let credits = mr_core::plans::plan_credits_used(&m.base_url, &m.id, *i, *c, *o);
                 let p = (credits / allowance).clamp(0.0, 1.5) as f32;
-                out.entry(key.to_string()).and_modify(|e| *e = e.max(p)).or_insert(p);
+                out.entry(key.to_string()).and_modify(|e| *e = (*e + p).min(1.5)).or_insert(p);
             }
         }
         out

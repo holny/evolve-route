@@ -113,7 +113,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         tiers: "见官方活动页",
         tier_allowances: "",
         plan_kind: "agent",
-        model_rates: "auto|0.5|0.5\\ndeepseek-v4.1-flash|2.5(活动5折)|2.5(活动5折)\\nkimi-k2.8-preview|8(活动6折)|8(活动6折)\\nkimi-k3|10|10\\nglm-5.3|4.5|4.5\\nglm-5.3-flash|0.5|0.5\\nminimax-m3|2.5|2.5\\ndeepseek-v4-pro|5.5|5.5",
+        model_rates: "auto|0.5|0.5\ndeepseek-v4.1-flash|2.5(活动5折)|2.5(活动5折)\nkimi-k2.8-preview|8(活动6折)|8(活动6折)\nkimi-k3|10|10\nglm-5.3|4.5|4.5\nglm-5.3-flash|0.5|0.5\nminimax-m3|2.5|2.5\ndeepseek-v4-pro|5.5|5.5",
         rates_kind: "afp",
         rates_note: "AFP 系数（输入/输出）· 消耗=(入×系+出×系)/1万 · Harness 层级影响系数 · 折扣为活动期价格",
     },

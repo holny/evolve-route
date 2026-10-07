@@ -457,8 +457,15 @@ impl Stream for TelemetryStream {
 }
 
 pub fn extract_usage_fields(usage: &Value) -> (Option<u64>, Option<u64>, Option<u64>, Option<u64>) {
-    let prompt = usage.get("prompt_tokens").and_then(|v| v.as_u64());
-    let completion = usage.get("completion_tokens").and_then(|v| v.as_u64());
+    // openai 形状优先；anthropic 原生形状（跨协议流式上游直回）兜底
+    let prompt = usage
+        .get("prompt_tokens")
+        .and_then(|v| v.as_u64())
+        .or_else(|| usage.get("input_tokens").and_then(|v| v.as_u64()));
+    let completion = usage
+        .get("completion_tokens")
+        .and_then(|v| v.as_u64())
+        .or_else(|| usage.get("output_tokens").and_then(|v| v.as_u64()));
     let cached = usage
         .get("prompt_tokens_details")
         .and_then(|d| d.get("cached_tokens"))
