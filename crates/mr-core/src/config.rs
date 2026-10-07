@@ -32,7 +32,10 @@ impl Default for PolicyCfg {
         Self {
             default: "balanced".into(),
             weights: PolicyWeights::balanced(),
-            sticky_turns: 6,
+            // 粘性的“度”（用户裁决：粘性保留，控制好度）：默认 2 轮短粘性——
+            // 上游 prompt 缓存仍受益，但不会躺平；探索逃逸保证 ~explore_ratio
+            // 的粘性命中被打破重评估。显式设 0 = 每请求完整决策
+            sticky_turns: 2,
             fallback_depth: 6,
             confidence_gate: 0.35,
             explore_ratio: 0.0,

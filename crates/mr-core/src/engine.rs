@@ -112,6 +112,18 @@ impl Engine {
         let max_output = input.max_output_req.unwrap_or(0).max(1024);
         let _band = crate::tokens::tokens_band(est);
 
+        // 粘性的“度”（用户裁决：粘性没问题，但要控制好度）：
+        // ① 轮数有限（sticky_turns）② 探索逃逸——以 explore_ratio 概率打破粘性
+        // 走完整重评估，长会话也不会躺平（探索不再被粘性架空）
+        let explore_ratio = self.policy.explore_ratio.clamp(0.0, 1.0);
+        let sticky_escape = explore_ratio > 0.0 && {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0);
+            (nanos % 10_000) as f32 / 10_000.0 < explore_ratio
+        };
+
         if let Some(sticky) = &input.sticky {
             let now = now_epoch_ms();
             // 预算压力保护：所选方案消耗超过软阈值时粘性立即断开，
@@ -125,7 +137,7 @@ impl Engine {
                 .and_then(|k| input.plan_pressure.get(&k))
                 .map(|p| *p <= self.policy.plan_soft_pct.clamp(10.0, 95.0) / 100.0 + 0.25)
                 .unwrap_or(true);
-            let still_fits = self
+            let still_fits = !sticky_escape && self
                 .catalog
                 .get(&sticky.chosen)
                 .map(|m| {
