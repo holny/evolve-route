@@ -56,6 +56,7 @@ pub async fn chat_completions(
             let health = st.health.snapshot();
             let telemetry = st.flywheel.telemetry_snapshot();
             let quota_view = st.quota.best_remaining_by_models();
+            let plan_pressure = st.plan_pressure_map();
 
             // L3 session-loop: did the previous turn's tool calls come back
             // executed as role=tool messages? (gateway-side semantic signal)
@@ -92,6 +93,7 @@ pub async fn chat_completions(
                 health: &health,
                 telemetry: &telemetry,
                 quota: &quota_view,
+                plan_pressure: &plan_pressure,
             };
             let d = st.engine.decide(input);
             st.sessions.put(
@@ -350,6 +352,7 @@ pub async fn chat_completions(
             est_cost_usd: None,
             translated: cross.then(|| "anthropic->openai".to_string()),
             agent: Some(agent_hdr),
+            plan_key: mr_core::plans::plan_key_for(&record.base_url).map(|k| k.to_string()),
             extra: {
                 let mut ex = json!({
                     "reason": decision.reason,
@@ -380,7 +383,7 @@ pub async fn chat_completions(
 
         if !status.is_success() {
             let err_body = resp.bytes().await.unwrap_or_default();
-            crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.bus, &telem.lock().unwrap());
+            crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.quota, &st.bus, &telem.lock().unwrap());
             insert_header(h, "x-mr-upstream-status", status.as_str());
             return out.body(axum::body::Body::from(err_body)).unwrap();
         }
@@ -486,12 +489,12 @@ pub async fn chat_completions(
         } // guard dropped before finalize (which locks telem itself)
 
         if let Some(v) = &response_value {
-            crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.bus, &telem.lock().unwrap());
+            crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.quota, &st.bus, &telem.lock().unwrap());
             h.insert("content-type", "application/json".parse().unwrap());
             let body_bytes = serde_json::to_vec(v).unwrap_or_default();
             return out.body(axum::body::Body::from(body_bytes)).unwrap();
         }
-        crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.bus, &telem.lock().unwrap());
+        crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.quota, &st.bus, &telem.lock().unwrap());
         h.insert("content-type", "application/json".parse().unwrap());
         return out.body(axum::body::Body::from(bytes)).unwrap();
         } // key_off loop (keys exhausted for this candidate)
@@ -533,8 +536,9 @@ pub async fn chat_completions(
             translated: None,
             extra: Some(json!({"reason": detail, "skipped": skipped, "filtered": decision.filtered})),
             agent: Some(crate::identity::agent_identity(&headers, &st.config.telemetry.agent_header)),
+            plan_key: None,
         };
-        crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.bus, &telem);
+        crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.quota, &st.bus, &telem);
     }
     let direct_raw = matches!(target, Target::Direct(_)) && last_error.is_some();
     let (status, err_body) = last_error.unwrap_or((StatusCode::BAD_GATEWAY, Bytes::new()));

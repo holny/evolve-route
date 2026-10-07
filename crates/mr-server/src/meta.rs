@@ -446,6 +446,13 @@ pub async fn api_plans(State(st): State<AppState>) -> Response {
     let ov = crate::state::load_overrides(&st.config.data.dir);
     let health = st.health.snapshot();
     let now_ms = mr_memory::health::now();
+    let budgets = st
+        .plan_budgets
+        .lock()
+        .map(|b| b.clone())
+        .unwrap_or_default();
+    let soft_pct = st.config.policy.plan_soft_pct;
+    let sums = st.quota.plan_usage_sums(now_ms, 5 * 3600 * 1000);
     let mut groups: std::collections::BTreeMap<String, serde_json::Value> = std::collections::BTreeMap::new();
     for m in &st.engine.catalog.models {
         let profile = mr_core::plans::plan_for(&m.base_url);
@@ -453,6 +460,7 @@ pub async fn api_plans(State(st): State<AppState>) -> Response {
         let e = groups.entry(key.clone()).or_insert_with(|| {
             let p = profile.unwrap_or(&mr_core::plans::PAYG);
             let pov = ov.plans.get(&key);
+            let allowance = budgets.get(&key).copied();
             json!({
                 "key": key,
                 "provider": if p.key.is_empty() { m.provider.clone() } else { p.provider.to_string() },
@@ -466,12 +474,29 @@ pub async fn api_plans(State(st): State<AppState>) -> Response {
                 "docs_url": p.docs_url.to_string(),
                 "tiers": p.tiers.to_string(),
                 "tier": pov.and_then(|o| o.tier.clone()).unwrap_or_default(),
+                "used_5h": 0.0,
+                "allowance": allowance,
+                "soft_pct": soft_pct,
                 "models": [],
             })
         });
         if let Some(arr) = e.get_mut("models").and_then(|m| m.as_array_mut()) {
             arr.push(json!(m.id));
         }
+    }
+    // 组内消耗(5h)：Σ 该方案全部模型的积分折算（修正只算首模型的问题）
+    let mut used_by_group: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for (key, e) in groups.iter_mut() {
+        let mut used = 0.0f64;
+        if let Some(arr) = e.get("models").and_then(|m| m.as_array()) {
+            for mid in arr.iter().filter_map(|x| x.as_str()) {
+                if let Some((i, c, o)) = sums.get(mid) {
+                    used += mr_core::plans::plan_credits_used_by_id(mid, *i, *c, *o);
+                }
+            }
+        }
+        e["used_5h"] = json!((used * 100.0).round() / 100.0);
+        used_by_group.insert(key.clone(), used);
     }
     // 下次窗口重置：组内模型的健康冷却（配额/限流）取最近者
     for e in groups.values_mut() {
@@ -496,7 +521,7 @@ pub async fn api_plans(State(st): State<AppState>) -> Response {
     (axum::Json(json!({"providers": groups.values().collect::<Vec<_>>()}))).into_response()
 }
 
-/// 配额方案订正：档位/方案/窗口说明（持久化，重启重放）
+/// 配额方案订正：档位/方案/窗口说明（持久化，重启重放；档位同时驱动预算额度）
 pub async fn api_plans_set(
     State(st): State<AppState>,
     axum::Json(body): axum::Json<serde_json::Value>,
@@ -516,8 +541,18 @@ pub async fn api_plans_set(
         }
     }
     crate::state::save_overrides(dir, &ov);
+    // 档位变化 → 预算额度即时更新（registry 档位表驱动）
+    let tier = ov.plans.get(&key).and_then(|p| p.tier.clone());
+    let allowance = tier.as_deref().and_then(|t| mr_core::plans::tier_allowance_by_key(&key, t));
+    if let Some(a) = allowance {
+        if let Ok(mut b) = st.plan_budgets.lock() {
+            b.insert(key.clone(), a);
+        }
+    } else if let Ok(mut b) = st.plan_budgets.lock() {
+        b.remove(&key);
+    }
     let e = ov.plans.get(&key).cloned().unwrap_or_default();
-    (axum::Json(json!({"status": "ok", "key": key, "override": e}))).into_response()
+    (axum::Json(json!({"status": "ok", "key": key, "override": e, "allowance": allowance}))).into_response()
 }
 
 /// SSE stream of routing events for the dashboard.

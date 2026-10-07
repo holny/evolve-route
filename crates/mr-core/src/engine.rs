@@ -15,6 +15,8 @@ pub struct RoutingInput<'a> {
     pub health: &'a HealthMap,
     pub telemetry: &'a TelemetrySnapshot,
     pub quota: &'a QuotaView,
+    /// 订阅方案预算压力（plan_key → 消耗占比 0-1）
+    pub plan_pressure: &'a HashMap<String, f32>,
 }
 
 /// Linear blend of tier fields: conf 1.0 -> new, 0.0 -> base.
@@ -112,6 +114,17 @@ impl Engine {
 
         if let Some(sticky) = &input.sticky {
             let now = now_epoch_ms();
+            // 预算压力保护：所选方案消耗超过软阈值时粘性立即断开，
+            // 把宝贵配额留给硬任务（用户裁决）
+            let plan_key = self
+                .catalog
+                .get(&sticky.chosen)
+                .and_then(|m| crate::plans::plan_key_for(&m.base_url))
+                .map(|k| k.to_string());
+            let pressure_ok = plan_key
+                .and_then(|k| input.plan_pressure.get(&k))
+                .map(|p| *p <= self.policy.plan_soft_pct.clamp(10.0, 95.0) / 100.0 + 0.25)
+                .unwrap_or(true);
             let still_fits = self
                 .catalog
                 .get(&sticky.chosen)
@@ -120,7 +133,7 @@ impl Engine {
                         && model_available(input.health, &sticky.chosen, now)
                         && input.quota.get(&sticky.chosen).map(|r| *r >= est).unwrap_or(true)
                 })
-                .unwrap_or(false);
+                .unwrap_or(false) && pressure_ok;
             // 粘性收窄（用户裁决）：量级相近是伪条件（相邻消息天然同量级），
             // 只作保护上限；粘性仅延续低难度任务（L2 上限）且暴增/骤减即断
             let size_ok = sticky.est_tokens > 0
@@ -186,6 +199,18 @@ impl Engine {
                 .filter(|c| *c > 0.1)
                 .unwrap_or(1.0);
             let m_est = ((est as f32 * calib) as u64).max(est / 2);
+            // 订阅方案预算硬保护：消耗超 95% 直接出局（留最后余量给硬任务）
+            let p_key = crate::plans::plan_key_for(&m.base_url)
+                .and_then(|k| input.plan_pressure.get(k));
+            if let Some(p) = p_key
+                && *p > 0.95
+            {
+                filtered.push(FilteredOut {
+                    model: m.id.clone(),
+                    cause: format!("plan budget {:.0}% consumed (soft reserve)", p * 100.0),
+                });
+                continue;
+            }
             if !model_available(input.health, &m.id, now) {
                 let remaining = input
                     .health
@@ -339,6 +364,25 @@ impl Engine {
         };
         let mut scores = scoring::score_all(
             &eligible.iter().collect::<Vec<_>>(), &j, difficulty_eff, est, est_output, &eff_policy, input.telemetry);
+        // 订阅方案预算软降权（用户裁决：配额宝贵，别让一个会话烧光）：
+        // 消耗超软阈值后按超出幅度压分，难度越高压制越轻（硬任务保留好模型）
+        let soft = self.policy.plan_soft_pct.clamp(10.0, 95.0) / 100.0;
+        for s in scores.iter_mut() {
+            let plan_key = eligible
+                .iter()
+                .find(|m| m.id == s.model_id)
+                .and_then(|m| crate::plans::plan_key_for(&m.base_url))
+                .map(|k| k.to_string());
+            if let Some(pk) = plan_key
+                && let Some(p) = input.plan_pressure.get(&pk)
+                && *p > soft
+            {
+                let over = (p - soft) / (0.95 - soft).max(0.01);
+                let damp = (1.0 - 0.9 * over).max(0.05) * (1.0 - 0.6 * difficulty_eff / 3.0);
+                s.score *= damp.max(0.05);
+                s.qp = damp.max(0.05);
+            }
+        }
         scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut chosen = scores[0].clone();
@@ -467,185 +511,6 @@ impl Engine {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    pub(super) use super::*;
-    pub(super) use crate::config::PolicyCfg;
-
-    pub(super) fn catalog3() -> Catalog {
-        Catalog::from_records(vec![
-            model("mini", 32_000, 0.1, 0.4, 0.45, 0.95),
-            model("standard", 128_000, 0.6, 2.4, 0.75, 0.7),
-            model("frontier", 200_000, 3.0, 15.0, 0.95, 0.4),
-        ])
-    }
-
-    static EMPTY_TELEM: std::sync::LazyLock<TelemetrySnapshot> = std::sync::LazyLock::new(TelemetrySnapshot::new);
-    static EMPTY_QUOTA: std::sync::LazyLock<QuotaView> = std::sync::LazyLock::new(QuotaView::new);
-
-    fn model(id: &str, window: u64, in_price: f32, out_price: f32, coding: f32, speed: f32) -> ModelRecord {
-        ModelRecord {
-            id: id.into(),
-            provider: "mock".into(),
-            base_url: "http://127.0.0.1:9101/v1".into(),
-            api_key: Some("k".into()),
-            upstream_model: format!("mock-{}", id),
-            context_window: Some(window),
-            max_output: 4096,
-            cost: Some(Cost { input: in_price, output: out_price }),
-            tiers: Tiers { reasoning: coding * 0.9, coding, vision: 0.0, agentic: coding },
-            speed_tier: speed,
-            source: Source::User,
-            ..Default::default()
-        }
-    }
-
-    fn engine() -> Engine {
-        Engine::new(catalog3(), PolicyCfg::default(), Box::new(crate::heuristic::HeuristicJudge))
-    }
-
-    pub(super) fn input<'a>(
-        text: &'a str,
-        est: u64,
-        digest: &'a DigestSignals,
-        sticky: Option<StickyState>,
-        health: &'a HealthMap,
-    ) -> RoutingInput<'a> {
-        RoutingInput {
-            session_key: "s1",
-            features: RequestFeatures {
-                est_input_tokens: est,
-                user_text_chars: text.chars().count(),
-                code_density: 0.0,
-                tool_count: 0,
-                tool_ratio: 0.0,
-                has_images: false,
-                turn_count: 1,
-                cjk_ratio: 1.0,
-            },
-            digest,
-            tools_sig: 0,
-            max_output_req: None,
-            policy: None,
-            sticky,
-            health,
-            telemetry: &EMPTY_TELEM,
-            quota: &EMPTY_QUOTA,
-        }
-    }
-
-    pub(super) fn digest(text: &str) -> DigestSignals {
-        DigestSignals {
-            last_user_text: text.into(),
-            ..Default::default()
-        }
-    }
-
-    #[allow(dead_code)]
-    fn decide(text: &str, est: u64, d: &DigestSignals, sticky: Option<StickyState>, health: &HealthMap) -> Decision {
-        engine().decide(input(text, est, d, sticky, health))
-    }
-
-    #[test]
-    fn trivial_goes_cheapest() {
-        let e = engine();
-        let d = DigestSignals { last_user_text: "你好".into(), ..Default::default() };
-        let h = HealthMap::new();
-        let dec = e.decide(input("你好", 500, &d, None, &h));
-        assert_eq!(dec.chosen, "mini", "reason: {}", dec.reason);
-        assert_eq!(dec.judgment.domain, Domain::Chitchat);
-    }
-
-    #[test]
-    fn big_context_filters_small_windows() {
-        let e = engine();
-        let text = "帮我把这个模块的错误处理重构成统一错误类型，包含所有分支和测试";
-        let d = DigestSignals { last_user_text: text.into(), ..Default::default() };
-        let h = HealthMap::new();
-        let dec = e.decide(input(text, 120_000, &d, None, &h));
-        assert_eq!(dec.chosen, "frontier", "only frontier fits 120k; reason: {}", dec.reason);
-        assert!(dec.filtered.iter().any(|f| f.model == "mini" && f.cause.contains("context")));
-        assert!(dec.filtered.iter().any(|f| f.model == "standard" && f.cause.contains("context")));
-    }
-
-    #[test]
-    fn code_request_avoids_mini() {
-        let e = engine();
-        let text = "重构这个 rust 模块的错误处理，把 unwrap 全部换成 thiserror，然后补测试，先梳理类型再逐个文件改";
-        let mut d = digest(text);
-        d.first_user_text = text.into();
-        d.session_tools_seen = 12;
-        d.has_deixis = true;
-        let h = HealthMap::new();
-        let dec = e.decide(input(text, 20_000, &d, None, &h));
-        assert_ne!(dec.chosen, "mini", "reason: {}", dec.reason);
-        assert!(dec.difficulty_eff >= 1.2, "difficulty_eff: {}", dec.difficulty_eff);
-    }
-
-    #[test]
-    fn sticky_reuses_when_conditions_hold() {
-        let e = engine();
-        let d = digest("你好");
-        let sticky = StickyState {
-            chosen: "mini".into(),
-            est_tokens_band: crate::tokens::tokens_band(600),
-            turns_left: 3,
-            tools_sig: 0,
-            domain: Domain::Chitchat,
-            difficulty: 0.5,
-            est_tokens: 600,
-        };
-        let h = HealthMap::new();
-        let dec = e.decide(input("你好", 620, &d, Some(sticky), &h));
-        assert!(dec.sticky, "reason: {}", dec.reason);
-        assert_eq!(dec.chosen, "mini");
-        assert_eq!(dec.scores.len(), 1);
-    }
-
-    #[test]
-    fn sticky_breaks_on_band_jump() {
-        let e = engine();
-        let d = digest("继续，把剩下的都处理了 这个 然后再检查一遍");
-        let sticky = StickyState {
-            chosen: "mini".into(),
-            est_tokens_band: crate::tokens::tokens_band(1_000),
-            turns_left: 3,
-            tools_sig: 0,
-            domain: Domain::Chitchat,
-            difficulty: 0.5,
-            est_tokens: 1_000,
-        };
-        let h = HealthMap::new();
-        let dec = e.decide(input("继续，把剩下的都处理了 这个 然后再检查一遍", 130_000, &d, Some(sticky), &h));
-        assert!(!dec.sticky);
-        assert_eq!(dec.chosen, "frontier");
-    }
-
-    #[test]
-    fn medium_task_lands_on_standard() {
-        let e = engine();
-        let text = "给这个函数补三个单元测试，覆盖边界情况，然后跑一遍";
-        let d = DigestSignals { last_user_text: text.into(), ..Default::default() };
-        let h = HealthMap::new();
-        let dec = e.decide(input(text, 12_000, &d, None, &h));
-        assert_eq!(dec.chosen, "standard", "reason: {}", dec.reason);
-    }
-
-    #[test]
-    fn vision_required_filters_non_vision_models() {
-        let mut cat = catalog3();
-        cat.models[1].tiers.vision = 0.9;
-        let e = Engine::new(cat, PolicyCfg::default(), Box::new(crate::heuristic::HeuristicJudge));
-        let d = digest("看这张截图里的报错");
-        let h = HealthMap::new();
-        let mut inp = input("看这张截图里的报错", 2_000, &d, None, &h);
-        inp.features.has_images = true;
-        let dec = e.decide(inp);
-        assert_eq!(dec.chosen, "standard", "reason: {}", dec.reason);
-        assert!(dec.filtered.iter().any(|f| f.model == "mini" && f.cause.contains("vision")));
-        assert!(dec.filtered.iter().any(|f| f.model == "frontier" && f.cause.contains("vision")));
-    }
-}
 
 #[cfg(test)]
 mod health_tests {
@@ -813,5 +678,189 @@ mod unknown_window_tests {
             .filtered
             .iter()
             .any(|f| f.model == "mini" && f.cause.contains("proven max accepted 1000")), "reason: {}", dec.reason);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    pub(super) use super::*;
+    pub(super) use crate::config::PolicyCfg;
+
+    pub(super) fn catalog3() -> Catalog {
+        Catalog::from_records(vec![
+            model("mini", 32_000, 0.1, 0.4, 0.45, 0.95),
+            model("standard", 128_000, 0.6, 2.4, 0.75, 0.7),
+            model("frontier", 200_000, 3.0, 15.0, 0.95, 0.4),
+        ])
+    }
+
+    static EMPTY_TELEM: std::sync::LazyLock<TelemetrySnapshot> = std::sync::LazyLock::new(TelemetrySnapshot::new);
+    static EMPTY_QUOTA: std::sync::LazyLock<QuotaView> = std::sync::LazyLock::new(QuotaView::new);
+
+    fn model(id: &str, window: u64, in_price: f32, out_price: f32, coding: f32, speed: f32) -> ModelRecord {
+        ModelRecord {
+            id: id.into(),
+            provider: "mock".into(),
+            base_url: "http://127.0.0.1:9101/v1".into(),
+            api_key: Some("k".into()),
+            upstream_model: format!("mock-{}", id),
+            context_window: Some(window),
+            max_output: 4096,
+            cost: Some(Cost { input: in_price, output: out_price }),
+            tiers: Tiers { reasoning: coding * 0.9, coding, vision: 0.0, agentic: coding },
+            speed_tier: speed,
+            source: Source::User,
+            ..Default::default()
+        }
+    }
+
+    fn engine() -> Engine {
+        Engine::new(catalog3(), PolicyCfg::default(), Box::new(crate::heuristic::HeuristicJudge))
+    }
+
+    pub(super) fn input<'a>(
+        text: &'a str,
+        est: u64,
+        digest: &'a DigestSignals,
+        sticky: Option<StickyState>,
+        health: &'a HealthMap,
+    ) -> RoutingInput<'a> {
+        RoutingInput {
+            session_key: "s1",
+            features: RequestFeatures {
+                est_input_tokens: est,
+                user_text_chars: text.chars().count(),
+                code_density: 0.0,
+                tool_count: 0,
+                tool_ratio: 0.0,
+                has_images: false,
+                turn_count: 1,
+                cjk_ratio: 1.0,
+            },
+            digest,
+            tools_sig: 0,
+            max_output_req: None,
+            policy: None,
+            sticky,
+            health,
+            telemetry: &EMPTY_TELEM,
+            quota: &EMPTY_QUOTA,
+            plan_pressure: &EMPTY_PRESSURE,
+        }
+    }
+
+    pub(crate) static EMPTY_PRESSURE: std::sync::LazyLock<HashMap<String, f32>> =
+        std::sync::LazyLock::new(HashMap::new);
+
+    pub(super) fn digest(text: &str) -> DigestSignals {
+        DigestSignals {
+            last_user_text: text.into(),
+            ..Default::default()
+        }
+    }
+
+    #[allow(dead_code)]
+    fn decide(text: &str, est: u64, d: &DigestSignals, sticky: Option<StickyState>, health: &HealthMap) -> Decision {
+        engine().decide(input(text, est, d, sticky, health))
+    }
+
+    #[test]
+    fn trivial_goes_cheapest() {
+        let e = engine();
+        let d = DigestSignals { last_user_text: "你好".into(), ..Default::default() };
+        let h = HealthMap::new();
+        let dec = e.decide(input("你好", 500, &d, None, &h));
+        assert_eq!(dec.chosen, "mini", "reason: {}", dec.reason);
+        assert_eq!(dec.judgment.domain, Domain::Chitchat);
+    }
+
+    #[test]
+    fn big_context_filters_small_windows() {
+        let e = engine();
+        let text = "帮我把这个模块的错误处理重构成统一错误类型，包含所有分支和测试";
+        let d = DigestSignals { last_user_text: text.into(), ..Default::default() };
+        let h = HealthMap::new();
+        let dec = e.decide(input(text, 120_000, &d, None, &h));
+        assert_eq!(dec.chosen, "frontier", "only frontier fits 120k; reason: {}", dec.reason);
+        assert!(dec.filtered.iter().any(|f| f.model == "mini" && f.cause.contains("context")));
+        assert!(dec.filtered.iter().any(|f| f.model == "standard" && f.cause.contains("context")));
+    }
+
+    #[test]
+    fn code_request_avoids_mini() {
+        let e = engine();
+        let text = "重构这个 rust 模块的错误处理，把 unwrap 全部换成 thiserror，然后补测试，先梳理类型再逐个文件改";
+        let mut d = digest(text);
+        d.first_user_text = text.into();
+        d.session_tools_seen = 12;
+        d.has_deixis = true;
+        let h = HealthMap::new();
+        let dec = e.decide(input(text, 20_000, &d, None, &h));
+        assert_ne!(dec.chosen, "mini", "reason: {}", dec.reason);
+        assert!(dec.difficulty_eff >= 1.2, "difficulty_eff: {}", dec.difficulty_eff);
+    }
+
+    #[test]
+    fn sticky_reuses_when_conditions_hold() {
+        let e = engine();
+        let d = digest("你好");
+        let sticky = StickyState {
+            chosen: "mini".into(),
+            est_tokens_band: crate::tokens::tokens_band(600),
+            turns_left: 3,
+            tools_sig: 0,
+            domain: Domain::Chitchat,
+            difficulty: 0.5,
+            est_tokens: 600,
+        };
+        let h = HealthMap::new();
+        let dec = e.decide(input("你好", 620, &d, Some(sticky), &h));
+        assert!(dec.sticky, "reason: {}", dec.reason);
+        assert_eq!(dec.chosen, "mini");
+        assert_eq!(dec.scores.len(), 1);
+    }
+
+    #[test]
+    fn sticky_breaks_on_band_jump() {
+        let e = engine();
+        let d = digest("继续，把剩下的都处理了 这个 然后再检查一遍");
+        let sticky = StickyState {
+            chosen: "mini".into(),
+            est_tokens_band: crate::tokens::tokens_band(1_000),
+            turns_left: 3,
+            tools_sig: 0,
+            domain: Domain::Chitchat,
+            difficulty: 0.5,
+            est_tokens: 1_000,
+        };
+        let h = HealthMap::new();
+        let dec = e.decide(input("继续，把剩下的都处理了 这个 然后再检查一遍", 130_000, &d, Some(sticky), &h));
+        assert!(!dec.sticky);
+        assert_eq!(dec.chosen, "frontier");
+    }
+
+    #[test]
+    fn medium_task_lands_on_standard() {
+        let e = engine();
+        let text = "给这个函数补三个单元测试，覆盖边界情况，然后跑一遍";
+        let d = DigestSignals { last_user_text: text.into(), ..Default::default() };
+        let h = HealthMap::new();
+        let dec = e.decide(input(text, 12_000, &d, None, &h));
+        assert_eq!(dec.chosen, "standard", "reason: {}", dec.reason);
+    }
+
+    #[test]
+    fn vision_required_filters_non_vision_models() {
+        let mut cat = catalog3();
+        cat.models[1].tiers.vision = 0.9;
+        let e = Engine::new(cat, PolicyCfg::default(), Box::new(crate::heuristic::HeuristicJudge));
+        let d = digest("看这张截图里的报错");
+        let h = HealthMap::new();
+        let mut inp = input("看这张截图里的报错", 2_000, &d, None, &h);
+        inp.features.has_images = true;
+        let dec = e.decide(inp);
+        assert_eq!(dec.chosen, "standard", "reason: {}", dec.reason);
+        assert!(dec.filtered.iter().any(|f| f.model == "mini" && f.cause.contains("vision")));
+        assert!(dec.filtered.iter().any(|f| f.model == "frontier" && f.cause.contains("vision")));
     }
 }

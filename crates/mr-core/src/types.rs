@@ -235,6 +235,8 @@ pub struct CandidateScore {
     pub uw: f32,
     /// 飞轮学习偏置
     pub bias: f32,
+    /// 订阅方案预算压制系数（1.0=无压制，<1=预算软阈值降权）
+    pub qp: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]

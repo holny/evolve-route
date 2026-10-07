@@ -1,6 +1,6 @@
 use futures::stream::{Stream, StreamExt};
 use mr_core::types::ResponseQuality;
-use mr_memory::{EventLog, Flywheel, SessionStore};
+use mr_memory::{EventLog, Flywheel, QuotaLedger, SessionStore};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::pin::Pin;
@@ -26,6 +26,8 @@ pub struct Telemetry {
     pub extra: Option<Value>,
     /// 来源客户端：优先 x-mr-client，回退 User-Agent（截断），供面板展示
     pub agent: Option<String>,
+    /// 订阅方案 key（baseUrl 匹配注册表）——预算记账用
+    pub plan_key: Option<String>,
 }
 
 impl Telemetry {
@@ -46,6 +48,7 @@ impl Telemetry {
             "bytes": self.bytes,
             "usage": self.usage,
             "agent": self.agent,
+            "plan_key": self.plan_key,
         });
         if let Some(u) = &self.usage {
             let (p, c, cached, cwrite) = extract_usage_fields(u);
@@ -67,11 +70,41 @@ impl Telemetry {
 type SharedTelem = Arc<Mutex<Telemetry>>;
 
 /// Finalize: write event, feed flywheel, broadcast to dashboard subscribers.
-pub fn finalize_event(events: &EventLog, flywheel: &Flywheel, bus: &tokio::sync::broadcast::Sender<Value>, telem: &Telemetry) {
+pub fn finalize_event(
+    events: &EventLog,
+    flywheel: &Flywheel,
+    quota: &QuotaLedger,
+    bus: &tokio::sync::broadcast::Sender<Value>,
+    telem: &Telemetry,
+) {
     let event = telem.event_value();
+    // 订阅方案用量记账（积分/美元折算的数据源）
+    if telem.plan_key.is_some()
+        && let Some(u) = &telem.usage
+    {
+        // extract_usage_fields 返回 (prompt, completion, cached_read, cache_write)
+        let (i, cached, o) = {
+            let (p, comp, cached, _cw) = extract_usage_fields(u);
+            (p, cached, comp)
+        };
+        if let (Some(i), Some(o)) = (i, o) {
+            quota.note_plan_usage(
+                &telem.chosen,
+                i as f64,
+                cached.unwrap_or(0) as f64,
+                o as f64,
+                quota_now_ms(),
+            );
+        }
+    }
+    let event = event;
     events.record(event.clone());
     flywheel.observe(&event);
     let _ = bus.send(event);
+}
+
+fn quota_now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 /// Wraps an upstream byte stream, capturing TTFT/bytes/usage/content/tool

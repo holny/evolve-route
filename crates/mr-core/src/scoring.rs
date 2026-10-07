@@ -127,7 +127,7 @@ pub fn score_all(
                 .unwrap_or(1.0)
                 .clamp(0.7, 1.3);
             score *= (user_w * bias).sqrt().clamp(0.4, 1.8);
-            CandidateScore { model_id: m.id.clone(), score, q, s, c, r, h, uw: user_w, bias }
+            CandidateScore { model_id: m.id.clone(), score, q, s, c, r, h, uw: user_w, bias, qp: 1.0 }
         })
         .collect()
 }

@@ -19,6 +19,8 @@ pub struct Inner {
     pub flywheel: Flywheel,
     pub bus: broadcast::Sender<serde_json::Value>,
     pub http: reqwest::Client,
+    /// 订阅方案预算（plan_key → 5h 积分额度），面板档位驱动
+    pub plan_budgets: Mutex<HashMap<String, f64>>,
 }
 
 pub type AppState = Arc<Inner>;
@@ -65,6 +67,16 @@ pub fn build_state(config: FileConfig) -> AppState {
         }));
     }
 
+    // 订阅方案预算：档位→额度（registry），显式 allowance 覆盖优先
+    let mut plan_budgets: HashMap<String, f64> = HashMap::new();
+    for (key, po) in &ov.plans {
+        if let Some(tier) = &po.tier
+            && let Some(a) = mr_core::plans::tier_allowance_by_key(key, tier)
+        {
+            plan_budgets.insert(key.clone(), a);
+        }
+    }
+
     let events = EventLog::open(&config.data.dir);
     let flywheel = Flywheel::open(&config.data.dir);
     let (bus, _) = broadcast::channel(256);
@@ -85,10 +97,35 @@ pub fn build_state(config: FileConfig) -> AppState {
         flywheel,
         bus,
         http,
+        plan_budgets: Mutex::new(plan_budgets),
     })
 }
 
 impl Inner {
+    /// 订阅方案预算压力（plan_key → 消耗占比）：额度内积分消耗 / 档位额度。
+    /// 无额度配置（未声明档位）的方案无压力。
+    pub fn plan_pressure_map(&self) -> HashMap<String, f32> {
+        let mut out = HashMap::new();
+        let Ok(budgets) = self.plan_budgets.lock() else { return out };
+        if budgets.is_empty() {
+            return out;
+        }
+        let now = mr_memory::quota::now_ms();
+        let sums = self.quota.plan_usage_sums(now, 5 * 3600 * 1000);
+        // 模型 → plan_key 映射（按 catalog base_url 匹配注册表）
+        for m in &self.engine.catalog.models {
+            if let Some(key) = mr_core::plans::plan_key_for(&m.base_url)
+                && let Some(allowance) = budgets.get(key)
+                && let Some((i, c, o)) = sums.get(&m.id)
+            {
+                let credits = mr_core::plans::plan_credits_used(&m.base_url, &m.id, *i, *c, *o);
+                let p = (credits / allowance).clamp(0.0, 1.5) as f32;
+                out.entry(key.to_string()).and_modify(|e| *e = e.max(p)).or_insert(p);
+            }
+        }
+        out
+    }
+
     /// Round-robin starting index for a model's key pool (load spread).
     pub fn key_start(&self, model: &str, len: usize) -> usize {
         if len <= 1 {

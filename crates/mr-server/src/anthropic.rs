@@ -53,6 +53,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             let health = st.health.snapshot();
             let telemetry = st.flywheel.telemetry_snapshot();
             let quota_view = st.quota.best_remaining_by_models();
+            let plan_pressure = st.plan_pressure_map();
             if let Some(pending) = st.sessions.take_pending(&sticky_key) {
                 let returned = returned_tool_result_ids(&parsed);
                 let total = pending.call_ids.len() as u64;
@@ -76,6 +77,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                 health: &health,
                 telemetry: &telemetry,
                 quota: &quota_view,
+                plan_pressure: &plan_pressure,
             };
             let d = st.engine.decide(input);
             st.sessions.put(
@@ -297,6 +299,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             est_cost_usd: None,
             translated: to_openai.then(|| "openai->anthropic".to_string()),
             agent: Some(agent_hdr),
+            plan_key: mr_core::plans::plan_key_for(&record.base_url).map(|k| k.to_string()),
             extra: Some(json!({
                 "reason": decision.reason,
                 "scores": decision.scores,
@@ -321,7 +324,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
 
         if !status.is_success() {
             let err_body = resp.bytes().await.unwrap_or_default();
-            crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.bus, &telem.lock().unwrap());
+            crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.quota, &st.bus, &telem.lock().unwrap());
             insert_header(h, "x-mr-upstream-status", status.as_str());
             return out.body(axum::body::Body::from(err_body)).unwrap();
         }
@@ -432,7 +435,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             Some(v) => serde_json::to_vec(v).unwrap_or_else(|_| bytes.to_vec()),
             None => bytes.to_vec(),
         };
-        crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.bus, &telem.lock().unwrap());
+        crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.quota, &st.bus, &telem.lock().unwrap());
         h.insert("content-type", "application/json".parse().unwrap());
         return out.body(axum::body::Body::from(client_body)).unwrap();
         } // key_off loop (keys exhausted for this candidate)

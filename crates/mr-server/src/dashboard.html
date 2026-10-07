@@ -243,6 +243,8 @@ const T = {
   plan_note:  {zh:'模型级差异', en:'Model-level notes', ko:'모델별 차이', ja:'モデル別差異', es:'Notas por modelo', fr:'Notes par modèle'},
   plan_models:{zh:'模型数', en:'Models', ko:'모델 수', ja:'モデル数', es:'Modelos', fr:'Modèles'},
   plan_tier:  {zh:'档位', en:'Tier', ko:'등급', ja:'ティア', es:'Nivel', fr:'Palier'},
+  plan_used:  {zh:'消耗(5h)', en:'Used (5h)', ko:'소비(5h)', ja:'消費(5h)', es:'Uso (5h)', fr:'Consommé (5h)'},
+  plan_over_soft: {zh:'预算超软阈值·已降权（硬任务仍优先）', en:'over soft cap · deprioritized (hard tasks still favored)', ko:'소프트 한도 초과·가중치 감소(어려운 작업 우선)', ja:'ソフト上限超過·優先度 down（難タスクは優先）', es:'sobre el límite suave · despriorizado (tareas duras aún favored)', fr:'au-dessus du seuil doux · dépriorisé (tâches dures toujours favorisées)'},
   plan_docs:  {zh:'文档', en:'Docs', ko:'문서', ja:'ドキュメント', es:'Docs', fr:'Docs'},
   scheme_credits5h: {zh:'积分制 · 5h+周窗口', en:'credits · 5h+weekly', ko:'크레딧 · 5h+주간', ja:'クレジット · 5h+週', es:'créditos · 5h+semana', fr:'crédits · 5h+semaine'},
   scheme_credits3w: {zh:'积分制 · 5h/周/月', en:'credits · 5h/week/month', ko:'크레딧 · 5h/주/월', ja:'クレジット · 5h/週/月', es:'créditos · 5h/semana/mes', fr:'crédits · 5h/semaine/mois'},
@@ -683,7 +685,7 @@ function renderChips(){
 }
 const PLANS_COLS = [
   {k:'plan_provider'}, {k:'plan_scheme'}, {k:'plan_windows'}, {k:'plan_note'},
-  {k:'plan_models', num:1}, {k:'plan_tier'}, {k:'r_toggle'}, {k:'plan_docs'},
+  {k:'plan_used', num:1}, {k:'plan_models', num:1}, {k:'plan_tier'}, {k:'r_toggle'}, {k:'plan_docs'},
 ];
 const PK_LABEL = {'api':'pk_api', coding:'pk_coding', go:'pk_go', agent:'pk_agent'};
 const PK_SHORT = {api:'API', coding:'CP', go:'GO', agent:'AP'};
@@ -704,6 +706,19 @@ function renderPlans(){
     const reset = p.next_reset_epoch_ms
       ? '<div class="la f" style="margin:2px 0 0">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(p.next_reset_epoch_ms))+'</div>'
       : '';
+    const usedCell = (() => {
+      if (p.allowance == null) return '<span class="dim2">-</span>';
+      const used = p.used_5h || 0;
+      const pct = Math.min(100, Math.round(100*used/p.allowance));
+      const soft = p.soft_pct || 60;
+      const over = pct >= soft;
+      const col = pct >= 90 ? 'var(--red)' : over ? 'var(--amber)' : 'var(--green)';
+      return '<div style="min-width:120px"><div style="display:flex;justify-content:space-between;gap:6px">'+
+        '<span style="color:'+col+'">'+pct+'%</span><span class="dim2">'+used+'/'+p.allowance+'</span></div>'+
+        '<div style="height:3px;background:#21262d;border-radius:2px;margin-top:2px"><div style="width:'+pct+'%;height:3px;background:'+col+';border-radius:2px"></div></div>'+
+        (over ? '<div class="la f" style="margin-top:2px">'+esc(t('plan_over_soft'))+'</div>' : '')+
+        '</div>';
+    })();
     const hasRates = !!(p.model_rates && p.rates_kind && RATE_COLS[p.rates_kind]);
     const ratesCell = hasRates
       ? '<span class="wedit rates-toggle" data-pidx="'+p.key+'">📋 '+esc(t('r_toggle'))+'</span>'
@@ -723,6 +738,7 @@ function renderPlans(){
       '<td data-pedit="scheme" title="'+esc(t('plan_sub'))+'" class="wedit">'+schemeName(p.scheme)+'</td>' +
       '<td data-pedit="windows" class="wedit" style="max-width:340px">'+esc(p.windows)+reset+'</td>' +
       '<td style="max-width:280px" class="dim2">'+esc(p.models_note||'-')+'</td>' +
+      '<td class="num">'+usedCell+'</td>' +
       '<td class="num">'+(p.models? p.models.length : 0)+'</td>' +
       '<td data-pedit="tier" class="wedit" title="'+esc(t('plan_edit_tier'))+'">'+esc(p.tier||'-')+'</td>' +
       '<td>'+ratesCell+'</td><td>'+docs+'</td></tr>' + ratesRow;

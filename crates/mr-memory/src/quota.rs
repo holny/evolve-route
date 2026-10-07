@@ -20,9 +20,14 @@ pub struct WindowState {
     pub updated_epoch_ms: u64,
 }
 
-#[derive(Default)]
+/// (ts, 入, 缓存读, 出) 单条用量记录
+pub type UsageRecord = (u64, f64, f64, f64);
+type UsageMap = HashMap<String, Vec<UsageRecord>>;
+
 pub struct QuotaLedger {
     inner: Mutex<HashMap<String, Vec<WindowState>>>,
+    /// 订阅方案用量账本（模型 → token 记录，滚动保留 24h）
+    plan_usage: Mutex<UsageMap>,
 }
 
 pub fn now_ms() -> u64 {
@@ -34,7 +39,37 @@ pub fn now_ms() -> u64 {
 
 impl QuotaLedger {
     pub fn new() -> Self {
-        Self { inner: Mutex::new(HashMap::new()) }
+        Self {
+            inner: Mutex::new(HashMap::new()),
+            plan_usage: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// 记录一次订阅方案请求的 token 用量（24h 滚动保留）
+    pub fn note_plan_usage(&self, model: &str, in_tok: f64, cached_tok: f64, out_tok: f64, now_ms: u64) {
+        const RETAIN_MS: u64 = 24 * 3600 * 1000;
+        let Ok(mut m) = self.plan_usage.lock() else { return };
+        let e = m.entry(model.to_string()).or_default();
+        e.push((now_ms, in_tok, cached_tok, out_tok));
+        e.retain(|(ts, _, _, _)| now_ms.saturating_sub(*ts) <= RETAIN_MS);
+    }
+
+    /// 窗口内各模型 token 用量合计（默认 5h 窗口）
+    pub fn plan_usage_sums(&self, now_ms: u64, window_ms: u64) -> HashMap<String, (f64, f64, f64)> {
+        let mut out: HashMap<String, (f64, f64, f64)> = HashMap::new();
+        let Ok(m) = self.plan_usage.lock() else { return out };
+        for (model, recs) in m.iter() {
+            let mut acc = (0.0f64, 0.0f64, 0.0f64);
+            for (ts, i, c, o) in recs {
+                if now_ms.saturating_sub(*ts) <= window_ms {
+                    acc.0 += i;
+                    acc.1 += c;
+                    acc.2 += o;
+                }
+            }
+            out.insert(model.clone(), acc);
+        }
+        out
     }
 
     /// Extract quota windows from response headers (any protocol family).
@@ -260,6 +295,12 @@ fn parse_duration_ms(s: &str) -> Option<u64> {
     Some(total_ms)
 }
 
+impl Default for QuotaLedger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,5 +366,20 @@ mod tests {
         assert_eq!(led.model_remaining_tokens("mini"), Some(80_000));
         assert_eq!(led.model_remaining_tokens("standard"), Some(50));
         assert_eq!(led.model_remaining_tokens("frontier"), None);
+    }
+}
+
+
+#[cfg(test)]
+mod plan_usage_tests {
+    use super::*;
+
+    #[test]
+    fn note_and_sum_roundtrip() {
+        let l = QuotaLedger::new();
+        let now = now_ms();
+        l.note_plan_usage("m1", 13.0, 0.0, 10.0, now);
+        let sums = l.plan_usage_sums(now, 5 * 3600 * 1000);
+        assert_eq!(sums.get("m1"), Some(&(13.0, 0.0, 10.0)), "sums={:?}", sums);
     }
 }

@@ -23,6 +23,8 @@ pub struct PolicyCfg {
     /// ε-greedy exploration: share of full-pipeline requests that try the
     /// runner-up so the flywheel gathers comparative samples (0 disables).
     pub explore_ratio: f32,
+    /// 订阅方案预算软阈值（消耗占额度百分比，超过后模型渐进降权、粘性断开）
+    pub plan_soft_pct: f32,
 }
 
 impl Default for PolicyCfg {
@@ -34,6 +36,7 @@ impl Default for PolicyCfg {
             fallback_depth: 6,
             confidence_gate: 0.35,
             explore_ratio: 0.0,
+            plan_soft_pct: 60.0,
         }
     }
 }
