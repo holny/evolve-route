@@ -281,7 +281,14 @@ impl Flywheel {
             };
             out.insert(
                 id.clone(),
-                ModelTelemetry { reliability, speed_obs, calibration, learned_bias: None, max_accepted },
+                ModelTelemetry {
+                    reliability,
+                    speed_obs,
+                    calibration,
+                    learned_bias: None,
+                    max_accepted,
+                    samples: Some(s.requests.min(u32::MAX as u64) as u32),
+                },
             );
             sampled.push((id.clone(), s.success as f32 / s.requests.max(1) as f32));
         }

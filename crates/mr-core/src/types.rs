@@ -420,6 +420,8 @@ pub struct ModelTelemetry {
     /// Window lower-bound inference: largest prompt tokens a successful
     /// request actually accepted (for unknown-window models).
     pub max_accepted: Option<u64>,
+    /// 请求样本数（含冷启动模型）——探索目标选择用
+    pub samples: Option<u32>,
 }
 
 pub type TelemetrySnapshot = std::collections::HashMap<String, ModelTelemetry>;

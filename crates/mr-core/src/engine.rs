@@ -425,12 +425,38 @@ impl Engine {
                 .map(|d| d.subsec_nanos())
                 .unwrap_or(0);
             if (nanos % 10_000) as f32 / 10_000.0 < explore {
-                chosen = scores[1].clone();
+                // 探索目标：优先欠采样模型（打破富者愈富锁死——老牌模型
+                // 可靠性 1.0 会永久压制 0 样本新模型）；同冷随机；
+                // 无欠采样时退回次优
+                let sample_of = |s: &scoring::CandidateScore| {
+                    input.telemetry.get(&s.model_id).and_then(|t| t.samples).unwrap_or(0)
+                };
+                let cold: Vec<&scoring::CandidateScore> = scores[1..]
+                    .iter()
+                    .filter(|s| sample_of(s) < 10)
+                    .collect();
+                let pool: Vec<&scoring::CandidateScore> = if cold.is_empty() {
+                    scores[1..].iter().collect()
+                } else {
+                    let min_s = cold.iter().map(|s| sample_of(s)).min().unwrap_or(0);
+                    cold.iter().copied().filter(|s| sample_of(s) == min_s).collect()
+                };
+                chosen = pool[(nanos as usize) % pool.len()].clone();
                 explored = true;
             }
         }
 
-        let chain: Vec<String> = scores.iter().take(3).map(|s| s.model_id.clone()).collect();
+        // 链在 chosen 定格后构建：探索/置信门控可能改变首选——
+        // 链首必须与最终选择一致，否则降级链会先服务原赢家（探索失效）
+        let mut chain: Vec<String> = vec![chosen.model_id.clone()];
+        for s in scores.iter().map(|s| &s.model_id) {
+            if chain.len() >= 3 {
+                break;
+            }
+            if *s != chosen.model_id && !chain.contains(s) {
+                chain.push(s.clone());
+            }
+        }
         let filtered_note: Vec<String> = filtered
             .iter()
             .take(3)
