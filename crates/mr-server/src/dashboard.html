@@ -108,6 +108,11 @@ table.mx tr.win td { color:var(--green); }
       <table id="wheel"><thead></thead><tbody></tbody></table>
     </section>
   </div>
+  <section class="card">
+    <h2 data-i18n="plan_card">配额方案</h2>
+    <div class="sub" style="margin-bottom:8px" data-i18n="plan_sub">按 baseUrl 自动匹配官方接入方案 · 点击档位/窗口可订正</div>
+    <table id="plans"><thead></thead><tbody></tbody></table>
+  </section>
 </main>
 <script>
 const LANGS = ['zh','en','ko','ja','es','fr'];
@@ -163,13 +168,13 @@ const T = {
   w_bench:  {zh:'榜单c/r/a', en:'Bench c/r/a', ko:'벤치 c/r/a', ja:'指標 c/r/a', es:'Bench c/r/a', fr:'Bench c/r/a',
     _t:{zh:'能力先验 coding/reasoning/agentic（0-100%）：配置了外部榜单源时显示榜单学习覆盖值，否则显示目录/发现层先验基线；作为评分的能力项参与路由', en:'capability priors coding/reasoning/agentic (0-100%): shows learned benchmark overlay when configured, otherwise the catalog/discovery prior baseline; feeds the capability term of scoring', ko:'능력 사전 coding/reasoning/agentic(0-100%): 벤치 오버레이가 설정되면 학습값, 없으면 카탈로그/발견 기본값, 점수의 능력 항목에 사용', ja:'能力事前値 coding/reasoning/agentic（0-100%）：ベンチ学習の上書きがあれば優先、なければカタログ/発見の基準値。スコアの能力項に使用', es:'priors de capacidad coding/reasoning/agentic (0-100%): muestra la superposición de benchmarks si está configurada, si no la base del catálogo/descubrimiento; alimenta el término de capacidad', fr:'a priori de capacité coding/reasoning/agentic (0-100%) : affiche la surcouche benchmark si configurée, sinon la base catalogue/découverte ; alimente le terme de capacité du score'}},
   w_rel:    {zh:'rel', en:'rel', ko:'rel', ja:'rel', es:'rel', fr:'rel',
-    _t:{zh:'实测可靠性 = 传输成功率 × 工具调用质量，再按会话确认与插件反馈融合（0-1）', en:'observed reliability (0-1)', ko:'측정 신뢰성(0-1): 전송 성공률 × 도구 품질, 세션·플러그인 피드백 융합', ja:'実測信頼性(0-1): 転送成功率 × ツール品質、セッション確認と融合', es:'fiabilidad observada (0-1)', fr:'fiabilité observée (0-1)'}},
+    _t:{zh:'实测可靠性，归一化 0-100（50=基线 0.5）：传输成功率 × 工具调用质量，再按会话确认与插件反馈融合', en:'observed reliability, normalized 0-100 (50 = baseline 0.5): transport success × tool-call quality, fused with session/plugin feedback', ko:'실측 신뢰성, 0-100 정규화(50=기준 0.5): 전송 성공률 × 도구 품질, 세션·플러그인 피드백 융합', ja:'実測信頼性、0-100 正規化（50=基準 0.5）：転送成功率 × ツール品質、セッション確認と融合', es:'fiabilidad observada, normalizada 0-100 (50 = base 0.5): éxito de transporte × calidad de herramientas, fusionada con feedback', fr:'fiabilité observée, normalisée 0-100 (50 = base 0.5) : succès transport × qualité outils, fusionnée avec le feedback'}},
   w_calib:  {zh:'calib', en:'calib', ko:'calib', ja:'calib', es:'calib', fr:'calib',
-    _t:{zh:'token 校准系数：实际 prompt tokens ÷ 估算值（≥5 样本后学习），用于上下文窗口硬约束', en:'token calibration factor (actual ÷ estimated prompt tokens)', ko:'토큰 보정 계수: 실제 ÷ 추정 프롬프트 토큰(≥5 샘플), 컨텍스트 윈도우 제약용', ja:'トークン較正係数: 実際 ÷ 推定（≥5サンプル）、コンテキスト窓の硬制約用', es:'factor de calibración de tokens (real ÷ estimado)', fr:'facteur de calibrage des jetons (réel ÷ estimé)'}},
+    _t:{zh:'token 校准，归一化 0-100（50=系数 1.0，>50 表示实际用量比估算偏多）：实际 ÷ 估算 prompt tokens（≥5 样本学习），用于上下文窗口硬约束', en:'token calibration, normalized 0-100 (50 = factor 1.0, >50 means actual runs above estimate): actual ÷ estimated prompt tokens, learned at ≥5 samples, hard constraint for the context window', ko:'토큰 캘리브레이션, 0-100(50=계수 1.0, >50 실제 사용량 많음): 실제 ÷ 추정 프롬프트 토큰, ≥5 샘플 학습, 컨텍스트 윈도우 제약용', ja:'トークン較正、0-100（50=係数 1.0、>50 は実使用が推定超）：実際 ÷ 推定プロンプトトークン、≥5サンプルで学習、コンテキスト窓の硬制約用', es:'calibración de tokens, normalizada 0-100 (50 = factor 1.0, >50 uso por encima del estimado): real ÷ estimado, aprendido con ≥5 muestras, restricción dura de ventana', fr:'calibrage des jetons, normalisé 0-100 (50 = facteur 1.0, >50 usage au-dessus de l\'estimé) : réel ÷ estimé, appris à ≥5 échantillons, contrainte dure de fenêtre'}},
   w_speed:  {zh:'speed', en:'speed', ko:'speed', ja:'speed', es:'speed', fr:'speed',
-    _t:{zh:'实测速度分（0-1）：真实请求平均总耗时对数衰减，与目录先验 7:3 混合', en:'observed speed score (0-1) from real latencies', ko:'측정 속도 점수(0-1): 실제 평균 지연의 로그 감쇠, 카탈로그 사전과 7:3 혼합', ja:'実測速度スコア(0-1): 実リクエスト平均時間の対数減衰、カタログと7:3混合', es:'puntuación de velocidad (0-1) de latencias reales', fr:'score de vitesse (0-1) à partir de latences réelles'}},
+    _t:{zh:'实测速度，归一化 0-100（50=基线 0.5）：目录先验 7 : 真实请求观测 3 混合，随时间对数衰减', en:'observed speed, normalized 0-100 (50 = baseline 0.5): catalog prior 7 : real-request observation 3 blend, log decay over time', ko:'실측 속도, 0-100(50=기준 0.5): 카탈로그 사전 7 : 실제 관측 3 혼합, 시간 로그 감쇠', ja:'実測速度、0-100（50=基準 0.5）：カタログ事前 7 : 実リクエスト観測 3 混合、時間で対数減衰', es:'velocidad observada, normalizada 0-100 (50 = base 0.5): priori de catálogo 7 : observación real 3, decaimiento log', fr:'vitesse observée, normalisée 0-100 (50 = base 0.5) : priori catalogue 7 : observation réelle 3, décroissance log'}},
   w_bias:   {zh:'bias', en:'bias', ko:'bias', ja:'bias', es:'bias', fr:'bias',
-    _t:{zh:'学习偏置：实际成功率相对目录中位数比值（0.7-1.3），表现好上浮、翻车下沉', en:'learned bias vs catalog median success (0.7-1.3)', ko:'학습 편향: 실제 성공률 ÷ 카탈로그 중앙값(0.7-1.3)', ja:'学習バイアス: 実成功率 ÷ カタログ中央値(0.7-1.3)', es:'sesgo aprendido vs mediana del catálogo (0.7-1.3)', fr:'biais appris vs médiane du catalogue (0.7-1.3)'}},
+    _t:{zh:'学习偏置，归一化 0-100（50=与目录中位持平，>50 优于中位）：实际成功率相对目录中位数比值（原始 0.7-1.3），表现好上浮、翻车下沉', en:'learned bias, normalized 0-100 (50 = at catalog median, >50 outperforms): actual success vs catalog median ratio (raw 0.7-1.3), rises with good performance, sinks on failures', ko:'학습 편향, 0-100(50=카탈로그 중앙값, >50 중위 초과): 실제 성공률 ÷ 중앙값(원래 0.7-1.3), 좋으면 상승·실패 시 하락', ja:'学習バイアス、0-100（50=カタログ中央値一致、>50 は中央値超）：実成功率 ÷ 中央値（元 0.7-1.3）、好調で上昇・失敗で低下', es:'sesgo aprendido, normalizado 0-100 (50 = mediana del catálogo, >50 supera): éxito real vs mediana (crudo 0.7-1.3), sube si va bien, baja si falla', fr:'biais appris, normalisé 0-100 (50 = médiane du catalogue, >50 surpasse) : succès réel vs médiane (brut 0.7-1.3), monte si performant, descend sinon'}},
   w_sr:     {zh:'成功率', en:'Succ%', ko:'성공률', ja:'成功率', es:'Éxito%', fr:'Succ%',
     _t:{zh:'传输成功率（≥5 样本后显示）', en:'transport success rate (≥5 samples)', ko:'전송 성공률(≥5 샘플)', ja:'転送成功率（≥5サンプル）', es:'tasa de éxito (≥5 muestras)', fr:'taux de succès (≥5 échantillons)'}},
   w_cache:  {zh:'缓存%', en:'Cache%', ko:'캐시%', ja:'ｷｬｯｼｭ%', es:'Caché%', fr:'Cache%',
@@ -221,6 +226,7 @@ const T = {
     _t:{zh:'加权合成后再乘干预系数（×100 展示）', en:'weighted composite × intervention multiplier (shown ×100)', ko:'가중 합성 × 개입 계수(×100 표시)', ja:'加重合成 × 介入係数（×100 表示）', es:'compuesto ponderado × multiplicador de intervención (×100)', fr:'composite pondéré × multiplicateur d\'intervention (×100)'}},
   fw_headroom:{zh:'余量', en:'Headroom', ko:'여유', ja:'余裕', es:'Margen', fr:'Marge'},
   l_weights:  {zh:'公式权重', en:'Formula weights', ko:'공식 가중치', ja:'計算式の重み', es:'Pesos de fórmula', fr:'Poids de la formule'},
+  l_edit_weight: {zh:'修改模型权重（影响路由干预强度）', en:'Edit model weight (affects routing intervention)', ko:'모델 가중치 수정(라우팅 개입 강도 영향)', ja:'モデル重みを編集（ルーティング介入の強さに影響）', es:'Editar peso del modelo (afecta la intervención en el enrutamiento)', fr:'Modifier le poids du modèle (affecte l\'intervention de routage)'},
   l_save:     {zh:'保存', en:'Save', ko:'저장', ja:'保存', es:'Guardar', fr:'Enregistrer'},
   l_cancel:   {zh:'取消', en:'Cancel', ko:'취소', ja:'キャンセル', es:'Cancelar', fr:'Annuler'},
   la_chosen:  {zh:'选中', en:'chosen', ko:'선택', ja:'選択', es:'elegido', fr:'choisi'},
@@ -229,6 +235,22 @@ const T = {
   d_l2: {zh:'中等', en:'moderate', ko:'보통', ja:'中程度', es:'moderada', fr:'modérée'},
   d_l3: {zh:'复杂', en:'complex', ko:'복잡', ja:'複雑', es:'compleja', fr:'complexe'},
   d_l4: {zh:'关键', en:'critical', ko:'중대', ja:'重大', es:'crítica', fr:'critique'},
+  plan_card:  {zh:'配额方案', en:'Quota plans', ko:'쿼터 플랜', ja:'クォータプラン', es:'Planes de cuota', fr:'Plans de quota'},
+  plan_sub:   {zh:'按 baseUrl 自动匹配官方接入方案 · 点击档位/窗口可订正', en:'matched by baseUrl from official docs · click tier/windows to correct', ko:'baseUrl로 공식 스킴 자동 매칭 · 등급/윈도우 클릭하여 수정', ja:'baseUrlで公式スキームを自動マッチング・ティア/窓クリックで訂正', es:'asignado por baseUrl desde docs oficiales · clic en nivel/ventanas para corregir', fr:'correspondance par baseUrl depuis les docs officielles · cliquer palier/fenêtres pour corriger'},
+  plan_provider: {zh:'提供方', en:'Provider', ko:'제공자', ja:'プロバイダー', es:'Proveedor', fr:'Fournisseur'},
+  plan_scheme: {zh:'方案', en:'Scheme', ko:'방식', ja:'方式', es:'Esquema', fr:'Schéma'},
+  plan_windows:{zh:'窗口与额度', en:'Windows & allowance', ko:'윈도우·한도', ja:'窓と上限', es:'Ventanas y límites', fr:'Fenêtres et quotas'},
+  plan_note:  {zh:'模型级差异', en:'Model-level notes', ko:'모델별 차이', ja:'モデル別差異', es:'Notas por modelo', fr:'Notes par modèle'},
+  plan_models:{zh:'模型数', en:'Models', ko:'모델 수', ja:'モデル数', es:'Modelos', fr:'Modèles'},
+  plan_tier:  {zh:'档位', en:'Tier', ko:'등급', ja:'ティア', es:'Nivel', fr:'Palier'},
+  plan_docs:  {zh:'文档', en:'Docs', ko:'문서', ja:'ドキュメント', es:'Docs', fr:'Docs'},
+  scheme_credits5h: {zh:'积分制 · 5h+周窗口', en:'credits · 5h+weekly', ko:'크레딧 · 5h+주간', ja:'クレジット · 5h+週', es:'créditos · 5h+semana', fr:'crédits · 5h+semaine'},
+  scheme_credits3w: {zh:'积分制 · 5h/周/月', en:'credits · 5h/week/month', ko:'크레딧 · 5h/주/월', ja:'クレジット · 5h/週/月', es:'créditos · 5h/semana/mes', fr:'crédits · 5h/semaine/mois'},
+  scheme_dollar: {zh:'月度美元 · 按模型', en:'monthly $ · per model', ko:'월별 $ · 모델별', ja:'月次$ · モデル別', es:'$ mensual · por modelo', fr:'$ mensuel · par modèle'},
+  scheme_afp: {zh:'AFP 抵扣', en:'AFP deduction', ko:'AFP 공제', ja:'AFP控除', es:'deducción AFP', fr:'déduction AFP'},
+  scheme_payg: {zh:'按量计费', en:'pay-as-you-go', ko:'종량제', ja:'従量課金', es:'pago por uso', fr:'paiement à l\'usage'},
+  plan_edit_tier: {zh:'输入档位（如 lite/pro/max/go/go-plus，留空清除）', en:'enter tier (e.g. lite/pro/max/go/go-plus, empty to clear)', ko:'등급 입력(예: lite/pro/max, 빈값清除)', ja:'ティアを入力（例: lite/pro/max、空で解除）', es:'introduce nivel (p.ej. lite/pro/max, vacío para borrar)', fr:'saisir le palier (ex. lite/pro/max, vide pour effacer)'},
+  plan_edit_win: {zh:'订正窗口与额度说明', en:'correct windows & allowance note', ko:'윈도우·한도 설명 수정', ja:'窓と上限の説明を訂正', es:'corregir nota de ventanas y límites', fr:'corriger la note fenêtres et quotas'},
   st_why:    {zh:'为什么选', en:'Why', ko:'왜', ja:'なぜ', es:'Por qué', fr:'Pourquoi'},
   st_by_model: {zh:'由决策模型语义评估全部候选后选出', en:'selected after the decision model semantically evaluated all candidates', ko:'결정 모델이 모든 후보를 의미 평가한 뒤 선택', ja:'判断モデルが全候補を意味評価して選出', es:'elegido tras evaluación semántica de todos los candidatos por el modelo de decisión', fr:'choisi après évaluation sémantique de tous les candidats par le modèle de décision'},
   st_by_hybrid: {zh:'决策模型 + 规则双判官评估（冲突取严，防中文误判）', en:'dual-judge evaluation (decision model + rules; conservative on conflict)', ko:'이중 판정(결정 모델+규칙, 충돌 시 보수적으로)', ja:'二重判定（判断モデル＋規則、衝突時は保守的に）', es:'evaluación con doble juez (modelo de decisión + reglas, conservador en conflictos)', fr:'évaluation à double juge (modèle de décision + règles, conservateur en cas de conflit)'},
@@ -370,9 +392,9 @@ function decisionDetail(e){
       push2(L, esc(f[1] === f[2] ? t('st_hard_pass').replace('{n}', f[2]) : t('st_hard_some').replace('{a}', f[1]).replace('{b}', f[2])));
     const sc = Object.entries(e.scores||{}).sort((a,b) => b[1]-a[1]);
     const mine = sc.find(([m]) => m === e.chosen);
-    if (mine) push2(L, esc(t('st_score_top').replace('{s}', (+mine[1]).toFixed(2))));
+    if (mine) push2(L, esc(t('st_score_top').replace('{s}', Math.round(+mine[1]*100))));
     const second = sc.find(([m]) => m !== e.chosen);
-    if (second) push2(L, esc(t('st_second').replace('{m}', shortId(second[0])).replace('{s}', (+second[1]).toFixed(2))));
+    if (second) push2(L, esc(t('st_second').replace('{m}', shortId(second[0])).replace('{s}', Math.round(+second[1]*100))));
     if ((e.reason||'').includes('[exploring]')) push2(L, esc(t('st_explore')));
   }
   if (e.filtered && e.filtered.length)
@@ -502,7 +524,7 @@ function addRow(e){
   }
 }
 
-const state = { stats:{}, bench:{}, health:{}, quota:{}, policyw:null };
+const state = { stats:{}, bench:{}, health:{}, quota:{}, policyw:null, plans:[] };
 
 // 评分矩阵模型名 → 飞轮行高亮（事件委托，覆盖后续新增的矩阵单元格）
 feed.addEventListener('click', ev => {
@@ -609,7 +631,7 @@ function renderWheel(){
   wb.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="12" style="color:var(--dim)">'+t('wheelcold')+'</td></tr>';
   wb.querySelectorAll('.wedit').forEach(el => el.addEventListener('click', () => {
     const cur = el.dataset.wcur || '1';
-    const v = prompt(t('l_weights')+' — '+el.dataset.wmodel+' (0.2-3.0)', cur);
+    const v = prompt(t('l_edit_weight')+'\n'+el.dataset.wmodel+'\n(0.2-3.0)', cur);
     if (v == null) return;
     const num = parseFloat(v);
     if (!isFinite(num)) return;
@@ -640,6 +662,43 @@ function renderChips(){
     '<span class="chip">'+t('chip_active')+' <b>'+active+'</b>/'+all.length+'</span>';
   renderPwPanel();
 }
+const PLANS_COLS = [
+  {k:'plan_provider'}, {k:'plan_scheme'}, {k:'plan_windows'}, {k:'plan_note'},
+  {k:'plan_models', num:1}, {k:'plan_tier'}, {k:'plan_docs'},
+];
+function renderPlans(){
+  buildThead(document.getElementById('plans'), PLANS_COLS);
+  const tb = document.querySelector('#plans tbody');
+  const schemeName = s => s && s.startsWith('scheme_') ? t(s) : esc(s || '-');
+  const rows = (state.plans||[]).map(p => {
+    const docs = p.docs_url
+      ? '<a href="'+esc(p.docs_url)+'" target="_blank" rel="noopener" style="color:var(--blue)">'+t('plan_docs')+'↗</a>'
+      : '<span class="dim2">-</span>';
+    return '<tr data-pkey="'+esc(p.key)+'">' +
+      '<td>'+esc(p.provider)+'</td>' +
+      '<td data-pedit="scheme" title="'+esc(t('plan_sub'))+'" class="wedit">'+schemeName(p.scheme)+'</td>' +
+      '<td data-pedit="windows" class="wedit" style="max-width:340px">'+esc(p.windows)+'</td>' +
+      '<td style="max-width:280px" class="dim2">'+esc(p.models_note||'-')+'</td>' +
+      '<td class="num">'+(p.models? p.models.length : 0)+'</td>' +
+      '<td data-pedit="tier" class="wedit" title="'+esc(t('plan_edit_tier'))+'">'+esc(p.tier||'-')+'</td>' +
+      '<td>'+docs+'</td></tr>';
+  });
+  tb.innerHTML = rows.join('') || '<tr><td colspan="7" style="color:var(--dim)">-</td></tr>';
+  tb.querySelectorAll('[data-pedit]').forEach(el => el.addEventListener('click', () => {
+    const key = el.closest('tr').dataset.pkey;
+    const field = el.dataset.pedit;
+    const cur = (state.plans||[]).find(p => p.key === key);
+    const msg = field === 'tier' ? t('plan_edit_tier') : t('plan_edit_win');
+    const def = field === 'tier'
+      ? ((cur && cur.tier) || (cur && cur.tiers) || '')
+      : ((cur && cur.windows) || '');
+    const v = prompt(msg+'\n'+key, def);
+    if (v == null) return;
+    const body = {key};
+    body[field] = v;
+    fetch('/api/plans', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)}).then(refresh);
+  }));
+}
 function renderPwPanel(){
   const panel = document.getElementById('pw-panel');
   if (panel.style.display !== 'block') return;
@@ -669,14 +728,16 @@ document.getElementById('pw-btn').addEventListener('click', () => {
 
 async function refresh(){
   try {
-    const [statsR, healthR, quotaR, benchR, pwR] = await Promise.all([
+    const [statsR, healthR, quotaR, benchR, pwR, plansR] = await Promise.all([
       fetch('/api/stats'), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks'),
-      fetch('/api/policy-weights')]);
+      fetch('/api/policy-weights'), fetch('/api/plans')]);
     state.stats  = (await statsR.json()).models  || {};
     state.health = (await healthR.json()).models || {};
     state.quota  = (await quotaR.json()).windows || {};
     state.bench  = (await benchR.json()) || {};
     state.policyw = (await pwR.json()) || {};
+    state.plans  = (await plansR.json()).providers || [];
+    renderPlans();
     renderChips();
     renderDyn();
     renderHealthQuota();

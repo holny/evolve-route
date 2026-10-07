@@ -437,6 +437,59 @@ pub async fn api_policy_weights_set(
         .into_response()
 }
 
+/// 配额方案注册表：按 baseUrl 匹配 provider 官方接入方案 + 用户订正
+pub async fn api_plans(State(st): State<AppState>) -> Response {
+    let ov = crate::state::load_overrides(&st.config.data.dir);
+    let mut groups: std::collections::BTreeMap<String, serde_json::Value> = std::collections::BTreeMap::new();
+    for m in &st.engine.catalog.models {
+        let profile = mr_core::plans::plan_for(&m.base_url);
+        let key = profile.map(|p| p.key.to_string()).unwrap_or_else(|| format!("payg:{}", m.provider));
+        let e = groups.entry(key.clone()).or_insert_with(|| {
+            let p = profile.unwrap_or(&mr_core::plans::PAYG);
+            let pov = ov.plans.get(&key);
+            json!({
+                "key": key,
+                "provider": if p.key.is_empty() { m.provider.clone() } else { p.provider.to_string() },
+                "scheme": pov.and_then(|o| o.scheme.clone()).unwrap_or_else(|| p.scheme_key.to_string()),
+                "windows": pov.and_then(|o| o.windows.clone()).unwrap_or_else(|| p.windows.to_string()),
+                "models_note": p.models_note.to_string(),
+                "docs_url": p.docs_url.to_string(),
+                "tiers": p.tiers.to_string(),
+                "tier": pov.and_then(|o| o.tier.clone()).unwrap_or_default(),
+                "models": [],
+            })
+        });
+        if let Some(arr) = e.get_mut("models").and_then(|m| m.as_array_mut()) {
+            arr.push(json!(m.id));
+        }
+    }
+    (axum::Json(json!({"providers": groups.values().collect::<Vec<_>>()}))).into_response()
+}
+
+/// 配额方案订正：档位/方案/窗口说明（持久化，重启重放）
+pub async fn api_plans_set(
+    State(st): State<AppState>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Response {
+    let Some(key) = body.get("key").and_then(|k| k.as_str()).map(|s| s.to_string()) else {
+        return (StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": "key is required"}}))).into_response();
+    };
+    let text = |k: &str| body.get(k).and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let dir = &st.config.data.dir;
+    let mut ov = crate::state::load_overrides(dir);
+    {
+        let e = ov.plans.entry(key.clone()).or_default();
+        for (k, slot) in [("tier", &mut e.tier), ("scheme", &mut e.scheme), ("windows", &mut e.windows)] {
+            if let Some(v) = text(k) {
+                *slot = Some(v);
+            }
+        }
+    }
+    crate::state::save_overrides(dir, &ov);
+    let e = ov.plans.get(&key).cloned().unwrap_or_default();
+    (axum::Json(json!({"status": "ok", "key": key, "override": e}))).into_response()
+}
+
 /// SSE stream of routing events for the dashboard.
 pub async fn api_stream(
     State(st): State<AppState>,

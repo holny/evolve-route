@@ -123,6 +123,10 @@ pub fn build_router(state: AppState) -> axum::Router {
             axum::routing::get(crate::meta::api_policy_weights_get)
                 .post(crate::meta::api_policy_weights_set),
         )
+        .route(
+            "/api/plans",
+            axum::routing::get(crate::meta::api_plans).post(crate::meta::api_plans_set),
+        )
         .route("/v1/chat/completions", axum::routing::post(crate::relay::chat_completions))
         .route("/v1/models", axum::routing::get(crate::meta::list_models))
         .route("/healthz", axum::routing::get(crate::meta::healthz))
@@ -148,6 +152,19 @@ pub struct Overrides {
     /// normalized [quality, speed, cost, stability, headroom]
     #[serde(default)]
     pub weights: Option<[f32; 5]>,
+    /// provider 配额方案订正（档位/方案/窗口说明）
+    #[serde(default)]
+    pub plans: HashMap<String, PlanOverride>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct PlanOverride {
+    #[serde(default)]
+    pub tier: Option<String>,
+    #[serde(default)]
+    pub scheme: Option<String>,
+    #[serde(default)]
+    pub windows: Option<String>,
 }
 
 pub fn overrides_path(data_dir: &str) -> std::path::PathBuf {
