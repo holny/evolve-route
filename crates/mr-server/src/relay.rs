@@ -102,6 +102,8 @@ pub async fn chat_completions(
                     turns_left: st.config.policy.sticky_turns,
                     tools_sig,
                     domain: d.judgment.domain,
+                    difficulty: d.difficulty_eff,
+                    est_tokens: est,
                 },
             );
             if d.sticky {
@@ -339,6 +341,9 @@ pub async fn chat_completions(
                     "scores": decision.scores,
                     "chain": decision.chain,
                     "judge": decision.judgment.judge_source,
+                    "judgment": decision.judgment,
+                    "scoreboard": decision.scored,
+                    "weights": decision.weights,
                     "difficulty_eff": decision.difficulty_eff,
                     "filtered": decision.filtered,
                     "funnel": decision.funnel,
@@ -604,6 +609,8 @@ fn resolve_target(st: &AppState, model_field: &str) -> Result<Target, Response> 
             },
             filtered: vec![],
             funnel: [0, 0, 0, 0],
+            scored: vec![],
+            weights: [0.35, 0.15, 0.25, 0.15, 0.10],
             sticky: false,
             est_input_tokens: 0,
             difficulty_eff: 0.0,

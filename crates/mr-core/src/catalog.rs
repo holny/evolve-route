@@ -95,6 +95,13 @@ impl Catalog {
         self.index.get(id).map(|&i| &self.models[i])
     }
 
+    /// 面板权重调控：热更新模型用户权重（overrides.json 持久化后重启重放）
+    pub fn update_weight(&mut self, id: &str, weight: f32) {
+        if let Some(&i) = self.index.get(id) {
+            self.models[i].weight = Some(weight.clamp(0.2, 3.0));
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.models.len()
     }

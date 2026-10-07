@@ -167,14 +167,14 @@ impl TypesafeBackend {
                     }
                 },
                 "difficulty": {
-                    "type": "score",
-                    "instructions": "How hard is this request for a language model?",
-                    "criteria": [
-                        "trivial: a lookup or one-liner",
-                        "easy: short answer, no reasoning",
-                        "moderate: several steps or careful editing",
-                        "hard: long multi-step reasoning or specialist knowledge"
-                    ]
+                    "type": "choice",
+                    "instructions": "How hard is this request for a language model? Pick the HIGHEST level that applies — anchor on the examples, not on a vague feeling.",
+                    "criteria": {
+                        "l1": "L1 trivial: greetings/small talk, single fact lookup, one-sentence translation, rename or reformat — zero reasoning chains",
+                        "l2": "L2 moderate: single-file edit, one focused function, straightforward debugging, explain a known concept, careful multi-step but well-trodden work",
+                        "l3": "L3 complex: multi-file refactor, architecture trade-offs, novel algorithm design, cross-module debugging, long multi-step plans",
+                        "l4": "L4 critical: production changes touching money/auth/security/migrations, distributed consistency, performance-critical paths, frontier research problems"
+                    }
                 },
                 "needs_vision": {"type": "noul", "instructions": "Does answering require seeing images?"},
                 "is_trivial": {"type": "noul", "instructions": "Is this answerable in one short sentence with no tools?"},
@@ -213,10 +213,19 @@ pub(crate) fn parse_judgment(v: &serde_json::Value) -> Option<JudgmentSet> {
     };
     let noul = |k: &str| a.get(k).and_then(|x| x.get("noul")).and_then(|x| x.as_f64()).unwrap_or(0.5) as f32;
     let score = |k: &str| a.get(k).and_then(|x| x.get("score")).and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
+    // 锚定量表：L1-L4 级别映射到数值（消双峰——模型选级别而非凭空打分）
+    let level = a.get("difficulty").and_then(|x| x.get("choice")).and_then(|x| x.as_str()).map(|s| s.to_string());
+    let difficulty = match level.as_deref() {
+        Some("l1") => 0.5,
+        Some("l2") => 1.4,
+        Some("l3") => 2.2,
+        Some("l4") => 3.0,
+        _ => score("difficulty").clamp(0.0, 3.0), // 兼容旧 score 型应答
+    };
     Some(JudgmentSet {
         domain,
         domain_confidence: a.get("task_domain").and_then(|x| x.get("confidence")).and_then(|x| x.as_f64()).unwrap_or(0.5) as f32,
-        difficulty: score("difficulty").clamp(0.0, 3.0),
+        difficulty,
         difficulty_confidence: a.get("difficulty").and_then(|x| x.get("confidence")).and_then(|x| x.as_f64()).unwrap_or(0.5) as f32,
         needs_vision: noul("needs_vision"),
         is_trivial: noul("is_trivial"),

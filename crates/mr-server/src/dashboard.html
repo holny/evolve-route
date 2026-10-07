@@ -55,6 +55,26 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-spac
 .pbadge.warn { color:var(--red); background:#2d1a1c; }
 .pdim { font-variant-numeric:tabular-nums; }
 .feed-detail { padding:4px 12px; color:var(--dim); font-size:11px; border-left:2px solid var(--border); margin:3px 0 3px 8px; }
+.lk-h { color:var(--blue); margin:6px 0 2px; font-size:11px; }
+.lk-v { color:var(--fg); }
+table.mx { margin:2px 0 4px; font-size:11px; }
+table.mx th { padding:2px 5px; }
+table.mx td { padding:2px 5px; border-bottom:1px solid #21262d; text-align:right; font-variant-numeric:tabular-nums; }
+table.mx td.mxm { text-align:left; color:var(--blue); cursor:pointer; }
+table.mx td.mxm:hover { text-decoration:underline; }
+table.mx tr.win td { color:var(--green); }
+.mxt { font-weight:bold; }
+.wheel-row.hl { animation: hlflash 2s ease-out; }
+@keyframes hlflash { 0% { background:#264d2b; } 100% { background:transparent; } }
+.wedit { cursor:pointer; border-bottom:1px dashed var(--dim); }
+.pw-panel { display:none; margin:6px 0; padding:8px; border:1px solid var(--border); border-radius:6px; }
+.pw-panel .pwr { display:flex; gap:6px; align-items:center; margin:3px 0; }
+.pw-panel label { min-width:90px; color:var(--dim); font-size:11px; }
+.pw-panel input { width:70px; background:#0d1117; color:var(--fg); border:1px solid var(--border); border-radius:4px; padding:2px 6px; }
+.pw-panel button { background:#1a2029; color:var(--fg); border:1px solid var(--border); border-radius:4px; padding:2px 10px; cursor:pointer; }
+.la { font-size:10px; padding:0 4px; border-radius:3px; margin-left:4px; }
+.la.c { background:#12261e; color:var(--green); }
+.la.f { background:#3d1618; color:var(--red); }
 </style>
 </head>
 <body>
@@ -80,7 +100,11 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-spac
       <table id="quota" style="margin-top:8px"><thead></thead><tbody></tbody></table>
     </section>
     <section class="card">
-      <h2 data-i18n="wheel">飞轮 · 经验学习与自进化（参与路由决策的因素）</h2>
+      <h2 style="display:flex;align-items:center;justify-content:space-between">
+        <span data-i18n="wheel">飞轮 · 经验学习与自进化（参与路由决策的因素）</span>
+        <button class="lang-btn" id="pw-btn" style="text-transform:none">⚖ <span data-i18n="l_weights">公式权重</span></button>
+      </h2>
+      <div class="pw-panel" id="pw-panel"></div>
       <table id="wheel"><thead></thead><tbody></tbody></table>
     </section>
   </div>
@@ -178,6 +202,33 @@ const T = {
   t_rate_f:  {zh:'吐 token 速率 = 补全 tokens ÷ 生成窗口（总耗时 − TTFT）', en:'generation speed = completion tokens ÷ generation window (total − TTFT)', ko:'토큰 생성 속도 = 완료 토큰 ÷ 생성 구간(총 − TTFT)', ja:'生成速度 = 完成トークン ÷ 生成窓（合計 − TTFT）', es:'velocidad = tokens completados ÷ ventana de generación (total − TTFT)', fr:'vitesse = jetons complétés ÷ fenêtre de génération (total − TTFT)'},
   p_scores:  {zh:'评分', en:'scores', ko:'점수', ja:'スコア', es:'puntajes', fr:'scores'},
   p_session: {zh:'会话', en:'session', ko:'세션', ja:'セッション', es:'sesión', fr:'session'},
+  sec_judge:  {zh:'① 任务判定', en:'① Task judgment', ko:'① 작업 판정', ja:'① タスク判定', es:'① Juicio de tarea', fr:'① Jugement de tâche'},
+  sec_matrix: {zh:'③ 评分矩阵', en:'③ Scoring matrix', ko:'③ 점수 매트릭스', ja:'③ スコア行列', es:'③ Matriz de puntuación', fr:'③ Matrice de notation'},
+  sec_formula:{zh:'② 公式', en:'② Formula', ko:'② 공식', ja:'② 計算式', es:'② Fórmula', fr:'② Formule'},
+  m_quality: {zh:'质量', en:'Quality', ko:'품질', ja:'品質', es:'Calidad', fr:'Qualité',
+    _t:{zh:'榜单 c/r/a 按任务域与难度匹配后的能力分（0-100）', en:'benchmark tiers matched to domain & difficulty (0-100)', ko:'벤치 c/r/a를 도메인·난이도에 맞춘 능력 점수(0-100)', ja:'ベンチ c/r/a をドメイン・難度に合わせた能力スコア（0-100）', es:'niveles de benchmark según dominio y dificultad (0-100)', fr:'niveaux de benchmark selon domaine et difficulté (0-100)'}},
+  m_speed:   {zh:'速度', en:'Speed', ko:'속도', ja:'速度', es:'Velocidad', fr:'Vitesse',
+    _t:{zh:'目录先验 7 : 实测观测 3 混合（0-100）', en:'catalog prior 7 : observed 3 blend (0-100)', ko:'카탈로그 사전 7 : 실측 3 혼합(0-100)', ja:'カタログ事前 7 : 実測 3 の混合（0-100）', es:'priori de catálogo 7 : observado 3 (0-100)', fr:'priori catalogue 7 : observé 3 (0-100)'}},
+  m_cost:    {zh:'成本', en:'Cost', ko:'비용', ja:'コスト', es:'Coste', fr:'Coût',
+    _t:{zh:'价格竞争力：订阅=100，越接近目录最低价越高（0-100）', en:'price competitiveness: plan=100, closer to catalog cheapest = higher (0-100)', ko:'가격 경쟁력: 플랜=100, 최저가에 가까울수록 높음(0-100)', ja:'価格競争力：プラン=100、最安に近いほど高（0-100）', es:'competitividad de precio: plan=100, más cerca del más barato = más alto (0-100)', fr:'compétitivité prix : plan=100, proche du moins cher = plus haut (0-100)'}},
+  m_rel:     {zh:'可靠', en:'Reliability', ko:'신뢰', ja:'信頼', es:'Fiabilidad', fr:'Fiabilité',
+    _t:{zh:'飞轮实测可靠性（0-100，50=基线 0.5）', en:'flywheel observed reliability (0-100, 50 = baseline 0.5)', ko:'플라이휠 실측 신뢰성(0-100, 50=기준 0.5)', ja:'フライホイール実測信頼性（0-100、50=基準 0.5）', es:'fiabilidad observada del volante (0-100, 50 = base 0.5)', fr:'fiabilité observée du volant (0-100, 50 = base 0.5)'}},
+  m_head:    {zh:'余量', en:'Headroom', ko:'여유', ja:'余裕', es:'Margen', fr:'Marge',
+    _t:{zh:'上下文余量：窗口减去本次请求后剩余占比（0-100）', en:'context headroom after this request (0-100)', ko:'컨텍스트 여유: 이번 요청 후 남은 비율(0-100)', ja:'コンテキスト余裕：今回のリクエスト後の残り比率（0-100）', es:'margen de contexto tras esta solicitud (0-100)', fr:'marge de contexte après cette requête (0-100)'}},
+  m_interv:  {zh:'干预', en:'Intervention', ko:'개입', ja:'介入', es:'Intervención', fr:'Intervention',
+    _t:{zh:'你的权重×学习偏置，开方软化（50=无干预，<50 被调低，>50 被调高；点击改权重）', en:'your weight × learned bias, sqrt-softened (50 = none, <50 lowered, >50 raised; click to edit)', ko:'사용자 가중치×학습 편향, 제곱근 완화(50=없음, <50 낮춤, >50 높임; 클릭 편집)', ja:'ユーザー重み×学習バイアス、平方根緩和（50=なし、<50 低減、>50 引上げ；クリックで編集）', es:'tu peso × sesgo aprendido, suavizado con raíz (50 = nada; clic para editar)', fr:'votre poids × biais appris, adouci racine (50 = rien ; cliquer pour modifier)'}},
+  m_total:   {zh:'总分', en:'Score', ko:'총점', ja:'合計', es:'Total', fr:'Total',
+    _t:{zh:'加权合成后再乘干预系数（×100 展示）', en:'weighted composite × intervention multiplier (shown ×100)', ko:'가중 합성 × 개입 계수(×100 표시)', ja:'加重合成 × 介入係数（×100 表示）', es:'compuesto ponderado × multiplicador de intervención (×100)', fr:'composite pondéré × multiplicateur d\'intervention (×100)'}},
+  fw_headroom:{zh:'余量', en:'Headroom', ko:'여유', ja:'余裕', es:'Margen', fr:'Marge'},
+  l_weights:  {zh:'公式权重', en:'Formula weights', ko:'공식 가중치', ja:'計算式の重み', es:'Pesos de fórmula', fr:'Poids de la formule'},
+  l_save:     {zh:'保存', en:'Save', ko:'저장', ja:'保存', es:'Guardar', fr:'Enregistrer'},
+  l_cancel:   {zh:'取消', en:'Cancel', ko:'취소', ja:'キャンセル', es:'Cancelar', fr:'Annuler'},
+  la_chosen:  {zh:'选中', en:'chosen', ko:'선택', ja:'選択', es:'elegido', fr:'choisi'},
+  la_failed:  {zh:'失败', en:'failed', ko:'실패', ja:'失敗', es:'falló', fr:'échoué'},
+  d_l1: {zh:'简单', en:'simple', ko:'간단', ja:'簡単', es:'simple', fr:'simple'},
+  d_l2: {zh:'中等', en:'moderate', ko:'보통', ja:'中程度', es:'moderada', fr:'modérée'},
+  d_l3: {zh:'复杂', en:'complex', ko:'복잡', ja:'複雑', es:'compleja', fr:'complexe'},
+  d_l4: {zh:'关键', en:'critical', ko:'중대', ja:'重大', es:'crítica', fr:'critique'},
   st_why:    {zh:'为什么选', en:'Why', ko:'왜', ja:'なぜ', es:'Por qué', fr:'Pourquoi'},
   st_by_model: {zh:'由决策模型语义评估全部候选后选出', en:'selected after the decision model semantically evaluated all candidates', ko:'결정 모델이 모든 후보를 의미 평가한 뒤 선택', ja:'判断モデルが全候補を意味評価して選出', es:'elegido tras evaluación semántica de todos los candidatos por el modelo de decisión', fr:'choisi après évaluation sémantique de tous les candidats par le modèle de décision'},
   st_by_hybrid: {zh:'决策模型 + 规则双判官评估（冲突取严，防中文误判）', en:'dual-judge evaluation (decision model + rules; conservative on conflict)', ko:'이중 판정(결정 모델+규칙, 충돌 시 보수적으로)', ja:'二重判定（判断モデル＋規則、衝突時は保守的に）', es:'evaluación con doble juez (modelo de decisión + reglas, conservador en conflictos)', fr:'évaluation à double juge (modèle de décision + règles, conservateur en cas de conflit)'},
@@ -226,6 +277,7 @@ const T = {
   hk_context_overflow:  {zh:'上下文溢出', en:'context overflow', ko:'컨텍스트 오버플로', ja:'コンテキスト溢れ', es:'desbordamiento de contexto', fr:'débordement de contexte'},
   hk_transient_error:   {zh:'暂时错误', en:'transient error', ko:'일시 오류', ja:'一時的エラー', es:'error transitorio', fr:'erreur transitoire'},
   chip_reqs:  {zh:'请求', en:'reqs', ko:'요청', ja:'リクエスト', es:'solicitudes', fr:'requêtes'},
+  profile:    {zh:'预设', en:'profile', ko:'프로필', ja:'プロファイル', es:'perfil', fr:'profil'},
   chip_cost:  {zh:'累计费用', en:'cost', ko:'누적 비용', ja:'累計費用', es:'coste', fr:'coût'},
   chip_active:{zh:'活跃模型', en:'active', ko:'활성 모델', ja:'アクティブ', es:'activos', fr:'actifs'},
   s_in:   {zh:'入', en:' in', ko:'입', ja:'入', es:' ent', fr:' entr'},
@@ -297,39 +349,79 @@ function causeLocal(c){
 }
 function decisionDetail(e){
   const L = [];
-  const push = h => L.push('<div style="margin:1px 0">· '+h+'</div>');
-  L.push('<b>'+t('st_why')+' '+esc(shortId(e.chosen))+(lang==='zh'?'？':'?')+'</b>');
+  L.push('<b>'+esc(t('st_why'))+' '+esc(shortId(e.chosen))+(lang==='zh'?'？':'?')+'</b>');
+  L.push(linkView(e));
   if (e.sticky) {
-    push(esc(t('st_sticky_1')));
-    push(esc(t('st_sticky_2').replace('{n}', fmtK(e.est_tokens||e.prompt_tokens||0))));
-    push(esc(t('st_sticky_3')));
+    push2(L, esc(t('st_sticky_1')));
+    push2(L, esc(t('st_sticky_2').replace('{n}', fmtK(e.est_tokens||e.prompt_tokens||0))));
+    push2(L, esc(t('st_sticky_3')));
   } else {
     const bym = {'decision_model':'st_by_model', 'decision_model+rules':'st_by_hybrid', 'heuristic':'st_by_heur', 'explicit':'st_by_explicit'}[e.judge];
-    if (bym) push(esc(t(bym)));
+    if (bym) push2(L, esc(t(bym)));
     const dm = (e.reason||'').match(/domain=(\w+)/);
     if (dm) {
       const dk = T['dom_'+dm[1]];
       const diff = +e.difficulty_eff || 0;
       const dw = diff < 1 ? t('diff_low') : diff < 2 ? t('diff_mid') : t('diff_high');
-      push(esc(t('st_task').replace('{d}', dk ? (dk[lang] ?? dk.zh) : dm[1]).replace('{w}', dw).replace('{v}', diff.toFixed(1))));
+      push2(L, esc(t('st_task').replace('{d}', dk ? (dk[lang] ?? dk.zh) : dm[1]).replace('{w}', dw).replace('{v}', diff.toFixed(1))));
     }
     const f = e.funnel || [];
     if (f.length === 4 && f[0] > 0)
-      push(esc(f[1] === f[2] ? t('st_hard_pass').replace('{n}', f[2]) : t('st_hard_some').replace('{a}', f[1]).replace('{b}', f[2])));
+      push2(L, esc(f[1] === f[2] ? t('st_hard_pass').replace('{n}', f[2]) : t('st_hard_some').replace('{a}', f[1]).replace('{b}', f[2])));
     const sc = Object.entries(e.scores||{}).sort((a,b) => b[1]-a[1]);
     const mine = sc.find(([m]) => m === e.chosen);
-    if (mine) push(esc(t('st_score_top').replace('{s}', (+mine[1]).toFixed(2))));
+    if (mine) push2(L, esc(t('st_score_top').replace('{s}', (+mine[1]).toFixed(2))));
     const second = sc.find(([m]) => m !== e.chosen);
-    if (second) push(esc(t('st_second').replace('{m}', shortId(second[0])).replace('{s}', (+second[1]).toFixed(2))));
-    if ((e.reason||'').includes('[exploring]')) push(esc(t('st_explore')));
+    if (second) push2(L, esc(t('st_second').replace('{m}', shortId(second[0])).replace('{s}', (+second[1]).toFixed(2))));
+    if ((e.reason||'').includes('[exploring]')) push2(L, esc(t('st_explore')));
   }
   if (e.filtered && e.filtered.length)
-    push('<span style="color:var(--dim)">'+esc(t('st_filtered_head'))+'：' +
+    push2(L, '<span style="color:var(--dim)">'+esc(t('st_filtered_head'))+'：' +
       e.filtered.map(f => esc(shortId(f.model))+'（'+esc(causeLocal(f.cause))+'）').join('、 ')+'</span>');
   if (e.skipped && e.skipped.length)
-    push('<span style="color:var(--red)">'+esc(t('skipped'))+'：'+e.skipped.map(s => esc(s)).join(' → ')+'</span>');
+    push2(L, '<span style="color:var(--red)">'+esc(t('skipped'))+'：'+e.skipped.map(s => esc(s)).join(' → ')+'</span>');
   L.push('<div style="opacity:.6;margin-top:3px">'+esc(t('p_session'))+': '+esc(e.session||'-')+'</div>');
   return L.join('');
+}
+function push2(L, h){ L.push('<div style="margin:1px 0">· '+h+'</div>'); }
+function diffLevel(v){
+  return v < 1 ? t('d_l1') : v < 1.9 ? t('d_l2') : v < 2.6 ? t('d_l3') : t('d_l4');
+}
+function linkView(e){
+  const parts = [];
+  const j = e.judgment;
+  if (j) {
+    const dk = T['dom_'+(j.domain||'Other')];
+    const jl = {'decision_model':'bj_model','decision_model+rules':'bj_hybrid','heuristic':'bj_heur','explicit':'bj_explicit','sticky':'p_sticky'}[j.judge_source];
+    parts.push('<div class="lk-h">'+esc(t('sec_judge'))+'</div><div class="lk-v">' +
+      esc((dk ? (dk[lang] ?? dk.zh) : (j.domain||'-'))) +
+      ' · '+esc(t('p_diff'))+' '+diffLevel(+e.difficulty_eff||0)+' ('+(+(e.difficulty_eff||0)).toFixed(1)+'/3)' +
+      (jl ? ' · <span class="pbadge">'+esc(t(jl))+'</span>' : '') +
+      '</div>');
+  }
+  const sb = e.scoreboard || [];
+  if (sb.length) {
+    const w = e.weights || [0.35, 0.15, 0.25, 0.15, 0.10];
+    const wp = w.map(x => Math.round(x*100));
+    parts.push('<div class="lk-h">'+esc(t('sec_formula'))+' <span class="dim2">'+
+      wp[0]+'%'+esc(t('m_quality'))+' + '+wp[1]+'%'+esc(t('m_speed'))+' + '+wp[2]+'%'+esc(t('m_cost'))+
+      ' + '+wp[3]+'%'+esc(t('m_rel'))+' + '+wp[4]+'%'+esc(t('fw_headroom'))+' → ×√'+esc(t('m_interv'))+'</span></div>');
+    let rows = sb.slice(0, 5);
+    if (!rows.some(r => r.model_id === e.chosen)) {
+      const ci = sb.findIndex(r => r.model_id === e.chosen);
+      if (ci > 0) rows.push(sb[ci]);
+    }
+    const n = x => Math.round((+x||0)*100);
+    const iv = r => Math.round(50*Math.sqrt((r.uw||1)*(r.bias||1)));
+    parts.push('<div class="lk-h">'+esc(t('sec_matrix'))+'</div><table class="mx"><tr>' +
+      '<th>'+esc(t('c_model'))+'</th><th>'+esc(t('m_quality'))+'</th><th>'+esc(t('m_speed'))+'</th><th>'+esc(t('m_cost'))+'</th><th>'+esc(t('m_rel'))+'</th><th>'+esc(t('fw_headroom'))+'</th><th>'+esc(t('m_interv'))+'</th><th>'+esc(t('m_total'))+'</th></tr>' +
+      rows.map(r => '<tr'+(r.model_id===e.chosen?' class="win"':'')+'>' +
+        '<td class="mxm" data-jump="'+esc(r.model_id)+'">'+esc(shortId(r.model_id))+(r.model_id===e.chosen?' ★':'')+'</td>' +
+        '<td>'+n(r.q)+'</td><td>'+n(r.s)+'</td><td>'+n(r.c)+'</td><td>'+n(r.r)+'</td><td>'+n(r.h)+'</td>' +
+        '<td>'+iv(r)+'</td><td class="mxt">'+n(r.score)+'</td></tr>').join('') +
+      '</table>');
+  }
+  return parts.join('');
 }
 function feedMetrics(e){
   const parts = [];
@@ -400,6 +492,7 @@ function addRow(e){
   g.count++;
   g.h.querySelector('.cnt').textContent = g.count+' '+t('f_entries')+' · '+timeStr(new Date());
   g.b.prepend(row);
+  lastAct[e.chosen] = {a: badge === 'ok' ? 'c' : 'f', t: Date.now()};
   while (g.b.children.length > 50) { if (g.b.lastChild) g.b.removeChild(g.b.lastChild); }
   while (feed.children.length > 24) {
     const last = feed.lastChild;
@@ -409,7 +502,13 @@ function addRow(e){
   }
 }
 
-const state = { stats:{}, bench:{}, health:{}, quota:{} };
+const state = { stats:{}, bench:{}, health:{}, quota:{}, policyw:null };
+
+// 评分矩阵模型名 → 飞轮行高亮（事件委托，覆盖后续新增的矩阵单元格）
+feed.addEventListener('click', ev => {
+  const el = ev.target.closest('td.mxm');
+  if (el && el.dataset.jump) jumpToWheel(el.dataset.jump);
+});
 
 function tt(key){ const [k, sub] = key.split('.'); return sub && T[k] && T[k][sub] ? (T[k][sub][lang] ?? T[k][sub].zh) : t(key); }
 function buildThead(table, cols){
@@ -472,9 +571,8 @@ const WHEEL_COLS = [
   {k:'w_bias', num:1, tk:'w_bias._t'}, {k:'w_sr', num:1, tk:'w_sr._t'},
   {k:'w_cache', num:1, tk:'w_cache._t'}, {k:'w_cost', num:1, tk:'w_cost._t'},
   {k:'w_samples', num:1, tk:'w_samples._t'}, {k:'w_fb', num:1, tk:'w_fb._t'},
-  {k:'w_weight', num:1, tk:'w_weight._t'},
+  {k:'m_interv', num:1, tk:'m_interv._t'},
 ];
-function tt(key){ const [k, sub] = key.split('.'); return T[k] && T[k][sub] ? (T[k][sub][lang] ?? T[k][sub].zh) : key; }
 function renderWheel(){
   buildThead(document.getElementById('wheel'), WHEEL_COLS);
   const applied = state.bench.applied || {};
@@ -484,28 +582,49 @@ function renderWheel(){
     if (ra !== 0) return ra;
     return (b[1].dynamic_score??0) - (a[1].dynamic_score??0);
   }).slice(0, 15);
+  const n100 = x => x==null ? '-' : Math.round(x*100);
+  const n50 = x => x==null ? '-' : Math.round(x*50);
   const rows = entries.map(([id, s]) => {
     const tr = s.telemetry || {};
     const bt = (applied[id] || {}).tiers || s.tiers || {};
     const pct = x => x==null ? '-' : Math.round(x*100)+'%';
     const uw = s.user_weight ?? 1;
     const lb = tr.learned_bias ?? 1;
-    const w = uw.toFixed(2)+'×'+lb.toFixed(2);
     const fb = s.feedback || {ok:0,total:0};
-    return '<tr><td title="'+esc(id)+'">'+esc(id.length>28?id.slice(0,27)+'…':id)+'</td>' +
+    const act = lastAct[id];
+    const actB = act ? '<span class="la '+(act.a==='c'?'c':'f')+'" title="'+timeStr(new Date(act.t))+'">'+(act.a==='c'?t('la_chosen'):t('la_failed'))+'</span>' : '';
+    return '<tr class="wheel-row" data-model="'+esc(id)+'"><td title="'+esc(id)+'">'+esc(id.length>28?id.slice(0,27)+'…':id)+actB+'</td>' +
       '<td class="num">'+pct(bt.coding)+'/'+pct(bt.reasoning)+'/'+pct(bt.agentic)+'</td>' +
-      '<td class="num">'+(tr.reliability==null?'-':tr.reliability.toFixed(2))+'</td>' +
-      '<td class="num">'+(tr.calibration==null?'-':'×'+tr.calibration.toFixed(2))+'</td>' +
-      '<td class="num">'+(tr.speed_obs==null?'-':tr.speed_obs.toFixed(2))+'</td>' +
-      '<td class="num">'+(tr.learned_bias==null?'-':tr.learned_bias.toFixed(2))+'</td>' +
+      '<td class="num">'+n100(tr.reliability)+'</td>' +
+      '<td class="num">'+n50(tr.calibration)+'</td>' +
+      '<td class="num">'+n100(tr.speed_obs)+'</td>' +
+      '<td class="num">'+n50(tr.learned_bias)+'</td>' +
       '<td class="num">'+(s.success_rate==null?'-':Math.round(s.success_rate*100)+'%')+'</td>' +
       '<td class="num">'+(s.cache_hit_rate==null?'-':Math.round(s.cache_hit_rate*100)+'%')+'</td>' +
       '<td class="num">'+fmtCost(s.est_cost, s.currency)+'</td>' +
       '<td class="num">'+(s.samples??0)+'</td>' +
       '<td class="num">'+fb.ok+'/'+fb.total+'</td>' +
-      '<td class="num">'+w+'</td></tr>';
+      '<td class="num"><span class="wedit" title="'+esc(t('m_interv._t'))+'" data-wmodel="'+esc(id)+'" data-wcur="'+uw+'">'+Math.round(50*Math.sqrt(uw*lb))+'</span></td></tr>';
   });
   wb.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="12" style="color:var(--dim)">'+t('wheelcold')+'</td></tr>';
+  wb.querySelectorAll('.wedit').forEach(el => el.addEventListener('click', () => {
+    const cur = el.dataset.wcur || '1';
+    const v = prompt(t('l_weights')+' — '+el.dataset.wmodel+' (0.2-3.0)', cur);
+    if (v == null) return;
+    const num = parseFloat(v);
+    if (!isFinite(num)) return;
+    fetch('/api/weight', {method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({model: el.dataset.wmodel, weight: num})}).then(refresh);
+  }));
+  wb.querySelectorAll('td.mxm').forEach(el => el.addEventListener('click', () => jumpToWheel(el.dataset.jump)));
+}
+const lastAct = {};
+function jumpToWheel(model){
+  const row = document.querySelector('#wheel tr[data-model="'+CSS.escape(model)+'"]');
+  if (!row) return;
+  document.querySelectorAll('#wheel tr.hl').forEach(x => x.classList.remove('hl'));
+  row.classList.add('hl');
+  row.scrollIntoView({block:'center', behavior:'smooth'});
 }
 function renderChips(){
   const all = Object.values(state.stats);
@@ -519,16 +638,45 @@ function renderChips(){
     '<span class="chip">'+t('chip_reqs')+' <b>'+reqs+'</b>'+(reqs?' <b>'+Math.round(100*ok/reqs)+'%</b>':'')+'</span>' +
     '<span class="chip">'+t('chip_cost')+' <b>'+cost+'</b></span>' +
     '<span class="chip">'+t('chip_active')+' <b>'+active+'</b>/'+all.length+'</span>';
+  renderPwPanel();
 }
+function renderPwPanel(){
+  const panel = document.getElementById('pw-panel');
+  if (panel.style.display !== 'block') return;
+  const p = state.policyw || {};
+  const w = p.weights || {quality:0.35, speed:0.15, cost:0.25, stability:0.15, headroom:0.10};
+  const fld = (k, label) => '<div class="pwr"><label>'+esc(label)+'</label><input type="number" step="0.05" min="0" max="2" data-pw="'+k+'" value="'+(+w[k]||0).toFixed(2)+'"></div>';
+  panel.innerHTML =
+    '<div class="dim2" style="margin-bottom:4px">'+esc(t('profile'))+': '+esc(p.profile||'-')+(p.overridden?' · override':'')+'</div>' +
+    fld('quality', t('m_quality')) + fld('speed', t('m_speed')) + fld('cost', t('m_cost')) +
+    fld('stability', t('m_rel')) + fld('headroom', t('fw_headroom')) +
+    '<div class="pwr"><button id="pw-save">'+esc(t('l_save'))+'</button><button id="pw-reset">'+esc(t('l_cancel'))+'</button></div>';
+  panel.querySelector('#pw-save').addEventListener('click', () => {
+    const body = {};
+    panel.querySelectorAll('[data-pw]').forEach(i => {
+      const v = parseFloat(i.value);
+      if (isFinite(v)) body[i.dataset.pw] = v;
+    });
+    fetch('/api/policy-weights', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)}).then(refresh);
+  });
+  panel.querySelector('#pw-reset').addEventListener('click', () => { panel.style.display = 'none'; });
+}
+document.getElementById('pw-btn').addEventListener('click', () => {
+  const panel = document.getElementById('pw-panel');
+  panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+  renderPwPanel();
+});
 
 async function refresh(){
   try {
-    const [statsR, healthR, quotaR, benchR] = await Promise.all([
-      fetch('/api/stats'), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks')]);
+    const [statsR, healthR, quotaR, benchR, pwR] = await Promise.all([
+      fetch('/api/stats'), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks'),
+      fetch('/api/policy-weights')]);
     state.stats  = (await statsR.json()).models  || {};
     state.health = (await healthR.json()).models || {};
     state.quota  = (await quotaR.json()).windows || {};
     state.bench  = (await benchR.json()) || {};
+    state.policyw = (await pwR.json()) || {};
     renderChips();
     renderDyn();
     renderHealthQuota();

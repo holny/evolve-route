@@ -41,6 +41,11 @@ pub struct Engine {
     judge: Box<dyn Judge>,
     route_advisor: Option<std::sync::Arc<dyn RouteAdvisor>>,
     tiers_overlay: std::sync::RwLock<HashMap<String, (Tiers, f32)>>,
+    /// 面板可调的公式权重覆盖（quality/speed/cost/stability/headroom），
+    /// 优先级：请求头 policy > 此覆盖 > 配置默认 profile
+    weights_override: std::sync::RwLock<Option<PolicyWeights>>,
+    /// 面板可调的用户权重覆盖（模型级），评分时覆盖目录 weight
+    weight_overlay: std::sync::RwLock<HashMap<String, f32>>,
     counter: std::sync::atomic::AtomicU64,
 }
 
@@ -52,8 +57,37 @@ impl Engine {
             judge,
             route_advisor: None,
             tiers_overlay: std::sync::RwLock::new(HashMap::new()),
+            weights_override: std::sync::RwLock::new(None),
+            weight_overlay: std::sync::RwLock::new(HashMap::new()),
             counter: std::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    pub fn set_weights_override(&self, w: Option<PolicyWeights>) {
+        if let Ok(mut o) = self.weights_override.write() {
+            *o = w;
+        }
+    }
+
+    pub fn weights_override(&self) -> Option<PolicyWeights> {
+        self.weights_override.read().ok().and_then(|o| o.clone())
+    }
+
+    pub fn set_weight_override(&self, id: &str, w: Option<f32>) {
+        if let Ok(mut o) = self.weight_overlay.write() {
+            match w {
+                Some(v) => {
+                    o.insert(id.to_string(), v);
+                }
+                None => {
+                    o.remove(id);
+                }
+            }
+        }
+    }
+
+    pub fn weight_override(&self, id: &str) -> Option<f32> {
+        self.weight_overlay.read().ok().and_then(|o| o.get(id).copied())
     }
 
     pub fn set_route_advisor(&mut self, advisor: std::sync::Arc<dyn RouteAdvisor>) {
@@ -87,9 +121,14 @@ impl Engine {
                         && input.quota.get(&sticky.chosen).map(|r| *r >= est).unwrap_or(true)
                 })
                 .unwrap_or(false);
-            let band_close = (sticky.est_tokens_band - band).abs() <= 1;
+            // 粘性收窄（用户裁决）：量级相近是伪条件（相邻消息天然同量级），
+            // 只作保护上限；粘性仅延续低难度任务（L2 上限）且暴增/骤减即断
+            let size_ok = sticky.est_tokens > 0
+                && est <= sticky.est_tokens.saturating_mul(2)
+                && est.saturating_mul(2) >= sticky.est_tokens;
+            let low_diff = sticky.difficulty <= 1.6;
             let tools_same = sticky.tools_sig == input.tools_sig;
-            if still_fits && band_close && tools_same && sticky.turns_left > 0 {
+            if still_fits && size_ok && low_diff && tools_same && sticky.turns_left > 0 {
                 // zero external calls on the sticky fast path: reuse the
                 // sticky judgment snapshot instead of invoking the backend
                 let j = JudgmentSet {
@@ -110,6 +149,7 @@ impl Engine {
                     vec![sticky.chosen.clone()],
                     format!("sticky reuse: session continues on {} (est {} tok)", sticky.chosen, est),
                     BTreeMap::from([(sticky.chosen.clone(), 1.0)]),
+                    vec![],
                     j,
                     vec![],
                     true,
@@ -126,10 +166,15 @@ impl Engine {
         let relevance = j.session_relevance;
         let difficulty_eff = (j.difficulty + relevance * (j.session_depth * 0.5).max(0.0)).clamp(0.0, 3.0);
 
-        let weights = input
-            .policy
-            .unwrap_or_else(|| PolicyProfile::parse(&self.policy.default).unwrap_or(PolicyProfile::Balanced))
-            .weights();
+        let weights = match input.policy {
+            Some(p) => p.weights(),
+            None => match self.weights_override() {
+                Some(w) => w,
+                None => PolicyProfile::parse(&self.policy.default)
+                    .unwrap_or(PolicyProfile::Balanced)
+                    .weights(),
+            },
+        };
 
         let mut filtered: Vec<FilteredOut> = Vec::new();
         let mut candidates: Vec<ModelRecord> = Vec::new();
@@ -230,6 +275,7 @@ impl Engine {
                     vec![],
                     format!("catalog empty; cannot route est {} tok", est),
                     BTreeMap::new(),
+                    vec![],
                     j,
                     filtered.clone(),
                     false,
@@ -249,6 +295,7 @@ impl Engine {
                     est, best.id
                 ),
                 BTreeMap::new(),
+                vec![],
                 j,
                 filtered,
                 false,
@@ -272,6 +319,16 @@ impl Engine {
         }
         if eligible.is_empty() {
             eligible = candidates.clone();
+        }
+        // 用户权重覆盖（面板调控）：作用于评分前的候选副本
+        if let Ok(o) = self.weight_overlay.read() {
+            if !o.is_empty() {
+                for c in eligible.iter_mut() {
+                    if let Some(w) = o.get(&c.id) {
+                        c.weight = Some(*w);
+                    }
+                }
+            }
         }
         let mut scores = scoring::score_all(
             &eligible.iter().collect::<Vec<_>>(), &j, difficulty_eff, est, est_output, &weights, input.telemetry);
@@ -333,7 +390,7 @@ impl Engine {
             eligible.len() as u32,
             scores.len() as u32,
         ];
-        self.finish(
+        let mut decision = self.finish(
             chosen.model_id.clone(),
             chain,
             reason,
@@ -341,6 +398,7 @@ impl Engine {
                 .iter()
                 .map(|s| (s.model_id.clone(), s.score))
                 .collect(),
+            scores.clone(),
             j,
             filtered,
             false,
@@ -349,7 +407,9 @@ impl Engine {
             input.session_key,
             None,
             funnel,
-        )
+        );
+        decision.weights = weights.normalized();
+        decision
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -359,6 +419,7 @@ impl Engine {
         chain: Vec<String>,
         reason: String,
         scores: BTreeMap<String, f32>,
+        scored: Vec<scoring::CandidateScore>,
         judgment: JudgmentSet,
         filtered: Vec<FilteredOut>,
         sticky: bool,
@@ -387,12 +448,14 @@ impl Engine {
             chain,
             reason,
             scores,
+            scored,
             judgment,
             filtered,
             sticky,
             est_input_tokens: est,
             difficulty_eff,
             funnel,
+            weights: [0.35, 0.15, 0.25, 0.15, 0.10],
         }
     }
 }
@@ -522,6 +585,8 @@ mod tests {
             turns_left: 3,
             tools_sig: 0,
             domain: Domain::Chitchat,
+            difficulty: 0.5,
+            est_tokens: 600,
         };
         let h = HealthMap::new();
         let dec = e.decide(input("你好", 620, &d, Some(sticky), &h));
@@ -540,6 +605,8 @@ mod tests {
             turns_left: 3,
             tools_sig: 0,
             domain: Domain::Chitchat,
+            difficulty: 0.5,
+            est_tokens: 1_000,
         };
         let h = HealthMap::new();
         let dec = e.decide(input("继续，把剩下的都处理了 这个 然后再检查一遍", 130_000, &d, Some(sticky), &h));

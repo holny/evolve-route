@@ -209,12 +209,32 @@ pub struct StickyState {
     pub turns_left: u32,
     pub tools_sig: u64,
     pub domain: Domain,
+    /// 上次判定的有效难度：粘性只对低难度任务延续（L2 上限）
+    pub difficulty: f32,
+    /// 上次请求的估算输入 tokens：粘性量级保护上限（2 倍暴增/减半即断）
+    pub est_tokens: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FilteredOut {
     pub model: String,
     pub cause: String,
+}
+
+/// 逐候选评分分量（决策透明）：与公式权重一同随事件暴露
+#[derive(Debug, Clone, Serialize)]
+pub struct CandidateScore {
+    pub model_id: String,
+    pub score: f32,
+    pub q: f32,
+    pub s: f32,
+    pub c: f32,
+    pub r: f32,
+    pub h: f32,
+    /// 用户配置权重（clamp 后）
+    pub uw: f32,
+    /// 飞轮学习偏置
+    pub bias: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -225,6 +245,11 @@ pub struct Decision {
     pub chain: Vec<String>,
     pub reason: String,
     pub scores: BTreeMap<String, f32>,
+    /// 逐候选评分分量（榜单质量/速度/成本/可靠/余量/用户权重/学习偏置/总分）
+    /// ——决策透明的数据地基，随事件暴露给面板评分矩阵
+    pub scored: Vec<CandidateScore>,
+    /// 本次决策生效的公式权重（normalized [质量,速度,成本,可靠,余量]）
+    pub weights: [f32; 5],
     pub judgment: JudgmentSet,
     pub filtered: Vec<FilteredOut>,
     /// 决策漏斗：目录总数→硬约束后→质量及格后→评分排序→选中
@@ -441,8 +466,9 @@ pub fn fuse_judgments(jev: &JudgmentSet, heur: &JudgmentSet) -> JudgmentSet {
     };
     JudgmentSet {
         domain,
-        // 难度取严：两判官中更高的难度生效（好钢用在刀刃上的保守面）
-        difficulty: take_max(jev.difficulty, heur.difficulty),
+        // 难度融合改均值：take_max 会把难度钉死在上限（双峰根因之一），
+        // 双判官各给独立估计，均值更接近真实分布
+        difficulty: (jev.difficulty + heur.difficulty) * 0.5,
         domain_confidence: jev.domain_confidence.min(heur.domain_confidence),
         difficulty_confidence: jev.difficulty_confidence.min(heur.difficulty_confidence),
         needs_vision: take_max(jev.needs_vision, heur.needs_vision),

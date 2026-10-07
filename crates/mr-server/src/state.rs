@@ -53,6 +53,18 @@ pub fn build_state(config: FileConfig) -> AppState {
     let policy = config.policy.clone();
     let backend = DecisionBackend::build(&config.decision.backend);
     let engine = Engine::new(catalog, policy, backend);
+
+    // 面板调控覆盖（overrides.json，重启重放）：模型权重 + 公式权重
+    let ov = load_overrides(&config.data.dir);
+    for (id, w) in &ov.models {
+        engine.set_weight_override(id, Some(*w));
+    }
+    if let Some(w) = ov.weights {
+        engine.set_weights_override(Some(mr_core::types::PolicyWeights {
+            quality: w[0], speed: w[1], cost: w[2], stability: w[3], headroom: w[4],
+        }));
+    }
+
     let events = EventLog::open(&config.data.dir);
     let flywheel = Flywheel::open(&config.data.dir);
     let (bus, _) = broadcast::channel(256);
@@ -105,6 +117,12 @@ impl Inner {
 
 pub fn build_router(state: AppState) -> axum::Router {
     axum::Router::new()
+        .route("/api/weight", axum::routing::post(crate::meta::api_weight))
+        .route(
+            "/api/policy-weights",
+            axum::routing::get(crate::meta::api_policy_weights_get)
+                .post(crate::meta::api_policy_weights_set),
+        )
         .route("/v1/chat/completions", axum::routing::post(crate::relay::chat_completions))
         .route("/v1/models", axum::routing::get(crate::meta::list_models))
         .route("/healthz", axum::routing::get(crate::meta::healthz))
@@ -120,4 +138,36 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/v1/messages/count_tokens", axum::routing::post(crate::anthropic::count_tokens))
         .with_state(state)
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
+}
+
+/// 面板调控覆盖的持久化形态（data.dir/overrides.json）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct Overrides {
+    #[serde(default)]
+    pub models: HashMap<String, f32>,
+    /// normalized [quality, speed, cost, stability, headroom]
+    #[serde(default)]
+    pub weights: Option<[f32; 5]>,
+}
+
+pub fn overrides_path(data_dir: &str) -> std::path::PathBuf {
+    let p = if let Some(rest) = data_dir.strip_prefix("~/") {
+        std::env::var("HOME").map(|h| std::path::PathBuf::from(h).join(rest)).unwrap_or_else(|_| std::path::PathBuf::from(data_dir))
+    } else {
+        std::path::PathBuf::from(data_dir)
+    };
+    p.join("overrides.json")
+}
+
+pub fn load_overrides(data_dir: &str) -> Overrides {
+    std::fs::read_to_string(overrides_path(data_dir))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_overrides(data_dir: &str, o: &Overrides) {
+    if let Ok(t) = serde_json::to_string_pretty(o) {
+        let _ = std::fs::write(overrides_path(data_dir), t);
+    }
 }

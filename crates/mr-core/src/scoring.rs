@@ -1,15 +1,6 @@
 use crate::types::*;
 
-#[derive(Debug, Clone)]
-pub struct CandidateScore {
-    pub model_id: String,
-    pub score: f32,
-    pub q: f32,
-    pub s: f32,
-    pub c: f32,
-    pub r: f32,
-    pub h: f32,
-}
+pub use crate::types::CandidateScore;
 
 pub fn tier_for_domain(domain: Domain, tiers: &Tiers, difficulty: f32) -> f32 {
     let d = (difficulty / 3.0).clamp(0.0, 1.0);
@@ -107,7 +98,7 @@ pub fn score_all(
                 .unwrap_or(1.0)
                 .clamp(0.7, 1.3);
             score *= (user_w * bias).sqrt().clamp(0.4, 1.8);
-            CandidateScore { model_id: m.id.clone(), score, q, s, c, r, h }
+            CandidateScore { model_id: m.id.clone(), score, q, s, c, r, h, uw: user_w, bias }
         })
         .collect()
 }

@@ -219,7 +219,11 @@ pub async fn api_stats(State(st): State<AppState>) -> Response {
                 }),
                 "last_rate_tok_s": (s.last_rate_tok_s > 0).then_some(s.last_rate_tok_s),
                 "telemetry": t,
-                "user_weight": m.weight.map(|w| ((w as f64) * 100.0).round() / 100.0),
+                "user_weight": st
+                    .engine
+                    .weight_override(id)
+                    .or(m.weight)
+                    .map(|w| ((w as f64) * 100.0).round() / 100.0),
             }),
         ));
     }
@@ -342,6 +346,95 @@ pub async fn api_feedback(
         "session": session,
     }));
     (axum::Json(json!({"status": "ok"}))).into_response()
+}
+
+/// 面板权重调控：热生效（engine overlay）+ overrides.json 持久化
+pub async fn api_weight(
+    State(st): State<AppState>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Response {
+    let Some(model) = body.get("model").and_then(|m| m.as_str()).map(|s| s.to_string()) else {
+        return (StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": "model is required"}}))).into_response();
+    };
+    let Some(w) = body.get("weight").and_then(|w| w.as_f64()) else {
+        return (StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": "weight (number 0.2-3.0) is required"}}))).into_response();
+    };
+    let w = (w as f32).clamp(0.2, 3.0);
+    st.engine.set_weight_override(&model, Some(w));
+    let dir = &st.config.data.dir;
+    let mut ov = crate::state::load_overrides(dir);
+    ov.models.insert(model.clone(), w);
+    crate::state::save_overrides(dir, &ov);
+    (axum::Json(json!({"status": "ok", "model": model, "weight": w}))).into_response()
+}
+
+/// 当前生效的公式权重（override > 默认 profile）
+fn effective_weights(st: &AppState) -> mr_core::types::PolicyWeights {
+    st.engine.weights_override().unwrap_or_else(|| {
+        mr_core::types::PolicyProfile::parse(&st.config.policy.default)
+            .unwrap_or(mr_core::types::PolicyProfile::Balanced)
+            .weights()
+    })
+}
+
+pub async fn api_policy_weights_get(State(st): State<AppState>) -> Response {
+    let w = effective_weights(&st);
+    let over = st.engine.weights_override().is_some();
+    (
+        axum::Json(json!({
+            "weights": {"quality": w.quality, "speed": w.speed, "cost": w.cost,
+                        "stability": w.stability, "headroom": w.headroom},
+            "overridden": over,
+            "profile": st.config.policy.default,
+        })),
+    )
+        .into_response()
+}
+
+/// 公式权重调控：任意子集，缺省沿用当前值；归一化后热生效并持久化
+pub async fn api_policy_weights_set(
+    State(st): State<AppState>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Response {
+    let cur = effective_weights(&st);
+    let pick = |k: &str, fallback: f32| -> Result<f32, Response> {
+        match body.get(k) {
+            Some(v) => {
+                let f = v.as_f64().unwrap_or(-1.0) as f32;
+                if !(0.0..=2.0).contains(&f) || !f.is_finite() {
+                    Err((StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": format!("{k} must be within 0.0-2.0")}}))).into_response())
+                } else {
+                    Ok(f)
+                }
+            }
+            None => Ok(fallback),
+        }
+    };
+    let quality = match pick("quality", cur.quality) { Ok(v) => v, Err(r) => return r };
+    let speed = match pick("speed", cur.speed) { Ok(v) => v, Err(r) => return r };
+    let cost = match pick("cost", cur.cost) { Ok(v) => v, Err(r) => return r };
+    let stability = match pick("stability", cur.stability) { Ok(v) => v, Err(r) => return r };
+    let headroom = match pick("headroom", cur.headroom) { Ok(v) => v, Err(r) => return r };
+    let w = mr_core::types::PolicyWeights { quality, speed, cost, stability, headroom };
+    let sum = w.quality + w.speed + w.cost + w.stability + w.headroom;
+    if sum <= 0.01 {
+        return (StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": "weights sum must be > 0"}}))).into_response();
+    }
+    st.engine.set_weights_override(Some(w.clone()));
+    let dir = &st.config.data.dir;
+    let mut ov = crate::state::load_overrides(dir);
+    ov.weights = Some([
+        w.quality, w.speed, w.cost, w.stability, w.headroom,
+    ]);
+    let normalized = w.normalized();
+    crate::state::save_overrides(dir, &ov);
+    (
+        axum::Json(json!({
+            "status": "ok",
+            "normalized": {"quality": normalized[0], "speed": normalized[1], "cost": normalized[2], "stability": normalized[3], "headroom": normalized[4]},
+        })),
+    )
+        .into_response()
 }
 
 /// SSE stream of routing events for the dashboard.
