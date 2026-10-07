@@ -252,10 +252,21 @@ const T = {
   plan_next_reset: {zh:'下次窗口重置', en:'Next window reset', ko:'다음 윈도우 리셋', ja:'次の窓リセット', es:'Próximo reinicio de ventana', fr:'Prochaine réinitialisation'},
   pk_api:    {zh:'API', en:'API', ko:'API', ja:'API', es:'API', fr:'API'},
   pk_coding: {zh:'Coding Plan', en:'Coding Plan', ko:'Coding Plan', ja:'Coding Plan', es:'Coding Plan', fr:'Coding Plan'},
-  pk_token:  {zh:'Token Plan', en:'Token Plan', ko:'Token Plan', ja:'Token Plan', es:'Token Plan', fr:'Token Plan'},
+  pk_go:     {zh:'OpenCode Go', en:'OpenCode Go', ko:'OpenCode Go', ja:'OpenCode Go', es:'OpenCode Go', fr:'OpenCode Go'},
   pk_agent:  {zh:'Agent Plan', en:'Agent Plan', ko:'Agent Plan', ja:'Agent Plan', es:'Agent Plan', fr:'Agent Plan'},
   plan_edit_tier: {zh:'输入档位（如 lite/pro/max/go/go-plus，留空清除）', en:'enter tier (e.g. lite/pro/max/go/go-plus, empty to clear)', ko:'등급 입력(예: lite/pro/max, 빈값清除)', ja:'ティアを入力（例: lite/pro/max、空で解除）', es:'introduce nivel (p.ej. lite/pro/max, vacío para borrar)', fr:'saisir le palier (ex. lite/pro/max, vide pour effacer)'},
   plan_edit_win: {zh:'订正窗口与额度说明', en:'correct windows & allowance note', ko:'윈도우·한도 설명 수정', ja:'窓と上限の説明を訂正', es:'corregir nota de ventanas y límites', fr:'corriger la note fenêtres et quotas'},
+  r_toggle:  {zh:'系数表', en:'Rates', ko:'계수표', ja:'係数表', es:'Tabla de tasas', fr:'Table des taux'},
+  rate_model:{zh:'模型', en:'Model', ko:'모델', ja:'モデル', es:'Modelo', fr:'Modèle'},
+  rate_in_c: {zh:'输入系数', en:'Input k', ko:'입력 계수', ja:'入力係数', es:'Coef. entrada', fr:'Coef. entrée'},
+  rate_cached_c:{zh:'缓存系数', en:'Cached k', ko:'캐시 계수', ja:'キャッシュ係数', es:'Coef. caché', fr:'Coef. cache'},
+  rate_out_c:{zh:'输出系数', en:'Output k', ko:'출력 계수', ja:'出力係数', es:'Coef. salida', fr:'Coef. sortie'},
+  rate_in_d: {zh:'输入$/M', en:'Input $/M', ko:'입력 $/M', ja:'入力$/M', es:'Entrada $/M', fr:'Entrée $/M'},
+  rate_cached_d:{zh:'缓存读$/M', en:'Cached read $/M', ko:'캐시 읽기 $/M', ja:'キャッシュ読$/M', es:'Lectura caché $/M', fr:'Lecture cache $/M'},
+  rate_out_d:{zh:'输出$/M', en:'Output $/M', ko:'출력 $/M', ja:'出力$/M', es:'Salida $/M', fr:'Sortie $/M'},
+  rate_limit:{zh:'月限', en:'Monthly cap', ko:'월 한도', ja:'月上限', es:'Límite mensual', fr:'Plafond mensuel'},
+  rate_in_a: {zh:'输入系数', en:'Input k', ko:'입력 계수', ja:'入力係数', es:'Coef. entrada', fr:'Coef. entrée'},
+  rate_out_a:{zh:'输出系数', en:'Output k', ko:'출력 계수', ja:'出力係数', es:'Coef. salida', fr:'Coef. sortie'},
   st_why:    {zh:'为什么选', en:'Why', ko:'왜', ja:'なぜ', es:'Por qué', fr:'Pourquoi'},
   st_by_model: {zh:'由决策模型语义评估全部候选后选出', en:'selected after the decision model semantically evaluated all candidates', ko:'결정 모델이 모든 후보를 의미 평가한 뒤 선택', ja:'判断モデルが全候補を意味評価して選出', es:'elegido tras evaluación semántica de todos los candidatos por el modelo de decisión', fr:'choisi après évaluation sémantique de tous les candidats par le modèle de décision'},
   st_by_hybrid: {zh:'决策模型 + 规则双判官评估（冲突取严，防中文误判）', en:'dual-judge evaluation (decision model + rules; conservative on conflict)', ko:'이중 판정(결정 모델+규칙, 충돌 시 보수적으로)', ja:'二重判定（判断モデル＋規則、衝突時は保守的に）', es:'evaluación con doble juez (modelo de decisión + reglas, conservador en conflictos)', fr:'évaluation à double juge (modèle de décision + règles, conservateur en cas de conflit)'},
@@ -672,10 +683,15 @@ function renderChips(){
 }
 const PLANS_COLS = [
   {k:'plan_provider'}, {k:'plan_scheme'}, {k:'plan_windows'}, {k:'plan_note'},
-  {k:'plan_models', num:1}, {k:'plan_tier'}, {k:'plan_docs'},
+  {k:'plan_models', num:1}, {k:'plan_tier'}, {k:'r_toggle'}, {k:'plan_docs'},
 ];
-const PK_LABEL = {'api':'pk_api', coding:'pk_coding', token:'pk_token', agent:'pk_agent'};
-const PK_SHORT = {api:'API', coding:'CP', token:'TP', agent:'AP'};
+const PK_LABEL = {'api':'pk_api', coding:'pk_coding', go:'pk_go', agent:'pk_agent'};
+const PK_SHORT = {api:'API', coding:'CP', go:'GO', agent:'AP'};
+const RATE_COLS = {
+  credits: [['m', 'rate_model'], ['a', 'rate_in_c'], ['b', 'rate_cached_c'], ['v', 'rate_out_c']],
+  dollar:  [['m', 'rate_model'], ['a', 'rate_in_d'], ['b', 'rate_cached_d'], ['v', 'rate_out_d'], ['l', 'rate_limit']],
+  afp:     [['m', 'rate_model'], ['a', 'rate_in_a'], ['v', 'rate_out_a']],
+};
 function renderPlans(){
   buildThead(document.getElementById('plans'), PLANS_COLS);
   const tb = document.querySelector('#plans tbody');
@@ -688,6 +704,20 @@ function renderPlans(){
     const reset = p.next_reset_epoch_ms
       ? '<div class="la f" style="margin:2px 0 0">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(p.next_reset_epoch_ms))+'</div>'
       : '';
+    const hasRates = !!(p.model_rates && p.rates_kind && RATE_COLS[p.rates_kind]);
+    const ratesCell = hasRates
+      ? '<span class="wedit rates-toggle" data-pidx="'+p.key+'">📋 '+esc(t('r_toggle'))+'</span>'
+      : '<span class="dim2">-</span>';
+    let ratesRow = '';
+    if (hasRates) {
+      const cols = RATE_COLS[p.rates_kind];
+      const lines = (p.model_rates||'').split('\n').filter(Boolean).map(l => l.split('|'));
+      ratesRow = '<tr class="rates-row" data-ridx="'+p.key+'" style="display:none"><td colspan="8" style="padding:4px 10px">' +
+        '<table class="mx" style="margin:2px 0"><tr>' +
+        cols.map(c => '<th>'+esc(t(c[1]))+'</th>').join('') + '</tr>' +
+        lines.map(cells => '<tr>' + cols.map((c, i) => '<td'+(i===0?' class="mxm" style="cursor:default;color:var(--fg)"':'')+'>'+esc(cells[i]||'')+'</td>').join('') + '</tr>').join('') +
+        '</table><div class="dim2">'+esc(p.rates_note||'')+'</div></td></tr>';
+    }
     return '<tr data-pkey="'+esc(p.key)+'">' +
       '<td>'+esc(p.provider)+' <span class="pbadge" title="'+esc(pkLabel)+'">'+esc(PK_SHORT[p.plan_kind]||'API')+'</span></td>' +
       '<td data-pedit="scheme" title="'+esc(t('plan_sub'))+'" class="wedit">'+schemeName(p.scheme)+'</td>' +
@@ -695,9 +725,13 @@ function renderPlans(){
       '<td style="max-width:280px" class="dim2">'+esc(p.models_note||'-')+'</td>' +
       '<td class="num">'+(p.models? p.models.length : 0)+'</td>' +
       '<td data-pedit="tier" class="wedit" title="'+esc(t('plan_edit_tier'))+'">'+esc(p.tier||'-')+'</td>' +
-      '<td>'+docs+'</td></tr>';
+      '<td>'+ratesCell+'</td><td>'+docs+'</td></tr>' + ratesRow;
   });
-  tb.innerHTML = rows.join('') || '<tr><td colspan="7" style="color:var(--dim)">-</td></tr>';
+  tb.innerHTML = rows.join('') || '<tr><td colspan="8" style="color:var(--dim)">-</td></tr>';
+  tb.querySelectorAll('.rates-toggle').forEach(el => el.addEventListener('click', () => {
+    const row = tb.querySelector('.rates-row[data-ridx="'+el.dataset.pidx+'"]');
+    if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+  }));
   tb.querySelectorAll('[data-pedit]').forEach(el => el.addEventListener('click', () => {
     const key = el.closest('tr').dataset.pkey;
     const field = el.dataset.pedit;

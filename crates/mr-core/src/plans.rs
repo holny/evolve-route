@@ -19,8 +19,14 @@ pub struct PlanProfile {
     pub docs_url: &'static str,
     /// 常见档位（面板档位提示）
     pub tiers: &'static str,
-    /// 接入类型：api / coding / token / agent
+    /// 接入类型：api / coding / go / agent
     pub plan_kind: &'static str,
+    /// 模型倍率/系数表：每行 "name|v1|v2|v3|v4"（列含义见 rates_kind）
+    pub model_rates: &'static str,
+    /// rates_kind: credits（输入/缓存/输出积分系数）| dollar（输入$/缓存读$/输出$/月限$）| afp（输入/输出 AFP 系数）
+    pub rates_kind: &'static str,
+    /// 计费口径说明
+    pub rates_note: &'static str,
 }
 impl PartialEq for PlanProfile {
     fn eq(&self, other: &Self) -> bool {
@@ -43,6 +49,9 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "积分=(入×系+缓存×系+出×系)/1w · GLM-5.3: 6.9/1.7/24 · Flash: 2.3/0.56/8 · 非高峰5折(高峰=周一~五14-18 UTC+8)",
         docs_url: "https://docs.bigmodel.cn/cn/coding-plan/overview",
         tiers: "lite / pro / max",
+        model_rates: "GLM-5.3|6.9|1.7|24\nGLM-5.3-Flash|2.3|0.56|8",
+        rates_kind: "credits",
+        rates_note: "积分系数（输入/缓存命中/输出）· 消耗=(入+缓存+出)×系数/1万 · 非高峰(工作日14-18 UTC+8之外)5折",
         plan_kind: "coding",
     },
     PlanProfile {
@@ -54,6 +63,9 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "credits=(in×k+cached×k+out×k)/10k · GLM-5.3: 6.9/1.7/24 · Flash: 2.3/0.56/8 · off-peak 50% (peak=Mon-Fri 14-18 UTC+8)",
         docs_url: "https://docs.z.ai/devpack/overview",
         tiers: "lite / pro / max",
+        model_rates: "GLM-5.3|6.9|1.7|24\nGLM-5.3-Flash|2.3|0.56|8",
+        rates_kind: "credits",
+        rates_note: "credit multipliers (input/cached/output) · usage=(sum×k)/10k · off-peak 50% (peak=Mon-Fri 14-18 UTC+8)",
         plan_kind: "coding",
     },
     PlanProfile {
@@ -65,7 +77,10 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "Go/Plus 月限: Flash $60/$180 · GLM-5.3 $15/$120 · GLM-5.2 $60/$180 · Kimi-K3 $15/$60 · MiniMax-M3 $60/$180 · DeepSeek-V4-Pro $15/$60 (每模型独立)",
         docs_url: "https://opencode.ai/docs/go/",
         tiers: "go / go-plus",
-        plan_kind: "token",
+        model_rates: "glm-5.3-flash|0.15|0.03|0.50|$60\nglm-5.3|1.40|0.26|4.40|$15\nglm-5.2|1.40|0.26|4.40|$60\nkimi-k3|3.00|0.30|15.00|$15\nkimi-k2.7-code|0.95|0.19|4.00|$60\nminimax-m3|0.30|0.06|1.20|$60\nminimax-m2.7|0.30|0.06|1.20|$60\ndeepseek-v4-pro|0.66|0.022|1.98|$15\ndeepseek-v4-flash|0.15|0.003|0.60|$30\nqwen3.8-max|2.00|0.25|6.00|$15\nqwen3.8-flash|0.15|0.016|0.47|$30\nqwen3.7-plus|0.40|0.04|1.60|$60\ngpt-6-luna|0.10|0.01|0.50|$15\nlongcat-2.0|0.30|0.006|1.20|$60\nlongcat-2.5-preview-free|0|0|0|Unlimited",
+        rates_kind: "dollar",
+        rates_note: "$/1M tokens (input / cached-read / output) · Go 档月限，Plus 限额更高(Flash $180/5.3 $120…) · 5h=月20% 周=50%",
+        plan_kind: "go",
     },
     PlanProfile {
         key: "volces-coding",
@@ -76,6 +91,9 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "抵扣系数按模型: (入×系+出×系)/1w · doubao-2.0-mini 0.25 · deepseek-v4-flash 0.5 · Kimi-K3 系数高仅建议 Pro · glm-5.3 系数较高 · 多模型 1M 上下文",
         docs_url: "https://docs.volcengine.com/docs/ark/coding-plan-personal-plan-overview?lang=zh",
         tiers: "lite / pro",
+        model_rates: "doubao-seed-2.0-mini|0.25|0.25\ndeepseek-v4-flash|0.5|0.5\ndoubao-seed-2.1-lite|0.5|0.5\nglm-5.3-flash|0.5|0.5\ndoubao-seed-evolving|2.5|2.5\nminimax-m3|2.5|2.5\ndoubao-seed-2.1-pro|2.5|2.5\nkimi-k2.7-code|4.5|4.5\nglm-5.3|4.5|4.5\ndeepseek-v4.1-flash|2.5|2.5\ndeepseek-v4-pro|5.5|5.5\nkimi-k3|10|10",
+        rates_kind: "afp",
+        rates_note: "AFP 系数（输入/输出）· 消耗=(入×系+出×系)/1万 · Auto=1(活动期) · deepseek-v4.1-flash 5折(活动期) · Coding Plan 抵扣以控制台为准",
         plan_kind: "coding",
     },
     PlanProfile {
@@ -88,6 +106,9 @@ pub const REGISTRY: &[PlanProfile] = &[
         docs_url: "https://www.volcengine.com/docs/82379/1502001",
         tiers: "见官方活动页",
         plan_kind: "agent",
+        model_rates: "auto|0.5|0.5\\ndeepseek-v4.1-flash|2.5(活动5折)|2.5(活动5折)\\nkimi-k2.8-preview|8(活动6折)|8(活动6折)\\nkimi-k3|10|10\\nglm-5.3|4.5|4.5\\nglm-5.3-flash|0.5|0.5\\nminimax-m3|2.5|2.5\\ndeepseek-v4-pro|5.5|5.5",
+        rates_kind: "afp",
+        rates_note: "AFP 系数（输入/输出）· 消耗=(入×系+出×系)/1万 · Harness 层级影响系数 · 折扣为活动期价格",
     },
 ];
 
@@ -102,6 +123,9 @@ pub const PAYG: PlanProfile = PlanProfile {
     docs_url: "",
     tiers: "-",
     plan_kind: "api",
+    model_rates: "",
+    rates_kind: "",
+    rates_note: "",
 };
 
 pub fn plan_for(base_url: &str) -> Option<&'static PlanProfile> {
