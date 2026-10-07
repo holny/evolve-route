@@ -108,7 +108,7 @@ impl Engine {
     pub fn decide(&self, input: RoutingInput<'_>) -> Decision {
         let est = input.features.est_input_tokens;
         let max_output = input.max_output_req.unwrap_or(0).max(1024);
-        let band = crate::tokens::tokens_band(est);
+        let _band = crate::tokens::tokens_band(est);
 
         if let Some(sticky) = &input.sticky {
             let now = now_epoch_ms();
@@ -322,11 +322,9 @@ impl Engine {
         }
         // 用户权重覆盖（面板调控）：作用于评分前的候选副本
         if let Ok(o) = self.weight_overlay.read() {
-            if !o.is_empty() {
-                for c in eligible.iter_mut() {
-                    if let Some(w) = o.get(&c.id) {
-                        c.weight = Some(*w);
-                    }
+            for c in eligible.iter_mut() {
+                if let Some(w) = o.get(&c.id) {
+                    c.weight = Some(*w);
                 }
             }
         }

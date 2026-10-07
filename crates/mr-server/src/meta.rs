@@ -397,12 +397,12 @@ pub async fn api_policy_weights_set(
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Response {
     let cur = effective_weights(&st);
-    let pick = |k: &str, fallback: f32| -> Result<f32, Response> {
+    let pick = |k: &str, fallback: f32| -> Result<f32, (StatusCode, serde_json::Value)> {
         match body.get(k) {
             Some(v) => {
                 let f = v.as_f64().unwrap_or(-1.0) as f32;
                 if !(0.0..=2.0).contains(&f) || !f.is_finite() {
-                    Err((StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": format!("{k} must be within 0.0-2.0")}}))).into_response())
+                    Err((StatusCode::BAD_REQUEST, json!({"error": {"message": format!("{k} must be within 0.0-2.0")}})))
                 } else {
                     Ok(f)
                 }
@@ -410,11 +410,11 @@ pub async fn api_policy_weights_set(
             None => Ok(fallback),
         }
     };
-    let quality = match pick("quality", cur.quality) { Ok(v) => v, Err(r) => return r };
-    let speed = match pick("speed", cur.speed) { Ok(v) => v, Err(r) => return r };
-    let cost = match pick("cost", cur.cost) { Ok(v) => v, Err(r) => return r };
-    let stability = match pick("stability", cur.stability) { Ok(v) => v, Err(r) => return r };
-    let headroom = match pick("headroom", cur.headroom) { Ok(v) => v, Err(r) => return r };
+    let quality = match pick("quality", cur.quality) { Ok(v) => v, Err((code, msg)) => return (code, axum::Json(msg)).into_response() };
+    let speed = match pick("speed", cur.speed) { Ok(v) => v, Err((code, msg)) => return (code, axum::Json(msg)).into_response() };
+    let cost = match pick("cost", cur.cost) { Ok(v) => v, Err((code, msg)) => return (code, axum::Json(msg)).into_response() };
+    let stability = match pick("stability", cur.stability) { Ok(v) => v, Err((code, msg)) => return (code, axum::Json(msg)).into_response() };
+    let headroom = match pick("headroom", cur.headroom) { Ok(v) => v, Err((code, msg)) => return (code, axum::Json(msg)).into_response() };
     let w = mr_core::types::PolicyWeights { quality, speed, cost, stability, headroom };
     let sum = w.quality + w.speed + w.cost + w.stability + w.headroom;
     if sum <= 0.01 {
