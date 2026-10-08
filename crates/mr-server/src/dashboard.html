@@ -554,6 +554,7 @@ function linkView(e){
       '</div>');
   }
   const sb = e.scoreboard || [];
+  // 502/全灭时 scoreboard 为空但 attempted 链有内容——降级链试过这些
   if (sb.length) {
     const w = e.weights || [0.35, 0.15, 0.25, 0.15, 0.10];
     const wp = w.map(x => Math.round(x*100));
@@ -574,6 +575,15 @@ function linkView(e){
         '<td>'+n(r.q)+'</td><td>'+n(r.s)+'</td><td>'+n(r.c)+'</td><td>'+n(r.r)+'</td><td>'+n(r.h)+'</td>' +
         '<td>'+iv(r)+'</td><td class="mxt">'+n(r.score)+'</td></tr>').join('') +
       '</table>');
+  } else if (e.attempted && e.attempted.length) {
+    // 502/全灭：所有候选被 health 熔断或窗口过滤——展示降级链试过什么
+    const tried = e.attempted.map(m => {
+      const fail = (e.skipped||[]).find(s => s.startsWith(m));
+      const failTxt = fail ? ' '+esc(fail.replace(m, '').replace(/^[\[\(]/, '(')) : '';
+      return '<span style="display:inline-block;padding:1px 6px;border:1px solid var(--border);border-radius:3px;margin:1px;font-size:10px;color:#bbb">'+esc(shortId(m))+failTxt+'</span>';
+    }).join(' ');
+    parts.push('<div class="lk-h">'+esc(t('sec_matrix'))+' <span class="dim2">(全灭 · 降级链试过)</span></div>' +
+      '<div style="line-height:1.8">'+tried+'</div>');
   }
   return parts.join('');
 }

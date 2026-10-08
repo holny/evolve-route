@@ -564,7 +564,13 @@ pub async fn chat_completions(
             usage: None,
             est_cost_usd: None,
             translated: None,
-            extra: Some(json!({"reason": detail, "skipped": skipped, "filtered": decision.filtered})),
+            extra: Some(json!({
+                "reason": detail,
+                "skipped": skipped,
+                "filtered": decision.filtered,
+                "attempted": decision.chain,  // 全灭时降级链内容：让面板看清试了哪些
+                "scored": decision.scored,      // 各候选总分（不是无路可走，是都被熔断）
+            })),
             agent: Some(crate::identity::agent_identity(&headers, &st.config.telemetry.agent_header)),
             plan_key: None,
             preprocess_ms: None,
