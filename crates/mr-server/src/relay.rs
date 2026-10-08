@@ -175,6 +175,9 @@ pub async fn chat_completions(
     // provider 账户级熔断：配额/余额/鉴权/限流是 provider 级共享资源，
     // 同 provider 的其他模型不再重复尝试（本请求内）
     let mut dead_providers: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // 网络级熔断（用户裁决）：transport 错误是 baseUrl 级故障（同一条网络
+    // 路径），换模型重试毫无意义——按 base_url 熔断
+    let mut dead_routes: std::collections::HashSet<String> = std::collections::HashSet::new();
     // 自递归防护（审查 M-6）：候选 base_url 指向自身监听地址时出局——
     // 不依赖用户给网关条目起什么名字（命名约定不可靠）
     let self_addr = format!("{}:{}", st.config.server.host, st.config.server.port);
@@ -186,6 +189,10 @@ pub async fn chat_completions(
         }
         if dead_providers.contains(&record.provider) {
             skipped.push(format!("{cand}(provider {} account-level failure)", record.provider));
+            continue;
+        }
+        if dead_routes.contains(&record.base_url) {
+            skipped.push(format!("{cand}(route {} network failure)", record.base_url));
             continue;
         }
         if let Some(need) = min_context_needed
@@ -268,6 +275,7 @@ pub async fn chat_completions(
                     cand,
                     Failure { kind: HealthKind::Transient, message: "transport error".into(), until_epoch_ms: None },
                 );
+                dead_routes.insert(record.base_url.clone());
                 skipped.push(format!("{cand}(transport)"));
                 last_error = Some((StatusCode::BAD_GATEWAY, Bytes::new()));
                 continue;

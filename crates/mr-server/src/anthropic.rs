@@ -151,10 +151,16 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
 
     // provider 账户级熔断（与 relay 同规则）
     let mut dead_providers: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // 网络级熔断（与 relay 同规则）：transport 错误按 baseUrl 熔断
+    let mut dead_routes: std::collections::HashSet<String> = std::collections::HashSet::new();
     for cand in &attempts {
         let Some(record) = st.engine.catalog.get(cand).cloned() else { continue };
         if dead_providers.contains(&record.provider) {
             skipped.push(format!("{cand}(provider {} account-level failure)", record.provider));
+            continue;
+        }
+        if dead_routes.contains(&record.base_url) {
+            skipped.push(format!("{cand}(route {} network failure)", record.base_url));
             continue;
         }
         if let Some(need) = min_context_needed
@@ -235,6 +241,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                     cand,
                     Failure { kind: HealthKind::Transient, message: "transport error".into(), until_epoch_ms: None },
                 );
+                dead_routes.insert(record.base_url.clone());
                 skipped.push(format!("{cand}(transport)"));
                 last_error = Some((StatusCode::BAD_GATEWAY, Bytes::new()));
                 continue;

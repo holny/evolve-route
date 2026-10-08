@@ -613,8 +613,8 @@ pub async fn api_trends(
                     "tok_s": if r.total_ms > r.ttft_ms {
                         (r.out_tok as f64 * 1000.0 / (r.total_ms - r.ttft_ms) as f64).round() as u64
                     } else { 0 },
-                    "cache_pct": if r.in_tok > 0 { (r.cached_tok * 100 / r.in_tok) as u8 } else { 0 },
-                    "tools_pct": if r.tools_total > 0 { (r.tools_ok * 100 / r.tools_total) as u8 } else { 0 },
+                    "cache_pct": (r.cached_tok * 100).checked_div(r.in_tok).unwrap_or(0) as u8,
+                    "tools_pct": (r.tools_ok * 100).checked_div(r.tools_total).unwrap_or(0) as u8,
                 })).collect::<Vec<_>>(),
             })
         })
