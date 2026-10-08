@@ -1,4 +1,4 @@
-use mr_server::{config, state};
+use mr_server::{config, service, state};
 
 use clap::{Parser, Subcommand};
 use mr_core::catalog::Catalog;
@@ -35,12 +35,38 @@ enum Cmd {
         #[arg(long)]
         config: Option<PathBuf>,
     },
+    /// Manage the LaunchAgent service (start/stop/restart/status/install)
+    Service {
+        #[command(subcommand)]
+        action: ServiceAction,
+        /// Override the gateway port (defaults to config value)
+        #[arg(long)]
+        port: Option<u16>,
+    },
+    /// Install/rewrite the LaunchAgent service definition
+    Install {
+        /// Override the gateway port (defaults to config value)
+        #[arg(long)]
+        port: Option<u16>,
+    },
     /// Start a fake OpenAI-compatible upstream for demos and benchmarks
     #[command(hide = true)]
     MockUpstream {
         #[arg(long, default_value = "9101")]
         port: u16,
     },
+}
+
+#[derive(Subcommand)]
+enum ServiceAction {
+    /// Start the gateway service
+    Start,
+    /// Stop the gateway service
+    Stop,
+    /// Restart the gateway service
+    Restart,
+    /// Show service load/listen state
+    Status,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -57,6 +83,16 @@ fn main() -> anyhow::Result<()> {
         Cmd::Doctor { config } => doctor(config),
         Cmd::MockUpstream { port } => mock_upstream(port),
         Cmd::Stats { config } => stats(config),
+        Cmd::Service { action, port } => {
+            let p = service::resolve_port(port);
+            match action {
+                ServiceAction::Start => service::start(p),
+                ServiceAction::Stop => service::stop(p),
+                ServiceAction::Restart => service::restart(p),
+                ServiceAction::Status => service::status(p),
+            }
+        }
+        Cmd::Install { port } => service::install(service::resolve_port(port)),
     }
 }
 
