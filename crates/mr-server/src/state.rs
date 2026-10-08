@@ -161,6 +161,7 @@ pub fn build_router(state: AppState) -> axum::Router {
             axum::routing::get(crate::meta::api_policy_weights_get)
                 .post(crate::meta::api_policy_weights_set),
         )
+        .route("/api/trends", axum::routing::get(crate::meta::api_trends))
         .route(
             "/api/plans",
             axum::routing::get(crate::meta::api_plans).post(crate::meta::api_plans_set),
@@ -169,7 +170,7 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/v1/models", axum::routing::get(crate::meta::list_models))
         .route("/healthz", axum::routing::get(crate::meta::healthz))
         .route("/api/health", axum::routing::get(crate::meta::api_health))
-        .route("/api/stats", axum::routing::get(crate::meta::api_stats))
+        .route("/api/stats", axum::routing::get(crate::meta::api_stats_query))
         .route("/api/feedback", axum::routing::post(crate::meta::api_feedback))
         .route("/api/quota", axum::routing::get(crate::meta::api_quota))
         .route("/api/events", axum::routing::get(crate::meta::api_events))

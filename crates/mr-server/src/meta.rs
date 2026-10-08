@@ -81,9 +81,132 @@ pub async fn api_health(State(st): State<AppState>) -> Response {
 }
 
 /// Flywheel aggregates + learned telemetry + link status + dynamic score.
+/// 窗口聚合：把模型近期样本环按窗口过滤后折算成与累计口径同形的聚合值
+fn windowed_view(
+    s: &mr_core::types::ModelTelemetry,
+    window: &str,
+) -> Option<serde_json::Value> {
+    use mr_core::types::ReqSample;
+    let samples: Vec<ReqSample> = s.recent.clone().unwrap_or_default();
+    if samples.is_empty() {
+        return None;
+    }
+    let now = mr_memory::health::now();
+    let cutoff_ms: Option<u64> = match window {
+        "7d" => Some(7 * 24 * 3600 * 1000),
+        "24h" => Some(24 * 3600 * 1000),
+        "1h" => Some(3600 * 1000),
+        "10m" => Some(10 * 60 * 1000),
+        _ => None,
+    };
+    let take_n: Option<usize> = match window {
+        "last30" => Some(30),
+        "last10" => Some(10),
+        _ => None,
+    };
+    let mut sel: Vec<ReqSample> = samples
+        .iter()
+        .copied()
+        .filter(|r| match cutoff_ms {
+            Some(ms) => now.saturating_sub(r.ts) <= ms,
+            None => true,
+        })
+        .collect();
+    if let Some(n) = take_n {
+        sel = sel.split_off(sel.len().saturating_sub(n));
+    }
+
+    if sel.is_empty() {
+        return None;
+    }
+    fn avg_of(sel: &[ReqSample], f: impl Fn(&ReqSample) -> u64) -> u64 {
+        (sel.iter().map(|r| f(r) as f64).sum::<f64>() / sel.len() as f64).round() as u64
+    }
+    let avg = |f: fn(&ReqSample) -> u64| avg_of(&sel, f);
+    let ttft = avg(|r| r.ttft_ms);
+    let total = avg(|r| r.total_ms);
+    let in_tok: u64 = sel.iter().map(|r| r.in_tok).sum();
+    let cached: u64 = sel.iter().map(|r| r.cached_tok).sum();
+    let out_tok: u64 = sel.iter().map(|r| r.out_tok).sum();
+    let ok = sel.iter().filter(|r| r.ok).count();
+    let gen_ms: u64 = sel.iter().map(|r| r.total_ms.saturating_sub(r.ttft_ms)).sum();
+    let rate = if gen_ms > 0 { (out_tok as f64 * 1000.0 / gen_ms as f64).round() as u64 } else { 0 };
+    let tools_total: u32 = sel.iter().map(|r| r.tools_total).sum();
+    let tools_ok: u32 = sel.iter().map(|r| r.tools_ok).sum();
+    Some(json!({
+        "requests": sel.len(),
+        "success": ok,
+        "avg_ttft_ms": ttft,
+        "avg_total_ms": total,
+        "avg_rate_tok_s": rate,
+        "in_tok": in_tok,
+        "cached_tok": cached,
+        "cache_hit_rate": if in_tok > 0 { Some(cached as f32 / in_tok as f32) } else { None },
+        "tool_calls": {"total": tools_total, "valid_json": tools_ok},
+        "last_total_ms": sel.last().map(|r| r.total_ms),
+        "last_ttft_ms": sel.last().map(|r| r.ttft_ms),
+        "last_rate_tok_s": rate,
+        "window": window,
+    }))
+}
+
+/// 窗口聚合覆盖：把窗口视图写回 ModelStats 聚合字段（仪表盘渲染口径不变）
+fn apply_windowed(s: &mut mr_memory::flywheel::ModelStats, view: &serde_json::Value) {
+    let g = |k: &str| view.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    s.requests = g("requests");
+    s.success = g("success");
+    if let Some(v) = view.get("avg_ttft_ms").and_then(|v| v.as_u64()) {
+        s.ttft_ms_sum = v;
+        s.ttft_n = 1;
+    }
+    if let Some(v) = view.get("avg_total_ms").and_then(|v| v.as_u64()) {
+        s.total_ms_sum = v;
+        s.total_ms_n = 1;
+    }
+    if let Some(v) = view.get("avg_rate_tok_s").and_then(|v| v.as_u64()) {
+        s.last_rate_tok_s = v;
+    }
+    s.cached_tokens = g("cached_tok");
+    s.prompt_tokens = g("in_tok");
+    s.completion_tokens = view.get("avg_rate_tok_s").and_then(|v| v.as_u64()).unwrap_or(0);
+    s.tc_total = view
+        .get("tool_calls")
+        .and_then(|t| t.get("total"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    s.tc_valid_json = view
+        .get("tool_calls")
+        .and_then(|t| t.get("valid_json"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+}
+
+/// 请求处理耗时分段（流水线瀑布）：预处理/决策/上游首字/流式传输
+pub async fn api_stats_query(
+    State(st): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let window = params.get("window").cloned().unwrap_or_else(|| "overview".into());
+    api_stats_inner(&st, &window).await
+}
+
 pub async fn api_stats(State(st): State<AppState>) -> Response {
-    let stats = st.flywheel.stats();
+    api_stats_inner(&st, "overview").await
+}
+
+async fn api_stats_inner(st: &AppState, window: &str) -> Response {
+    let mut stats = st.flywheel.stats();
     let telemetry = st.flywheel.telemetry_snapshot();
+    // 窗口模式：用近期样本环折算聚合，覆盖累计口径（总览保持原样）
+    if window != "overview" {
+        for (id, tm) in telemetry.iter() {
+            if let Some(view) = windowed_view(tm, window)
+                && let Some(s) = stats.get_mut(id)
+            {
+                apply_windowed(s, &view);
+            }
+        }
+    }
     let overlays = st.engine.tier_overrides();
     let health_snap = st.health.snapshot();
     let now = mr_memory::health::now();
@@ -439,6 +562,64 @@ pub async fn api_policy_weights_set(
         })),
     )
         .into_response()
+}
+
+/// 趋势图数据源：每模型近期请求样本序列（ts/ttft/total/速率/缓存/工具）
+pub async fn api_trends(
+    State(st): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let window_ms: u64 = match params.get("window").map(|s| s.as_str()) {
+        Some("7d") => 7 * 24 * 3600 * 1000,
+        Some("1h") => 3600 * 1000,
+        Some("10m") => 10 * 60 * 1000,
+        _ => 24 * 3600 * 1000, // 默认 24h
+    };
+    let limit: usize = params
+        .get("models")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(6);
+    let now = mr_memory::health::now();
+    let telemetry = st.flywheel.telemetry_snapshot();
+    // 只取有流量的模型，按样本数排序
+    let mut entries: Vec<(String, Vec<mr_core::types::ReqSample>)> = telemetry
+        .iter()
+        .filter_map(|(id, tm)| {
+            let rec: Vec<mr_core::types::ReqSample> = tm
+                .recent
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|r| now.saturating_sub(r.ts) <= window_ms)
+                .collect();
+            if rec.is_empty() {
+                None
+            } else {
+                Some((id.clone(), rec))
+            }
+        })
+        .collect();
+    entries.sort_by_key(|(_, rec)| std::cmp::Reverse(rec.len()));
+    entries.truncate(limit);
+    let series: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|(id, rec)| {
+            json!({
+                "model": id,
+                "points": rec.iter().map(|r| json!({
+                    "ts": r.ts,
+                    "ttft": r.ttft_ms,
+                    "total": r.total_ms,
+                    "tok_s": if r.total_ms > r.ttft_ms {
+                        (r.out_tok as f64 * 1000.0 / (r.total_ms - r.ttft_ms) as f64).round() as u64
+                    } else { 0 },
+                    "cache_pct": if r.in_tok > 0 { (r.cached_tok * 100 / r.in_tok) as u8 } else { 0 },
+                    "tools_pct": if r.tools_total > 0 { (r.tools_ok * 100 / r.tools_total) as u8 } else { 0 },
+                })).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    (axum::Json(json!({"window_ms": window_ms, "series": series}))).into_response()
 }
 
 /// 配额方案注册表：按 baseUrl 匹配 provider 官方接入方案 + 用户订正

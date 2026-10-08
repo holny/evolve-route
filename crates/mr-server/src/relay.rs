@@ -50,6 +50,7 @@ pub async fn chat_completions(
     let tools_sig = tools_signature(&parsed);
     let digest = build_digest(&extracted, features.turn_count);
 
+    let decision_started = std::time::Instant::now();
     let mut decision = match &target {
         Target::Auto(alias_policy) => {
             let sticky = st.sessions.get(&sticky_key);
@@ -123,6 +124,10 @@ pub async fn chat_completions(
         Target::Direct(dec) => dec.clone(),
     };
     decision.est_input_tokens = est;
+    let decision_ms = decision_started.elapsed().as_millis() as u64;
+    let preprocess_ms = decision_started
+        .saturating_duration_since(started)
+        .as_millis() as u64;
 
     let original_choice = decision.chosen.clone();
     let is_stream = parsed.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -367,6 +372,9 @@ pub async fn chat_completions(
             translated: cross.then(|| "anthropic->openai".to_string()),
             agent: Some(agent_hdr),
             plan_key: mr_core::plans::plan_key_for(&record.base_url).map(|k| k.to_string()),
+            preprocess_ms: Some(preprocess_ms),
+            decision_ms: Some(decision_ms),
+            judge_ms: Some(decision.judge_ms),
             extra: {
                 let mut ex = json!({
                     "reason": decision.reason,
@@ -551,6 +559,9 @@ pub async fn chat_completions(
             extra: Some(json!({"reason": detail, "skipped": skipped, "filtered": decision.filtered})),
             agent: Some(crate::identity::agent_identity(&headers, &st.config.telemetry.agent_header)),
             plan_key: None,
+            preprocess_ms: None,
+            decision_ms: None,
+            judge_ms: None,
         };
         crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.quota, &st.bus, &telem);
     }
@@ -644,6 +655,7 @@ fn resolve_target(st: &AppState, model_field: &str) -> Result<Target, Response> 
             funnel: [0, 0, 0, 0],
             scored: vec![],
             weights: [0.35, 0.15, 0.25, 0.15, 0.10],
+            judge_ms: 0,
             sticky: false,
             est_input_tokens: 0,
             difficulty_eff: 0.0,

@@ -48,6 +48,8 @@ pub struct ModelStats {
     pub fb_total: u64,
     // 窗口下界推断：该模型实际接受过的最大 prompt_tokens（成功请求）
     pub max_accepted_tokens: u64,
+    // 近期请求样本环（模型动态窗口聚合 + 趋势图；cap 300 条/模型）
+    pub recent: Vec<mr_core::types::ReqSample>,
     // recency for the dashboard "最近耗时"
     pub last_seen_ms: u64,
     pub last_total_ms: u64,
@@ -152,6 +154,26 @@ impl Flywheel {
             let gen_ms = tt.saturating_sub(t0);
             if gen_ms > 50 {
                 s.last_rate_tok_s = (c * 1000 / gen_ms).min(9999);
+            }
+        }
+        // 近期请求样本环（窗口聚合 + 趋势图；cap 300 条/模型）
+        {
+            let ts = event.get("ts").and_then(|v| v.as_u64()).unwrap_or_else(now_ms);
+            let q = event.get("quality");
+            let sample = mr_core::types::ReqSample {
+                ts,
+                ttft_ms: event.get("ttft_ms").and_then(|v| v.as_u64()).unwrap_or(0),
+                total_ms: event.get("total_ms").and_then(|v| v.as_u64()).unwrap_or(0),
+                in_tok: event.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                cached_tok: event.get("cached_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                out_tok: event.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+                ok: (200..300).contains(&status),
+                tools_total: q.and_then(|qq| qq.get("tool_calls_total")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                tools_ok: q.and_then(|qq| qq.get("tool_calls_valid_json")).and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            };
+            s.recent.push(sample);
+            if s.recent.len() > 300 {
+                s.recent.remove(0);
             }
         }
         let est = event.get("est_tokens").and_then(|v| v.as_u64());
@@ -288,6 +310,7 @@ impl Flywheel {
                     learned_bias: None,
                     max_accepted,
                     samples: Some(s.requests.min(u32::MAX as u64) as u32),
+                    recent: Some(s.recent.clone()),
                 },
             );
             sampled.push((id.clone(), s.success as f32 / s.requests.max(1) as f32));

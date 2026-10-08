@@ -35,7 +35,7 @@ echo "[3/4] 重启 LaunchAgent ..."
 launchctl kickstart -k "gui/$(id -u)/$LABEL"
 
 echo "[4/4] 健康检查 ..."
-for _ in $(seq 1 10); do
+for _ in $(seq 1 25); do
     sleep 1
     code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/healthz || true)
     if [[ "$code" == "200" ]]; then

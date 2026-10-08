@@ -187,7 +187,9 @@ impl Engine {
             }
         }
 
+        let judge_started = now_epoch_ms();
         let j = self.judge.judge(&input.features, input.digest);
+        let judge_ms = now_epoch_ms().saturating_sub(judge_started);
         let relevance = j.session_relevance;
         let difficulty_eff = (j.difficulty + relevance * (j.session_depth * 0.5).max(0.0)).clamp(0.0, 3.0);
 
@@ -498,6 +500,7 @@ impl Engine {
             funnel,
         );
         decision.weights = eff_weights;
+        decision.judge_ms = judge_ms;
         decision
     }
 
@@ -545,6 +548,7 @@ impl Engine {
             difficulty_eff,
             funnel,
             weights: [0.35, 0.15, 0.25, 0.15, 0.10],
+            judge_ms: 0,
         }
     }
 }

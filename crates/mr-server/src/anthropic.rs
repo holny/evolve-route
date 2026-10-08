@@ -47,6 +47,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
     let digest = build_digest(&parsed);
     let tool_heavy = features.tool_ratio;
 
+    let decision_started = std::time::Instant::now();
     let mut decision = match &target {
         Target::Auto(alias_policy) => {
             let sticky = st.sessions.get(&sticky_key);
@@ -107,6 +108,10 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
         Target::Direct(dec) => dec.clone(),
     };
     decision.est_input_tokens = est;
+    let decision_ms = decision_started.elapsed().as_millis() as u64;
+    let preprocess_ms = decision_started
+        .saturating_duration_since(started)
+        .as_millis() as u64;
     let _ = tool_heavy;
 
     let original_choice = decision.chosen.clone();
@@ -307,6 +312,9 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
             translated: to_openai.then(|| "openai->anthropic".to_string()),
             agent: Some(agent_hdr),
             plan_key: mr_core::plans::plan_key_for(&record.base_url).map(|k| k.to_string()),
+            preprocess_ms: Some(preprocess_ms),
+            decision_ms: Some(decision_ms),
+            judge_ms: Some(decision.judge_ms),
             extra: Some(json!({
                 "reason": decision.reason,
                 "scores": decision.scores,
@@ -521,6 +529,7 @@ fn resolve_target(st: &AppState, model_field: &str) -> Result<Target, Response> 
             funnel: [0, 0, 0, 0],
             scored: vec![],
             weights: [0.35, 0.15, 0.25, 0.15, 0.10],
+            judge_ms: 0,
             sticky: false,
             est_input_tokens: 0,
             difficulty_eff: 0.0,

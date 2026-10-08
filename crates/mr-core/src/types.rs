@@ -259,6 +259,8 @@ pub struct Decision {
     pub sticky: bool,
     pub est_input_tokens: u64,
     pub difficulty_eff: f32,
+    /// 任务判定阶段耗时（决策模型 LLM 调用 + 规则融合）；粘性路径为 0
+    pub judge_ms: u64,
 }
 
 impl Decision {
@@ -422,9 +424,26 @@ pub struct ModelTelemetry {
     pub max_accepted: Option<u64>,
     /// 请求样本数（含冷启动模型）——探索目标选择用
     pub samples: Option<u32>,
+    /// 近期请求样本环（时间窗口聚合 + 趋势图）
+    pub recent: Option<Vec<ReqSample>>,
 }
 
 pub type TelemetrySnapshot = std::collections::HashMap<String, ModelTelemetry>;
+
+/// 单次请求样本（模型动态窗口聚合 + 趋势图数据源）
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct ReqSample {
+    /// 请求完成时刻（epoch ms）
+    pub ts: u64,
+    pub ttft_ms: u64,
+    pub total_ms: u64,
+    pub in_tok: u64,
+    pub cached_tok: u64,
+    pub out_tok: u64,
+    pub ok: bool,
+    pub tools_total: u32,
+    pub tools_ok: u32,
+}
 
 /// Learned quota remaining (tokens) per model, best key across pool.
 pub type QuotaView = std::collections::HashMap<String, u64>;

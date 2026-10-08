@@ -65,6 +65,23 @@ table.mx td.mxm:hover { text-decoration:underline; }
 table.mx tr.win td { color:var(--green); }
 .mxt { font-weight:bold; }
 .wheel-row.hl { animation: hlflash 2s ease-out; }
+.wf { margin:4px 0 2px; }
+.wf-bar { display:flex; height:14px; border-radius:3px; overflow:hidden; font-size:9px; color:#0d1117; }
+.wf-seg { display:flex; align-items:center; justify-content:center; min-width:2px; white-space:nowrap; overflow:hidden; }
+.wf-pre { background:#58a6ff; } .wf-dec { background:#d29922; }
+.wf-first { background:#3fb950; } .wf-stream { background:#8957e5; }
+.wf-legend { display:flex; gap:10px; font-size:10px; color:var(--dim); margin-top:3px; flex-wrap:wrap; }
+.wf-dot { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:3px; vertical-align:middle; }
+.wtabs { display:flex; gap:4px; margin-bottom:8px; flex-wrap:wrap; }
+.wtab { border:1px solid var(--border); border-radius:10px; padding:1px 10px; font-size:11px; color:var(--dim); cursor:pointer; }
+.wtab.on { background:#1c2d45; color:var(--blue); border-color:var(--blue); }
+.trend-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px; }
+.trend-box { border:1px solid var(--border); border-radius:6px; padding:6px 8px; }
+.trend-box h4 { font-size:11px; color:var(--dim); font-weight:normal; margin-bottom:4px; }
+.trend-svg { width:100%; height:90px; display:block; }
+.trend-legend { display:flex; gap:8px; flex-wrap:wrap; font-size:10px; margin-top:2px; }
+.trend-legend span { display:inline-flex; align-items:center; gap:3px; }
+.trend-legend i { width:10px; height:3px; border-radius:1px; display:inline-block; }
 @keyframes hlflash { 0% { background:#264d2b; } 100% { background:transparent; } }
 .wedit { cursor:pointer; border-bottom:1px dashed var(--dim); }
 .pw-panel { display:none; margin:6px 0; padding:8px; border:1px solid var(--border); border-radius:6px; }
@@ -94,6 +111,7 @@ table.mx tr.win td { color:var(--green); }
   <div class="grid">
     <section class="card">
       <h2><span data-i18n="dyn">模型动态</span><span class="note" data-i18n="dyn_note">有流量在前按流量排序，无流量按优先度</span></h2>
+      <div class="wtabs" id="dyn-tabs"></div>
       <table id="dyn"><thead></thead><tbody></tbody></table>
       <h3 data-i18n="health">冷却与配额窗口（上游限额头学习）</h3>
       <table id="health"><thead></thead><tbody></tbody></table>
@@ -108,6 +126,13 @@ table.mx tr.win td { color:var(--green); }
       <table id="wheel"><thead></thead><tbody></tbody></table>
     </section>
   </div>
+  <section class="card">
+    <h2 style="display:flex;justify-content:space-between;align-items:center">
+      <span data-i18n="trends_card">趋势 · 模型性能时间线</span>
+      <span class="wtabs" id="trend-tabs"></span>
+    </h2>
+    <div class="trend-grid" id="trend-grid"><div class="dim2" data-i18n="t_nodata">窗口内暂无样本</div></div>
+  </section>
   <section class="card">
     <h2 data-i18n="plan_card">配额方案</h2>
     <div class="sub" style="margin-bottom:8px" data-i18n="plan_sub">按 baseUrl 自动匹配官方接入方案 · 点击档位/窗口可订正</div>
@@ -235,6 +260,26 @@ const T = {
   d_l2: {zh:'中等', en:'moderate', ko:'보통', ja:'中程度', es:'moderada', fr:'modérée'},
   d_l3: {zh:'复杂', en:'complex', ko:'복잡', ja:'複雑', es:'compleja', fr:'complexe'},
   d_l4: {zh:'关键', en:'critical', ko:'중대', ja:'重大', es:'crítica', fr:'critique'},
+  w_pre:    {zh:'网关预处理', en:'preprocess', ko:'전처리', ja:'前処理', es:'preproceso', fr:'prétraitement'},
+  w_dec:    {zh:'路由决策', en:'routing decision', ko:'라우팅 결정', ja:'ルーティング判定', es:'decisión de ruta', fr:'décision de routage'},
+  w_first:  {zh:'上游首字', en:'first token', ko:'첫 토큰', ja:'初トークン', es:'primer token', fr:'premier jeton'},
+  w_stream: {zh:'流式传输', en:'streaming', ko:'스트리밍', ja:'ストリーミング', es:'streaming', fr:'streaming'},
+  wf_title: {zh:'⏱ 耗时分解', en:'⏱ Latency breakdown', ko:'⏱ 지연 분해', ja:'⏱ レイテンシ分解', es:'⏱ Desglose de latencia', fr:'⏱ Décomposition de latence'},
+  w_total:  {zh:'总耗时', en:'total', ko:'총', ja:'合計', es:'total', fr:'total'},
+  win_overview: {zh:'总览', en:'overview', ko:'전체', ja:'全体', es:'todo', fr:'global'},
+  win_7d: {zh:'近7天', en:'7 days', ko:'7일', ja:'7日', es:'7 días', fr:'7 jours'},
+  win_24h: {zh:'24小时', en:'24 hours', ko:'24시간', ja:'24時間', es:'24 horas', fr:'24 heures'},
+  win_1h: {zh:'1小时', en:'1 hour', ko:'1시간', ja:'1時間', es:'1 hora', fr:'1 heure'},
+  win_10m: {zh:'10分钟', en:'10 min', ko:'10분', ja:'10分', es:'10 min', fr:'10 min'},
+  win_last30: {zh:'近30次', en:'last 30', ko:'최근 30건', ja:'直近30件', es:'últimas 30', fr:'30 dernières'},
+  win_last10: {zh:'近10次', en:'last 10', ko:'최근 10건', ja:'直近10件', es:'últimas 10', fr:'10 dernières'},
+  trends_card: {zh:'趋势 · 模型性能时间线', en:'Trends · model performance timeline', ko:'추세 · 모델 성능 타임라인', ja:'トレンド · モデル性能タイムライン', es:'Tendencias · línea de tiempo', fr:'Tendances · chronologie des performances'},
+  t_ttft: {zh:'TTFT', en:'TTFT', ko:'TTFT', ja:'TTFT', es:'TTFT', fr:'TTFT'},
+  t_total: {zh:'耗时', en:'Latency', ko:'지연', ja:'レイテンシ', es:'Latencia', fr:'Latence'},
+  t_rate: {zh:'吐字速率', en:'Token rate', ko:'토큰 속도', ja:'トークン速度', es:'Velocidad', fr:'Débit'},
+  t_cache: {zh:'缓存命中', en:'Cache hit', ko:'캐시 적중', ja:'キャッシュ適中', es:'Acierto caché', fr:'Accès cache'},
+  t_tools: {zh:'工具成功率', en:'Tool success', ko:'도구 성공률', ja:'ツール成功率', es:'Éxito herramientas', fr:'Succès outils'},
+  t_nodata: {zh:'窗口内暂无样本', en:'no samples in window', ko:'윈도우에 샘플 없음', ja:'窓内サンプルなし', es:'sin muestras', fr:'aucun échantillon'},
   plan_card:  {zh:'配额方案', en:'Quota plans', ko:'쿼터 플랜', ja:'クォータプラン', es:'Planes de cuota', fr:'Plans de quota'},
   plan_sub:   {zh:'按 baseUrl 自动匹配官方接入方案 · 点击档位/窗口可订正', en:'matched by baseUrl from official docs · click tier/windows to correct', ko:'baseUrl로 공식 스킴 자동 매칭 · 등급/윈도우 클릭하여 수정', ja:'baseUrlで公式スキームを自動マッチング・ティア/窓クリックで訂正', es:'asignado por baseUrl desde docs oficiales · clic en nivel/ventanas para corregir', fr:'correspondance par baseUrl depuis les docs officielles · cliquer palier/fenêtres pour corriger'},
   plan_provider: {zh:'提供方', en:'Provider', ko:'제공자', ja:'プロバイダー', es:'Proveedor', fr:'Fournisseur'},
@@ -390,6 +435,7 @@ function causeLocal(c){
 function decisionDetail(e){
   const L = [];
   L.push('<b>'+esc(t('st_why'))+' '+esc(shortId(e.chosen))+(lang==='zh'?'？':'?')+'</b>');
+  L.push(waterfallBar(e));
   L.push(linkView(e));
   if (e.sticky) {
     push2(L, esc(t('st_sticky_1')));
@@ -426,6 +472,28 @@ function decisionDetail(e){
 function push2(L, h){ L.push('<div style="margin:1px 0">· '+h+'</div>'); }
 function diffLevel(v){
   return v < 1 ? t('d_l1') : v < 1.9 ? t('d_l2') : v < 2.6 ? t('d_l3') : t('d_l4');
+}
+function waterfallBar(e){
+  const pre = e.preprocess_ms, dec = e.decision_ms;
+  const ttft = e.ttft_ms, total = e.total_ms || 0;
+  if (pre == null && dec == null) return '';
+  const first = Math.max(0, (ttft||0) - (pre||0) - (dec||0));
+  const stream = Math.max(0, total - (ttft||0));
+  const segs = [
+    {cls:'wf-pre',   ms: pre||0,  label:t('w_pre')},
+    {cls:'wf-dec',   ms: dec||0,  label:t('w_dec')},
+    {cls:'wf-first', ms: first,   label:t('w_first')},
+    {cls:'wf-stream',ms: stream,  label:t('w_stream')},
+  ].filter(sg => sg.ms > 0);
+  if (!segs.length) return '';
+  const total2 = segs.reduce((a,s) => a+s.ms, 0);
+  const bar = segs.map(sg =>
+    '<span class="wf-seg '+sg.cls+'" style="width:'+Math.max(1.5, 100*sg.ms/total2)+'%" '+
+    'title="'+esc(sg.label)+' '+fmtMs(sg.ms)+'">'+(100*sg.ms/total2 > 14 ? fmtMs(sg.ms) : '')+'</span>').join('');
+  const legend = '<span class="wf-legend">' + segs.map(sg =>
+    '<span><i class="wf-dot '+sg.cls+'"></i>'+esc(sg.label)+' '+fmtMs(sg.ms)+'</span>').join('') +
+    '<span style="margin-left:auto">'+esc(t('w_total'))+' '+fmtMs(total2)+'</span></span>';
+  return '<div class="wf"><div class="wf-bar">'+bar+'</div>'+legend+'</div>';
 }
 function linkView(e){
   const parts = [];
@@ -542,7 +610,7 @@ function addRow(e){
   }
 }
 
-const state = { stats:{}, bench:{}, health:{}, quota:{}, policyw:null, plans:[] };
+const state = { stats:{}, bench:{}, health:{}, quota:{}, policyw:null, plans:[], trends:[], win:'overview', twin:'24h' };
 
 // 评分矩阵模型名 → 飞轮行高亮（事件委托，覆盖后续新增的矩阵单元格）
 feed.addEventListener('click', ev => {
@@ -669,6 +737,22 @@ function jumpToWheel(model){
   row.classList.add('hl');
   row.scrollIntoView({block:'center', behavior:'smooth'});
 }
+const WIN_KEYS = ['overview','7d','24h','1h','10m','last30','last10'];
+function renderTabs(el, cur, keys, onpick) {
+  el.innerHTML = keys.map(k =>
+    '<span class="wtab'+(k===cur?' on':'')+'" data-w="'+k+'">'+esc(t('win_'+k))+'</span>').join('');
+  el.querySelectorAll('.wtab').forEach(b => b.addEventListener('click', () => onpick(b.dataset.w)));
+}
+function renderDynTabs(){
+  renderTabs(document.getElementById('dyn-tabs'), state.win, WIN_KEYS, w => {
+    state.win = w; refresh();
+  });
+}
+function renderTrendTabs(){
+  renderTabs(document.getElementById('trend-tabs'), state.twin, ['24h','7d','1h','10m'], w => {
+    state.twin = w; refresh();
+  });
+}
 function renderChips(){
   const all = Object.values(state.stats);
   const reqs = all.reduce((a,s) => a+(s.requests||0), 0);
@@ -763,6 +847,52 @@ function renderPlans(){
     fetch('/api/plans', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)}).then(refresh);
   }));
 }
+const TREND_COLORS = ['#58a6ff','#3fb950','#d29922','#f85149','#8957e5','#39d2c0'];
+function trendSvg(series, pick, fmt, y0forced) {
+  const W = 260, H = 78, PAD = 4;
+  const pts = series.map(s => ({
+    model: s.model,
+    xy: s.points.map(p => ({ x: p.ts, y: pick(p) })).filter(pt => pt.y != null && isFinite(pt.y)),
+  })).filter(s => s.xy.length > 1);
+  if (!pts.length) return '<div class="dim2">'+esc(t('t_nodata'))+'</div>';
+  const all = pts.flatMap(s => s.xy.map(p => p.y));
+  let lo = y0forced != null ? y0forced : Math.min(...all);
+  let hi = Math.max(...all);
+  if (lo === hi) { hi = lo + 1; }
+  const t0 = Math.min(...pts.flatMap(s => s.xy.map(p => p.x)));
+  const t1 = Math.max(...pts.flatMap(s => s.xy.map(p => p.x))) || 1;
+  const X = x => PAD + ((x - t0) / (t1 - t0)) * (W - 2 * PAD);
+  const Y = y => PAD + (1 - (y - lo) / (hi - lo)) * (H - 2 * PAD);
+  const lines = pts.map((s, i) => {
+    const d = s.xy.map((p, j) => (j ? 'L' : 'M') + X(p.x).toFixed(1) + ',' + Y(p.y).toFixed(1)).join('');
+    const col = TREND_COLORS[i % TREND_COLORS.length];
+    return '<path d="'+d+'" fill="none" stroke="'+col+'" stroke-width="1.5"/>' +
+      '<text x="'+(W-PAD)+'" y="'+(PAD+8+i*10)+'" text-anchor="end" font-size="8" fill="'+col+'">'+
+      esc(shortId(s.model))+'</text>';
+  });
+  const yLab = v => '<text x="'+(PAD+2)+'" y="'+(Y(v)+3)+'" font-size="8" fill="var(--dim)">'+fmt(v)+'</text>';
+  return '<svg class="trend-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">' +
+    '<line x1="'+PAD+'" y1="'+Y(hi)+'" x2="'+(W-PAD)+'" y2="'+Y(hi)+'" stroke="var(--border)" stroke-dasharray="3,3"/>' +
+    '<line x1="'+PAD+'" y1="'+Y(lo)+'" x2="'+(W-PAD)+'" y2="'+Y(lo)+'" stroke="var(--border)" stroke-dasharray="3,3"/>' +
+    yLab(hi) + yLab(lo) + lines.join('') + '</svg>';
+}
+function renderTrends(){
+  const grid = document.getElementById('trend-grid');
+  if (!grid) return;
+  const metrics = [
+    {k:'ttft',  label:'t_ttft',  pick: p => p.ttft || null,  fmt: v => fmtMs(v)},
+    {k:'total', label:'t_total', pick: p => p.total || null, fmt: v => fmtMs(v)},
+    {k:'rate',  label:'t_rate',  pick: p => p.tok_s || null, fmt: v => v+' t/s'},
+    {k:'cache', label:'t_cache', pick: p => (p.tools_total ? p.cache_pct : null), fmt: v => v+'%'},
+    {k:'tools', label:'t_tools', pick: p => (p.tools_total ? p.tools_pct : null), fmt: v => v+'%'},
+  ];
+  grid.innerHTML = metrics.map(m => {
+    const chart = trendSvg(state.trends, m.pick, m.fmt, m.k === 'cache' || m.k === 'tools' ? 0 : null);
+    const legend = '<div class="trend-legend">'+state.trends.map((s, i) =>
+      '<span><i style="background:'+TREND_COLORS[i % TREND_COLORS.length]+'"></i>'+esc(shortId(s.model))+'</span>').join('')+'</div>';
+    return '<div class="trend-box"><h4>'+esc(t(m.label))+'</h4>'+chart+legend+'</div>';
+  }).join('');
+}
 function renderPwPanel(){
   const panel = document.getElementById('pw-panel');
   if (panel.style.display !== 'block') return;
@@ -792,20 +922,26 @@ document.getElementById('pw-btn').addEventListener('click', () => {
 
 async function refresh(){
   try {
-    const [statsR, healthR, quotaR, benchR, pwR, plansR] = await Promise.all([
-      fetch('/api/stats'), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks'),
-      fetch('/api/policy-weights'), fetch('/api/plans')]);
+    const [statsR, healthR, quotaR, benchR, pwR, plansR, trendsR] = await Promise.all([
+      fetch('/api/stats?window='+encodeURIComponent(state.win)), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks'),
+      fetch('/api/policy-weights'), fetch('/api/plans'),
+      fetch('/api/trends?window='+encodeURIComponent(state.twin))]);
     state.stats  = (await statsR.json()).models  || {};
     state.health = (await healthR.json()).models || {};
     state.quota  = (await quotaR.json()).windows || {};
     state.bench  = (await benchR.json()) || {};
     state.policyw = (await pwR.json()) || {};
     state.plans  = (await plansR.json()).providers || [];
+    state.trends = (await trendsR.json()).series || [];
     renderPlans();
+    renderTrends();
     renderChips();
+    renderDynTabs();
+    renderTrendTabs();
     renderDyn();
     renderHealthQuota();
     renderWheel();
+    renderTrends();
   } catch(_){}
 }
 
