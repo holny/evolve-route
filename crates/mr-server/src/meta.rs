@@ -625,10 +625,21 @@ pub async fn api_trends(
 /// Provider 管理列表：内置注册表 + 扫描发现 + 手动定义，合并展示
 pub async fn api_providers(State(st): State<AppState>) -> Response {
     let ov = crate::state::load_overrides(&st.config.data.dir);
+    let budgets = st.plan_budgets.lock().map(|b| b.clone()).unwrap_or_default();
+    let soft_pct = st.config.policy.plan_soft_pct;
+    let sums = st.quota.plan_usage_sums(mr_memory::health::now(), 5 * 3600 * 1000);
+    let health_snap = st.health.snapshot();
+    let now_ms = mr_memory::health::now();
     let mut out: Vec<Value> = Vec::new();
     // 1. 手动定义的（最优先——用户自己加的）
     for (key, pd) in &ov.providers {
         if pd.disabled { continue; }
+        // 手动也查用量（base_url 匹配的模型消耗合计）
+        let used = st.engine.catalog.models.iter()
+            .filter(|m| m.base_url == pd.base_url)
+            .filter_map(|m| sums.get(&m.id))
+            .map(|(i, c, o)| mr_core::plans::plan_credits_used(&pd.base_url, "", *i, *c, *o))
+        .sum::<f64>();
         out.push(json!({
             "key": key, "source": "manual",
             "base_url": pd.base_url, "protocol": pd.protocol,
@@ -638,6 +649,8 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
             "model_rates": pd.model_rates,
             "fetched_models": pd.fetched_models,
             "has_key": pd.api_key.is_some(),
+            "used_5h": (used * 100.0).round() / 100.0,
+            "soft_pct": soft_pct,
         }));
     }
     // 2. 目录里实际存在的（扫描+内置合并，去重手动已有的 base_url）
@@ -647,18 +660,50 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
         if manual_urls.iter().any(|u| *u == m.base_url) { continue; }
         if !seen_providers.insert(m.base_url.clone()) { continue; }
         let profile = mr_core::plans::plan_for(&m.base_url);
-        let pov = ov.plans.get(&format!("payg:{}", m.provider));
-        let key = format!("discovered:{}", m.provider);
+        let plan_key = profile.map(|p| p.key.to_string()).unwrap_or_default();
+        let pov = ov.plans.get(&plan_key);
+        let tier = pov.and_then(|p| p.tier.clone())
+            .unwrap_or_default();
+        let allowance_5h = budgets.get(&plan_key).copied();
+        // 用量：该 base_url 下所有模型的 5h 积分合计（逐模型按各自系数折算）
+        let models_at_url: Vec<&mr_core::types::ModelRecord> = st.engine.catalog.models.iter()
+            .filter(|x| x.base_url == m.base_url)
+            .collect();
+        let used: f64 = models_at_url.iter()
+            .filter_map(|mm| {
+                sums.get(&mm.id).map(|(i, c, o)| {
+                    mr_core::plans::plan_credits_used(&mm.base_url, &mm.id, *i, *c, *o)
+                })
+            })
+            .sum();
+        // 下次窗口重置：组内模型的健康冷却取最近
+        let next_reset = health_snap.iter()
+            .filter(|(k, h)| {
+                let km = k.split('\u{1f}').next().unwrap_or(k);
+                models_at_url.iter().any(|mm| mm.id == *km)
+            })
+            .filter(|(_, h)| matches!(h.kind, mr_core::types::HealthKind::QuotaExhausted | mr_core::types::HealthKind::RateLimited))
+            .filter_map(|(_, h)| h.until_epoch_ms.filter(|u| *u > now_ms))
+            .min();
+        let model_ids: Vec<&str> = models_at_url.iter().map(|mm| mm.id.as_str()).collect();
         out.push(json!({
-            "key": key, "source": "discovered",
+            "key": format!("discovered:{}", m.provider), "source": "discovered",
             "base_url": m.base_url, "protocol": if m.protocol == mr_core::types::Protocol::Anthropic { "anthropic" } else { "openai" },
             "plan_kind": profile.map(|p| p.plan_kind).unwrap_or("api"),
             "docs_url": profile.map(|p| p.docs_url).unwrap_or(""),
-            "tier": pov.and_then(|p| p.tier.clone()).unwrap_or_default(),
-            "windows": {"5h": profile.and_then(|_| ov.providers.get(&m.provider).and_then(|p| p.window_5h)), "weekly": null, "monthly": null},
+            "tier": tier,
+            "windows": {
+                "5h": allowance_5h,
+                "weekly": None::<f64>,
+                "monthly": None::<f64>,
+            },
             "model_rates": profile.map(|p| p.model_rates).unwrap_or(""),
-            "model_count": st.engine.catalog.models.iter().filter(|x| x.base_url == m.base_url).count(),
+            "model_count": model_ids.len(),
+            "models": model_ids,
             "has_key": m.has_credential(),
+            "used_5h": if used > 0.0 { (used * 100.0).round() / 100.0 } else { 0.0 },
+            "soft_pct": soft_pct,
+            "next_reset_epoch_ms": next_reset,
         }));
     }
     (axum::Json(json!({"providers": out}))).into_response()

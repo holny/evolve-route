@@ -863,6 +863,26 @@ function renderProviders(){
     const tShow = tName !== '-';
     const tVal = (p.allowance != null ? Math.round(p.allowance) : '-') + (p.allowance != null ? ' / 5h' : '');
     const fetch = p.fetched_models || p.model_count || 0;
+    // 配额展示：5h 额度 + 已用 + 进度条 + 下次重置
+    const allowance = (p.windows && p.windows['5h']) || p.allowance;
+    const used = p.used_5h || 0;
+    const soft = p.soft_pct || 60;
+    let budgetHtml = '';
+    if (allowance != null && allowance > 0) {
+      const pct = Math.min(100, Math.round(100 * used / allowance));
+      const over = pct >= soft;
+      const col = pct >= 90 ? 'var(--red)' : over ? 'var(--amber)' : 'var(--green)';
+      const reset = p.next_reset_epoch_ms
+        ? '<span class="la f" style="margin-left:6px">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(p.next_reset_epoch_ms))+'</span>'
+        : '';
+      budgetHtml = '<div style="margin-top:6px;max-width:400px">'
+        + '<div style="display:flex;justify-content:space-between;font-size:11px;gap:6px">'
+        + '<span style="color:'+col+'">'+pct+'%</span>'
+        + '<span class="dim2">'+used+' / '+allowance+' (5h)</span></div>'
+        + '<div style="height:4px;background:#21262d;border-radius:2px;margin-top:2px">'
+        + '<div style="width:'+pct+'%;height:4px;background:'+col+';border-radius:2px"></div></div>'
+        + reset + '</div>';
+    }
     const summary = tName === '-' ? '' : ' <span class="dim2">('+esc(tName)+' · '+esc(tVal)+')</span>';
     return '<div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px'+(p.disabled?';opacity:.5':'')+'">'
       + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
@@ -878,7 +898,9 @@ function renderProviders(){
       + '</div>'
       + '<div class="dim2" style="margin-top:4px;font-size:11px">'
       +   esc(p.base_url || '') + ' · ' + esc(p.protocol || 'openai') + ' · ' + fetch + ' models'
-      + '</div></div>';
+      + '</div>'
+      + budgetHtml
+      + '</div>';
   }).join('');
   cont.querySelectorAll('[data-pv-edit]').forEach(b => b.addEventListener('click', () => openProviderDrawer(b.dataset.pvEdit, b.dataset.pvSource === 'manual')));
   cont.querySelectorAll('[data-pv-del]').forEach(b => b.addEventListener('click', () => confirmDeleteProvider(b.dataset.pvDel)));

@@ -269,7 +269,7 @@ pub fn credit_multipliers(base_url: &str, model_id: &str) -> Option<(f64, f64, f
     let p = plan_for(base_url)?;
     let m = model_id.to_lowercase();
     match p.key {
-        "zhipu-coding" | "zai-devpack" => {
+        "zhipu-coding" | "zai-devpack" | "minimax-coding" => {
             if m.contains("flash") { Some((2.3, 0.56, 8.0)) } else { Some((6.9, 1.7, 24.0)) }
         }
         "volces-coding" | "volces-agent" => {
