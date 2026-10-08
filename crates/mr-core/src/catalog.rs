@@ -86,6 +86,11 @@ impl Catalog {
             if m.currency.is_empty() {
                 m.currency = infer_currency(&m.provider).to_string();
             }
+            // 订阅方案自动标记：baseUrl 命中积分制/订阅接入（Coding/Agent/Go Plan）
+            // 的模型默认 plan=true —— 成本因子才能按官方系数折算配额消耗速率
+            if !m.plan && crate::plans::plan_for(&m.base_url).is_some() {
+                m.plan = true;
+            }
         }
         let index = models.iter().enumerate().map(|(i, m)| (m.id.clone(), i)).collect();
         Self { models, index }

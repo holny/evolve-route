@@ -1,4 +1,5 @@
 use crate::types::*;
+use std::collections::HashMap;
 
 pub use crate::types::CandidateScore;
 
@@ -75,12 +76,19 @@ pub fn score_all(
         .iter()
         .filter_map(|m| m.cost.map(|_| blended_price(m, est_input, est_output)))
         .fold(f32::MAX, f32::min);
-    // 订阅模型配额消耗强度（官方系数折算）：方案内 flash≈1.0，旗舰 3-9 倍
-    let min_plan_hint = candidates
-        .iter()
-        .filter(|m| m.plan)
-        .filter_map(|m| crate::plans::model_price_hint(&m.base_url, &m.id))
-        .fold(f32::MAX, f32::min);
+    // 订阅模型配额消耗强度（官方系数折算）：**按方案分组取最小**——
+    // 不同方案的系数不可比（智谱积分 vs Go 美元），全局取最小会稀释基准
+    let mut hints: HashMap<&str, f32> = HashMap::new();
+    let mut scheme_min: HashMap<String, f32> = HashMap::new();
+    for m in candidates.iter().filter(|m| m.plan) {
+        if let Some(h) = crate::plans::model_price_hint(&m.base_url, &m.id) {
+            hints.insert(m.id.as_str(), h);
+            let key = crate::plans::plan_key_for(&m.base_url)
+                .unwrap_or(m.base_url.as_str())
+                .to_string();
+            scheme_min.entry(key).and_modify(|v| *v = v.min(h)).or_insert(h);
+        }
+    }
 
     candidates
         .iter()
@@ -94,11 +102,14 @@ pub fn score_all(
             let c = if m.plan {
                 // 订阅套餐：配额内边际成本≈0，但配额消耗速率按官方系数折算
                 // （同方案内旗舰烧配额是轻量模型的数倍——简单任务便宜模型胜出）
-                match crate::plans::model_price_hint(&m.base_url, &m.id) {
-                    Some(hint) if min_plan_hint.is_finite() && min_plan_hint > 0.0 => {
-                        (min_plan_hint / hint.max(1e-6)).clamp(0.05, 1.0)
+                match hints.get(m.id.as_str()) {
+                    Some(hint) => {
+                        let key = crate::plans::plan_key_for(&m.base_url)
+                            .unwrap_or(m.base_url.as_str());
+                        let min = scheme_min.get(key).copied().unwrap_or(*hint);
+                        (min / hint.max(1e-6)).clamp(0.05, 1.0)
                     }
-                    _ => 1.0,
+                    None => 1.0,
                 }
             } else {
                 match m.cost {
