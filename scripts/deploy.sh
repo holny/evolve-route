@@ -25,7 +25,11 @@ if [[ "${1:-}" != "--no-build" ]]; then
 fi
 
 echo "[2/4] 部署到 $BIN_DST ..."
+# 原地 cp 覆盖已签名二进制 → macOS 代码签名失效 → exec 被 SIGKILL。
+# 必须 rm（换 inode）+ codesign 临时重签
+rm -f "$BIN_DST"
 cp "$BIN_SRC" "$BIN_DST"
+codesign --force --sign - "$BIN_DST" 2>/dev/null || true
 
 echo "[3/4] 重启 LaunchAgent ..."
 launchctl kickstart -k "gui/$(id -u)/$LABEL"
