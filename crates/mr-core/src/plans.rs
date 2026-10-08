@@ -1,9 +1,14 @@
 //! Provider 配额方案注册表（按 baseUrl 匹配）。
 //! 数值来源：各 provider 官方文档（2026-10 录入，可在面板订正）：
 //! - 智谱 GLM Coding Plan  https://docs.bigmodel.cn/cn/coding-plan/overview
+
+
+
+
 //! - z.ai Devpack          https://docs.z.ai/devpack/overview
 //! - OpenCode Go           https://opencode.ai/docs/go/
 //! - 火山方舟 Coding/Agent Plan https://docs.volcengine.com/docs/ark/coding-plan-personal-plan-overview
+use crate::types::{ReqSample, Tiers};
 pub struct PlanProfile {
     /// overrides 键 / 面板分组键
     pub key: &'static str,
@@ -23,6 +28,9 @@ pub struct PlanProfile {
     pub plan_kind: &'static str,
     /// 档位→5h 窗口额度（积分制方案），语言中立 "tier|credits" 行
     pub tier_allowances: &'static str,
+    /// 套餐内已知模型的默认 tier 估值（覆盖 discovery 通用低估）
+    /// 格式 "model|coding,reasoning,vision,agentic" 多行
+    pub tier_default: &'static str,
     /// 模型倍率/系数表：每行 "name|v1|v2|v3|v4"（列含义见 rates_kind）
     pub model_rates: &'static str,
     /// rates_kind: credits（输入/缓存/输出积分系数）| dollar（输入$/缓存读$/输出$/月限$）| afp（输入/输出 AFP 系数）
@@ -43,6 +51,22 @@ impl std::fmt::Debug for PlanProfile {
 
 pub const REGISTRY: &[PlanProfile] = &[
     PlanProfile {
+        key: "minimax-coding",
+        url_match: "api.minimax.cn/v1",
+        provider: "minimax",
+        scheme_key: "scheme_credits5h",
+        windows: "5h Coding Plan 积分窗口（M3/M2.7 等订阅额度内）",
+        models_note: "编码套餐内 token 折算额度（具体积分见 MiniMax 控制台/Coding Plan 文档），非高峰时段更优。套餐与 Zhipu/Volces Coding Plan 同类（按量按 plan 档位限速）",
+        docs_url: "https://platform.minimax.io/docs/coding-plan",
+        tiers: "lite / pro / max",
+        tier_allowances: "lite|4000\npro|16000\nmax|40000",
+        tier_default: "MiniMax-M3|0.9,0.85,0.85,0.9\nMiniMax-M2.7|0.78,0.65,0.85,0.75\nMiniMax-M2.7-highspeed|0.78,0.65,0.85,0.75",
+        model_rates: "MiniMax-M3|6.9|1.7|24\nMiniMax-M2.7|2.3|0.56|8\nMiniMax-M2.7-highspeed|2.3|0.56|8",
+        rates_kind: "credits",
+        rates_note: "积分系数（输入/缓存命中/输出）· 消耗=(入+缓存+出)×系数/1万 · 同智谱/z.ai 编码套餐口径",
+        plan_kind: "coding",
+    },
+    PlanProfile {
         key: "zhipu-coding",
         url_match: "open.bigmodel.cn/api/coding",
         provider: "zhipu",
@@ -52,6 +76,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         docs_url: "https://docs.bigmodel.cn/cn/coding-plan/overview",
         tiers: "lite / pro / max",
         tier_allowances: "lite|2000\npro|12000\nmax|28000",
+        tier_default: "GLM-5.3-Flash|0.85,0.7,0.85,0.85\nGLM-5.3|0.95,0.85,0.85,0.95",
         model_rates: "GLM-5.3|6.9|1.7|24\nGLM-5.3-Flash|2.3|0.56|8",
         rates_kind: "credits",
         rates_note: "积分系数（输入/缓存命中/输出）· 消耗=(入+缓存+出)×系数/1万 · 非高峰(工作日14-18 UTC+8之外)5折",
@@ -67,6 +92,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         docs_url: "https://docs.z.ai/devpack/overview",
         tiers: "lite / pro / max",
         tier_allowances: "lite|2000\npro|12000\nmax|28000",
+        tier_default: "GLM-5.3-Flash|0.85,0.7,0.85,0.85\nGLM-5.3|0.95,0.85,0.85,0.95",
         model_rates: "GLM-5.3|6.9|1.7|24\nGLM-5.3-Flash|2.3|0.56|8",
         rates_kind: "credits",
         rates_note: "credit multipliers (input/cached/output) · usage=(sum×k)/10k · off-peak 50% (peak=Mon-Fri 14-18 UTC+8)",
@@ -82,6 +108,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         docs_url: "https://opencode.ai/docs/go/",
         tiers: "go / go-plus",
         tier_allowances: "",
+    tier_default: "",
         model_rates: "glm-5.3-flash|0.15|0.03|0.50|$60\nglm-5.3|1.40|0.26|4.40|$15\nglm-5.2|1.40|0.26|4.40|$60\nkimi-k3|3.00|0.30|15.00|$15\nkimi-k2.7-code|0.95|0.19|4.00|$60\nminimax-m3|0.30|0.06|1.20|$60\nminimax-m2.7|0.30|0.06|1.20|$60\ndeepseek-v4-pro|0.66|0.022|1.98|$15\ndeepseek-v4-flash|0.15|0.003|0.60|$30\nqwen3.8-max|2.00|0.25|6.00|$15\nqwen3.8-flash|0.15|0.016|0.47|$30\nqwen3.7-plus|0.40|0.04|1.60|$60\ngpt-6-luna|0.10|0.01|0.50|$15\nlongcat-2.0|0.30|0.006|1.20|$60\nlongcat-2.5-preview-free|0|0|0|Unlimited",
         rates_kind: "dollar",
         rates_note: "$/1M tokens (input / cached-read / output) · Go 档月限，Plus 限额更高(Flash $180/5.3 $120…) · 5h=月20% 周=50%",
@@ -97,6 +124,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         docs_url: "https://docs.volcengine.com/docs/ark/coding-plan-personal-plan-overview?lang=zh",
         tiers: "lite / pro",
         tier_allowances: "",
+        tier_default: "",
         model_rates: "doubao-seed-2.0-mini|0.25|0.25\ndeepseek-v4-flash|0.5|0.5\ndoubao-seed-2.1-lite|0.5|0.5\nglm-5.3-flash|0.5|0.5\ndoubao-seed-evolving|2.5|2.5\nminimax-m3|2.5|2.5\ndoubao-seed-2.1-pro|2.5|2.5\nkimi-k2.7-code|4.5|4.5\nglm-5.3|4.5|4.5\ndeepseek-v4.1-flash|2.5|2.5\ndeepseek-v4-pro|5.5|5.5\nkimi-k3|10|10",
         rates_kind: "afp",
         rates_note: "AFP 系数（输入/输出）· 消耗=(入×系+出×系)/1万 · Auto=1(活动期) · deepseek-v4.1-flash 5折(活动期) · Coding Plan 抵扣以控制台为准",
@@ -112,6 +140,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         docs_url: "https://www.volcengine.com/docs/82379/1502001",
         tiers: "见官方活动页",
         tier_allowances: "",
+        tier_default: "",
         plan_kind: "agent",
         model_rates: "auto|0.5|0.5\ndeepseek-v4.1-flash|2.5(活动5折)|2.5(活动5折)\nkimi-k2.8-preview|8(活动6折)|8(活动6折)\nkimi-k3|10|10\nglm-5.3|4.5|4.5\nglm-5.3-flash|0.5|0.5\nminimax-m3|2.5|2.5\ndeepseek-v4-pro|5.5|5.5",
         rates_kind: "afp",
@@ -134,6 +163,7 @@ pub const PAYG: PlanProfile = PlanProfile {
     model_rates: "",
     rates_kind: "",
     rates_note: "",
+    tier_default: "",
 };
 
 pub fn plan_for(base_url: &str) -> Option<&'static PlanProfile> {
@@ -241,6 +271,33 @@ pub fn plan_credits_used(base_url: &str, model_id: &str, in_tok: f64, cached_tok
         Some((ki, kc, ko)) => (in_tok * ki + cached_tok * kc + out_tok * ko) / 10_000.0,
         None => 0.0,
     }
+}
+
+/// 套餐已知模型的真实 tier 估值：从 tier_default 解析 "model|coding,reasoning,vision,agentic" 多行
+/// 找不到则返回 Tiers::default()（保留 discovery 值）
+pub fn tier_value_for(profile: &PlanProfile, model_id: &str) -> Tiers {
+    if profile.tier_default.is_empty() {
+        return Tiers::default();
+    }
+    let m = model_id.to_lowercase();
+    for line in profile.tier_default.split("\n") {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some((name, rest)) = line.split_once('|') {
+            if m.contains(name.trim().to_lowercase().as_str()) {
+                let p: Vec<f32> = rest
+                    .split(',')
+                    .filter_map(|s| s.trim().parse::<f32>().ok())
+                    .collect();
+                if p.len() >= 4 {
+                    return Tiers { reasoning: p[0], coding: p[1], vision: p[2], agentic: p[3] };
+                }
+            }
+        }
+    }
+    Tiers::default()
 }
 
 /// 按模型 id（provider/model 全名）折算积分消耗——子串匹配注册表 baseUrl

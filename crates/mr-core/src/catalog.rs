@@ -64,11 +64,18 @@ impl Catalog {
             .collect();
         let user_ids: Vec<&str> = user.iter().map(|m| m.id.as_str()).collect();
         let mut models: Vec<ModelRecord> = Vec::new();
-        for d in discovered {
+        for mut d in discovered {
             if d.provider == "modelroute" {
                 continue;
             }
             if !user_ids.contains(&d.id.as_str()) {
+                // 套餐级 tier 估值覆盖：user 未显式设 tiers 时用套餐默认——
+                // 修正 discovery 通用低估（zhipu flash 0.6 → 0.85 等）
+                if !d.tiers_explicit
+                    && let Some(p) = crate::plans::plan_for(&d.base_url)
+                {
+                    d.tiers = crate::plans::tier_value_for(p, &d.id);
+                }
                 models.push(d);
             }
         }
