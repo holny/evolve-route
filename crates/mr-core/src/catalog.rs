@@ -69,12 +69,14 @@ impl Catalog {
                 continue;
             }
             if !user_ids.contains(&d.id.as_str()) {
-                // 套餐级 tier 估值覆盖：user 未显式设 tiers 时用套餐默认——
-                // 修正 discovery 通用低估（zhipu flash 0.6 → 0.85 等）
+                // 全局模型能力表覆盖（用户裁决：能力按模型名，与 provider 无关）：
+                // user 未显式设 tiers 时，按 upstream_model（优先）/id 匹配
+                // MODEL_TIERS——修正 discovery 通用低估（所有 coding 0.6）
                 if !d.tiers_explicit
-                    && let Some(p) = crate::plans::plan_for(&d.base_url)
+                    && let Some(t) = crate::plans::tier_for_model(&d.upstream_model)
+                        .or_else(|| crate::plans::tier_for_model(&d.id))
                 {
-                    d.tiers = crate::plans::tier_value_for(p, &d.id);
+                    d.tiers = t;
                 }
                 models.push(d);
             }
