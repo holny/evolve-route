@@ -721,7 +721,6 @@ pub async fn api_providers_set(
                 fetched = ids.len();
                 if let Some(e) = ov.providers.get_mut(&key) { e.fetched_models = ids; }
                 crate::state::save_overrides(dir, &ov);
-            }
         }
     }
     (axum::Json(json!({"status": "ok", "key": key, "fetched_models": fetched}))).into_response()
