@@ -832,7 +832,14 @@ const TIER_PRESETS = {
   'volces-coding': {'lite':[null,null,null],'pro':[null,null,null]},
 };
 function applyTierPreset(planKind, tier, fields){
-  const p = TIER_PRESETS[planKind] && TIER_PRESETS[planKind][tier];
+  // 套餐下拉值（coding/agent/go/api）→ 匹配 TIER_PRESETS 键（含该值的所有套餐）
+  let p = null;
+  for (const key of Object.keys(TIER_PRESETS)) {
+    if (key.includes(planKind) && TIER_PRESETS[key][tier]) {
+      p = TIER_PRESETS[key][tier];
+      break;
+    }
+  }
   if (!p) return;
   fields.w5h.value = p[0] != null ? p[0] : '';
   fields.wweek.value = p[1] != null ? p[1] : '';
@@ -992,74 +999,6 @@ function refreshProvider(){
 document.getElementById('pv-add-btn').addEventListener('click', () => openProviderDrawer('', true));
 document.getElementById('pv-refresh-all-btn').addEventListener('click', refreshAllProviders);
 function renderPlans(){ renderProviders(); }
-function renderPwPanel(){
-  const tb = document.querySelector('#plans tbody');
-  const schemeName = s => s && s.startsWith('scheme_') ? t(s) : esc(s || '-');
-  const rows = (state.plans||[]).map(p => {
-    const docs = p.docs_url
-      ? '<a href="'+esc(p.docs_url)+'" target="_blank" rel="noopener" style="color:var(--blue)">'+t('plan_docs')+'↗</a>'
-      : '<span class="dim2">-</span>';
-    const pkLabel = t(PK_LABEL[p.plan_kind] || 'pk_api');
-    const reset = p.next_reset_epoch_ms
-      ? '<div class="la f" style="margin:2px 0 0">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(p.next_reset_epoch_ms))+'</div>'
-      : '';
-    const usedCell = (() => {
-      if (p.allowance == null) return '<span class="dim2">-</span>';
-      const used = p.used_5h || 0;
-      const pct = Math.min(100, Math.round(100*used/p.allowance));
-      const soft = p.soft_pct || 60;
-      const over = pct >= soft;
-      const col = pct >= 90 ? 'var(--red)' : over ? 'var(--amber)' : 'var(--green)';
-      return '<div style="min-width:120px"><div style="display:flex;justify-content:space-between;gap:6px">'+
-        '<span style="color:'+col+'">'+pct+'%</span><span class="dim2">'+used+'/'+p.allowance+'</span></div>'+
-        '<div style="height:3px;background:#21262d;border-radius:2px;margin-top:2px"><div style="width:'+pct+'%;height:3px;background:'+col+';border-radius:2px"></div></div>'+
-        (over ? '<div class="la f" style="margin-top:2px">'+esc(t('plan_over_soft'))+'</div>' : '')+
-        '</div>';
-    })();
-    const hasRates = !!(p.model_rates && p.rates_kind && RATE_COLS[p.rates_kind]);
-    const ratesCell = hasRates
-      ? '<span class="wedit rates-toggle" data-pidx="'+p.key+'">📋 '+esc(t('r_toggle'))+'</span>'
-      : '<span class="dim2">-</span>';
-    let ratesRow = '';
-    if (hasRates) {
-      const cols = RATE_COLS[p.rates_kind];
-      const lines = (p.model_rates||'').split('\n').filter(Boolean).map(l => l.split('|'));
-      ratesRow = '<tr class="rates-row" data-ridx="'+p.key+'" style="display:none"><td colspan="8" style="padding:4px 10px">' +
-        '<table class="mx" style="margin:2px 0"><tr>' +
-        cols.map(c => '<th>'+esc(t(c[1]))+'</th>').join('') + '</tr>' +
-        lines.map(cells => '<tr>' + cols.map((c, i) => '<td'+(i===0?' class="mxm" style="cursor:default;color:var(--fg)"':'')+'>'+esc(cells[i]||'')+'</td>').join('') + '</tr>').join('') +
-        '</table><div class="dim2">'+esc(p.rates_note||'')+'</div></td></tr>';
-    }
-    return '<tr data-pkey="'+esc(p.key)+'">' +
-      '<td>'+esc(p.provider)+' <span class="pbadge" title="'+esc(pkLabel)+'">'+esc(PK_SHORT[p.plan_kind]||'API')+'</span></td>' +
-      '<td data-pedit="scheme" title="'+esc(t('plan_sub'))+'" class="wedit">'+schemeName(p.scheme)+'</td>' +
-      '<td data-pedit="windows" class="wedit" style="max-width:340px">'+esc(p.windows)+reset+'</td>' +
-      '<td style="max-width:280px" class="dim2">'+esc(p.models_note||'-')+'</td>' +
-      '<td class="num">'+usedCell+'</td>' +
-      '<td class="num">'+(p.models? p.models.length : 0)+'</td>' +
-      '<td data-pedit="tier" class="wedit" title="'+esc(t('plan_edit_tier'))+'">'+esc(p.tier||'-')+'</td>' +
-      '<td>'+ratesCell+'</td><td>'+docs+'</td></tr>' + ratesRow;
-  });
-  tb.innerHTML = rows.join('') || '<tr><td colspan="8" style="color:var(--dim)">-</td></tr>';
-  tb.querySelectorAll('.rates-toggle').forEach(el => el.addEventListener('click', () => {
-    const row = tb.querySelector('.rates-row[data-ridx="'+el.dataset.pidx+'"]');
-    if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
-  }));
-  tb.querySelectorAll('[data-pedit]').forEach(el => el.addEventListener('click', () => {
-    const key = el.closest('tr').dataset.pkey;
-    const field = el.dataset.pedit;
-    const cur = (state.plans||[]).find(p => p.key === key);
-    const msg = field === 'tier' ? t('plan_edit_tier') : t('plan_edit_win');
-    const def = field === 'tier'
-      ? ((cur && cur.tier) || (cur && cur.tiers) || '')
-      : ((cur && cur.windows) || '');
-    const v = prompt(msg+'\n'+key, def);
-    if (v == null) return;
-    const body = {key};
-    body[field] = v;
-    fetch('/api/plans', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)}).then(refresh);
-  }));
-}
 const TREND_COLORS = ['#58a6ff','#3fb950','#d29922','#f85149','#8957e5','#39d2c0'];
 function trendSvg(series, pick, fmt, y0forced) {
   const W = 260, H = 78, PAD = 4;
