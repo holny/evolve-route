@@ -424,6 +424,10 @@ pub struct ModelTelemetry {
     pub max_accepted: Option<u64>,
     /// 请求样本数（含冷启动模型）——探索目标选择用
     pub samples: Option<u32>,
+    /// 近 30 次请求实测可靠性（≥5 样本有效）——路由修正权重 30%
+    pub rel_30: Option<f32>,
+    /// 近 10 次请求实测可靠性（≥3 样本有效）——路由修正权重 20%
+    pub rel_10: Option<f32>,
     /// 近期请求样本环（时间窗口聚合 + 趋势图）
     pub recent: Option<Vec<ReqSample>>,
 }

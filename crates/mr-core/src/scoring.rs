@@ -120,11 +120,20 @@ pub fn score_all(
                     None => 0.5,
                 }
             };
-            let r = telemetry
-                .get(&m.id)
-                .and_then(|t| t.reliability)
-                .unwrap_or(0.7)
-                .clamp(0.0, 1.0);
+            // 可靠性分层融合（用户裁决：近30/10 比较重要但非主参考）：
+            // 长期基线 50% + 近30次 30% + 近10次 20%，缺层权重归并——
+            // 持续性劣化与瞬时抖动分层感知，单次故障不过度反应
+            let t = telemetry.get(&m.id);
+            let r_long = t.and_then(|x| x.reliability).unwrap_or(0.7).clamp(0.0, 1.0);
+            let r30 = t.and_then(|x| x.rel_30);
+            let r10 = t.and_then(|x| x.rel_10);
+            let r = match (r30, r10) {
+                (Some(a), Some(b)) => 0.5 * r_long + 0.3 * a + 0.2 * b,
+                (Some(a), None) => 0.6 * r_long + 0.4 * a,
+                (None, Some(b)) => 0.7 * r_long + 0.3 * b,
+                (None, None) => r_long,
+            }
+            .clamp(0.0, 1.0);
             let h = m
                 .context_window
                 .map(|w| ((w as f64 - est_input as f64 - est_output as f64) / w as f64).clamp(0.0, 1.0) as f32)
@@ -243,5 +252,31 @@ mod difficulty_cost_tests {
         let mid = difficulty_weights(&PolicyWeights::balanced(), 1.5)[2];
         let hi = difficulty_weights(&PolicyWeights::balanced(), 3.0)[2];
         assert!(lo > mid && mid > hi, "lo={lo} mid={mid} hi={hi}");
+    }
+}
+
+#[cfg(test)]
+mod layered_reliability_tests {
+    use super::*;
+
+    /// 融合公式：三层全在 5:3:2；缺层归并
+    #[test]
+    fn fusion_weights() {
+        let f = |rel30: Option<f32>, rel10: Option<f32>| {
+            let r_long = 0.8;
+            match (rel30, rel10) {
+                (Some(a), Some(b)) => 0.5 * r_long + 0.3 * a + 0.2 * b,
+                (Some(a), None) => 0.6 * r_long + 0.4 * a,
+                (None, Some(b)) => 0.7 * r_long + 0.3 * b,
+                (None, None) => r_long,
+            }
+        };
+        // 基线 0.8 + 近层全 1.0 → 0.5×0.8+0.3+0.2 = 0.9（近层拉回但不淹没基线）
+        assert!((f(Some(1.0), Some(1.0)) - 0.9).abs() < 1e-5);
+        // 近窗骤降会拉低但不淹没长期基线（0.8 基线 + 近10全败）
+        let v = f(Some(0.8), Some(0.0));
+        assert!(v < 0.8 && v > 0.5, "v={v}");
+        // 全缺 → 纯长期
+        assert!((f(None, None) - 0.8).abs() < 1e-5);
     }
 }

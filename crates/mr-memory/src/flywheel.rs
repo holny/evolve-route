@@ -64,6 +64,28 @@ struct FlywheelInner {
     dirty: bool,
 }
 
+/// 分层窗口可靠性（三重约束）：样本时间 ≤ 回溯期限（不能太老）、
+/// 条数 ≤ take、条数 ≥ min（不能太新——不足则弃用回落上层）
+fn rel_window(
+    recent: &[mr_core::types::ReqSample],
+    take: usize,
+    min: usize,
+    window_ms: u64,
+    now_ms: u64,
+) -> Option<f32> {
+    let tail: Vec<&mr_core::types::ReqSample> = recent
+        .iter()
+        .rev()
+        .filter(|r| now_ms.saturating_sub(r.ts) <= window_ms)
+        .take(take)
+        .collect();
+    if tail.len() < min {
+        return None;
+    }
+    let ok = tail.iter().filter(|r| r.ok).count();
+    Some(ok as f32 / tail.len() as f32)
+}
+
 #[derive(Clone)]
 pub struct Flywheel {
     inner: std::sync::Arc<Mutex<FlywheelInner>>,
@@ -280,6 +302,7 @@ impl Flywheel {
         let Ok(inner) = inner else { return TelemetrySnapshot::new() };
         let mut out = TelemetrySnapshot::new();
         let mut sampled: Vec<(String, f32)> = Vec::new();
+        let now = now_ms();
         for (id, s) in &inner.models {
             let reliability = Self::reliability_of(s);
             let speed_obs = if s.total_ms_n >= MIN_RELIABILITY_SAMPLES {
@@ -301,6 +324,10 @@ impl Flywheel {
             } else {
                 None
             };
+            // 期限分层：近10次≤30分钟（瞬时）、近30次≤6小时（短期波动）——
+            // 太老无法感知波动，太新统计不稳（min 门槛兜底）
+            let rel_30 = rel_window(&s.recent, 30, 5, 6 * 3600 * 1000, now);
+            let rel_10 = rel_window(&s.recent, 10, 3, 30 * 60 * 1000, now);
             out.insert(
                 id.clone(),
                 ModelTelemetry {
@@ -311,6 +338,8 @@ impl Flywheel {
                     max_accepted,
                     samples: Some(s.requests.min(u32::MAX as u64) as u32),
                     recent: Some(s.recent.clone()),
+                    rel_30,
+                    rel_10,
                 },
             );
             sampled.push((id.clone(), s.success as f32 / s.requests.max(1) as f32));
