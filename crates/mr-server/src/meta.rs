@@ -622,6 +622,171 @@ pub async fn api_trends(
     (axum::Json(json!({"window_ms": window_ms, "series": series}))).into_response()
 }
 
+/// Provider 管理列表：内置注册表 + 扫描发现 + 手动定义，合并展示
+pub async fn api_providers(State(st): State<AppState>) -> Response {
+    let ov = crate::state::load_overrides(&st.config.data.dir);
+    let mut out: Vec<Value> = Vec::new();
+    // 1. 手动定义的（最优先——用户自己加的）
+    for (key, pd) in &ov.providers {
+        if pd.disabled { continue; }
+        out.push(json!({
+            "key": key, "source": "manual",
+            "base_url": pd.base_url, "protocol": pd.protocol,
+            "plan_kind": pd.plan_kind, "docs_url": pd.docs_url,
+            "tier": pd.tier,
+            "windows": {"5h": pd.window_5h, "weekly": pd.window_weekly, "monthly": pd.window_monthly},
+            "model_rates": pd.model_rates,
+            "fetched_models": pd.fetched_models,
+            "has_key": pd.api_key.is_some(),
+        }));
+    }
+    // 2. 目录里实际存在的（扫描+内置合并，去重手动已有的 base_url）
+    let manual_urls: Vec<&str> = ov.providers.values().map(|p| p.base_url.as_str()).collect();
+    let mut seen_providers = std::collections::HashSet::new();
+    for m in &st.engine.catalog.models {
+        if manual_urls.iter().any(|u| *u == m.base_url) { continue; }
+        if !seen_providers.insert(m.base_url.clone()) { continue; }
+        let profile = mr_core::plans::plan_for(&m.base_url);
+        let pov = ov.plans.get(&format!("payg:{}", m.provider));
+        let key = format!("discovered:{}", m.provider);
+        out.push(json!({
+            "key": key, "source": "discovered",
+            "base_url": m.base_url, "protocol": if m.protocol == mr_core::types::Protocol::Anthropic { "anthropic" } else { "openai" },
+            "plan_kind": profile.map(|p| p.plan_kind).unwrap_or("api"),
+            "docs_url": profile.map(|p| p.docs_url).unwrap_or(""),
+            "tier": pov.and_then(|p| p.tier.clone()).unwrap_or_default(),
+            "windows": {"5h": profile.and_then(|_| ov.providers.get(&m.provider).and_then(|p| p.window_5h)), "weekly": null, "monthly": null},
+            "model_rates": profile.map(|p| p.model_rates).unwrap_or(""),
+            "model_count": st.engine.catalog.models.iter().filter(|x| x.base_url == m.base_url).count(),
+            "has_key": m.has_credential(),
+        }));
+    }
+    (axum::Json(json!({"providers": out}))).into_response()
+}
+
+/// 新增/修改 provider（手动定义）：baseUrl 变更触发 /models 重拉
+pub async fn api_providers_set(
+    State(st): State<AppState>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Response {
+    let Some(key) = body.get("key").and_then(|k| k.as_str()).map(|s| s.to_string()) else {
+        return (StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": "key is required"}}))).into_response();
+    };
+    let text = |k: &str| body.get(k).and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let num = |k: &str| body.get(k).and_then(|v| v.as_f64());
+    let dir = &st.config.data.dir;
+    let mut ov = crate::state::load_overrides(dir);
+    let mut base_url_changed = false;
+    {
+        let entry = ov.providers.entry(key.clone()).or_default();
+        if let Some(u) = text("base_url") {
+            base_url_changed = entry.base_url != u;
+            entry.base_url = u;
+        }
+        if let Some(k) = text("api_key") { entry.api_key = Some(k); }
+        if let Some(v) = text("protocol") { entry.protocol = v; }
+        if let Some(v) = text("plan_kind") { entry.plan_kind = v; }
+        if let Some(v) = text("docs_url") { entry.docs_url = v; }
+        if let Some(v) = text("tier") { entry.tier = v; }
+        if let Some(v) = text("model_rates") { entry.model_rates = v; }
+        if let Some(v) = num("window_5h") { entry.window_5h = Some(v); }
+        if let Some(v) = num("window_weekly") { entry.window_weekly = Some(v); }
+        if let Some(v) = num("window_monthly") { entry.window_monthly = Some(v); }
+        if let Some(v) = body.get("disabled").and_then(|v| v.as_bool()) { entry.disabled = v; }
+    }
+    crate::state::save_overrides(dir, &ov);
+    // baseUrl 新增/变更 → 立即拉取 /models
+    let mut fetched = 0;
+    let needs_fetch = base_url_changed
+        || ov.providers.get(&key).map(|e| e.fetched_models.is_empty()).unwrap_or(true);
+    if needs_fetch {
+        let (base, api_key) = {
+            let e = ov.providers.get(&key);
+            (
+                format!("{}{}", e.map(|e| e.base_url.trim_end_matches('/')).unwrap_or(""), "/models"),
+                e.and_then(|e| e.api_key.clone()),
+            )
+        };
+        let mut req = st.http.get(&base);
+        if let Some(k) = &api_key { req = req.bearer_auth(k); }
+        if let Ok(resp) = req.timeout(std::time::Duration::from_secs(5)).send().await
+            && let Ok(v) = resp.json::<Value>().await
+        {
+                let ids: Vec<String> = v.get("data")
+                    .and_then(|d| d.as_array())
+                    .map(|arr| arr.iter()
+                        .filter_map(|m| m.get("id").and_then(|i| i.as_str()).map(|s| s.to_string()))
+                        .collect())
+                    .unwrap_or_default();
+                fetched = ids.len();
+                if let Some(e) = ov.providers.get_mut(&key) { e.fetched_models = ids; }
+                crate::state::save_overrides(dir, &ov);
+            }
+        }
+    }
+    (axum::Json(json!({"status": "ok", "key": key, "fetched_models": fetched}))).into_response()
+}
+
+/// 删除 provider（软删除——disabled=true，面板可恢复）
+pub async fn api_providers_delete(
+    State(st): State<AppState>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Response {
+    let Some(key) = body.get("key").and_then(|k| k.as_str()).map(|s| s.to_string()) else {
+        return (StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": "key is required"}}))).into_response();
+    };
+    let dir = &st.config.data.dir;
+    let mut ov = crate::state::load_overrides(dir);
+    if let Some(e) = ov.providers.get_mut(&key) {
+        e.disabled = true;
+        crate::state::save_overrides(dir, &ov);
+        (axum::Json(json!({"status": "ok", "key": key, "disabled": true}))).into_response()
+    } else {
+        (StatusCode::NOT_FOUND, axum::Json(json!({"error": {"message": "provider not found"}}))).into_response()
+    }
+}
+
+/// 手动重拉 provider 的 /models
+pub async fn api_providers_refresh(
+    State(st): State<AppState>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Response {
+    let Some(key) = body.get("key").and_then(|k| k.as_str()).map(|s| s.to_string()) else {
+        return (StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": "key is required"}}))).into_response();
+    };
+    let dir = &st.config.data.dir;
+    let mut ov = crate::state::load_overrides(dir);
+    let Some(entry) = ov.providers.get(&key) else {
+        return (StatusCode::NOT_FOUND, axum::Json(json!({"error": {"message": "provider not found"}}))).into_response();
+    };
+    let base = format!("{}{}", entry.base_url.trim_end_matches('/'), "/models");
+    let mut req = st.http.get(&base);
+    if let Some(k) = &entry.api_key { req = req.bearer_auth(k); }
+    match req.timeout(std::time::Duration::from_secs(8)).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            if let Ok(v) = resp.json::<Value>().await {
+                let ids: Vec<String> = v.get("data")
+                    .and_then(|d| d.as_array())
+                    .map(|arr| arr.iter()
+                        .filter_map(|m| m.get("id").and_then(|i| i.as_str()).map(|s| s.to_string()))
+                        .collect())
+                    .unwrap_or_default();
+                let count = ids.len();
+                if let Some(e) = ov.providers.get_mut(&key) { e.fetched_models = ids; }
+                crate::state::save_overrides(dir, &ov);
+                return (axum::Json(json!({"status": "ok", "fetched": count}))).into_response();
+            }
+        }
+        Ok(resp) => {
+            return (StatusCode::BAD_GATEWAY, axum::Json(json!({"error": {"message": format!("upstream {}", resp.status())}}))).into_response();
+        }
+        Err(e) => {
+            return (StatusCode::BAD_GATEWAY, axum::Json(json!({"error": {"message": e.to_string()}}))).into_response();
+        }
+    }
+    (StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": {"message": "parse failed"}}))).into_response()
+}
+
 /// 配额方案注册表：按 baseUrl 匹配 provider 官方接入方案 + 用户订正
 pub async fn api_plans(State(st): State<AppState>) -> Response {
     let ov = crate::state::load_overrides(&st.config.data.dir);

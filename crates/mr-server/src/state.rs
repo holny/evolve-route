@@ -21,6 +21,8 @@ pub struct Inner {
     pub http: reqwest::Client,
     /// 订阅方案预算（plan_key → 5h 积分额度），面板档位驱动
     pub plan_budgets: Mutex<HashMap<String, f64>>,
+    /// 可变目录快照（定期扫描/面板增删 provider 的写入口）
+    pub catalog_models: Mutex<Vec<mr_core::types::ModelRecord>>,
 }
 
 pub type AppState = Arc<Inner>;
@@ -86,6 +88,7 @@ pub fn build_state(config: FileConfig) -> AppState {
         .build()
         .expect("http client");
 
+    let catalog_snapshot = engine.catalog.models.clone();
     Arc::new(Inner {
         config,
         key_cursor: Mutex::new(HashMap::new()),
@@ -98,6 +101,7 @@ pub fn build_state(config: FileConfig) -> AppState {
         bus,
         http,
         plan_budgets: Mutex::new(plan_budgets),
+        catalog_models: Mutex::new(catalog_snapshot),
     })
 }
 
@@ -140,7 +144,7 @@ impl Inner {
     }
 
     /// Must be called inside the tokio runtime.
-    pub fn start_background(&self) {
+    pub fn start_background(self: &AppState) {
         let flywheel = self.flywheel.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(30));
@@ -150,6 +154,75 @@ impl Inner {
                 flywheel.save();
             }
         });
+        // 定期目录重扫（用户裁决）：每 5 分钟重新发现 agent 配置——新增自动进
+        // 目录；删除不主动删（面板手动删）。每 60 分钟重拉远程 /models
+        // （远端模型更新后网关及时跟进）。
+        // AppState = Arc<Inner>，直接 clone 保持引用（网关生命周期内常驻）
+        let state: AppState = self.clone();
+        tokio::spawn(async move {
+            let mut scan_tick = tokio::time::interval(Duration::from_secs(300));
+            scan_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let mut remote_tick = tokio::time::interval(Duration::from_secs(3600));
+            remote_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tokio::select! {
+                    _ = scan_tick.tick() => {
+                        state.rescan_discovery();
+                    }
+                    _ = remote_tick.tick() => {
+                        state.refresh_remote_models();
+                    }
+                }
+            }
+        });
+    }
+
+    fn models_lock(&self) -> Result<std::sync::MutexGuard<'_, Vec<mr_core::types::ModelRecord>>, ()> {
+        self.catalog_models.lock().map_err(|_| ())
+    }
+
+    /// 重新扫描 agent 配置：新增模型合入 catalog，删除的保留（用户面板手动删）
+    pub fn rescan_discovery(&self) {
+        let discovered = mr_discovery::discover(&self.config.discovery.agents);
+        let mut added = 0usize;
+        if let Ok(mut models) = self.models_lock() {
+            for d in discovered {
+                if !models.iter().any(|m| m.id == d.id) {
+                    tracing::info!(model = %d.id, "discovery rescan: new model added");
+                    models.push(d);
+                    added += 1;
+                }
+            }
+            if added > 0 {
+                drop(models);
+                tracing::info!(added, "discovery rescan complete");
+            }
+        }
+    }
+
+    /// 重拉远程 /models：新模型合入，已删的不动
+    pub fn refresh_remote_models(&self) {
+        let base_records: Vec<mr_core::types::ModelRecord> =
+            self.engine.catalog.models.clone();
+        let self_origin = format!("http://127.0.0.1:{}", self.config.server.port);
+        let fresh = mr_discovery::remote::discover_remote_blocking(
+            &base_records,
+            &self.config.data.dir,
+            Some(&self_origin),
+        );
+        let mut added = 0usize;
+        if let Ok(mut models) = self.models_lock() {
+            for r in fresh {
+                if !models.iter().any(|m| m.id == r.id) {
+                    models.push(r);
+                    added += 1;
+                }
+            }
+            if added > 0 {
+                drop(models);
+                tracing::info!(added, "remote models refresh: new models added");
+            }
+        }
     }
 }
 
@@ -162,6 +235,11 @@ pub fn build_router(state: AppState) -> axum::Router {
                 .post(crate::meta::api_policy_weights_set),
         )
         .route("/api/trends", axum::routing::get(crate::meta::api_trends))
+        .route("/api/providers",
+            axum::routing::get(crate::meta::api_providers)
+                .post(crate::meta::api_providers_set))
+        .route("/api/providers/delete", axum::routing::post(crate::meta::api_providers_delete))
+        .route("/api/providers/refresh", axum::routing::post(crate::meta::api_providers_refresh))
         .route(
             "/api/plans",
             axum::routing::get(crate::meta::api_plans).post(crate::meta::api_plans_set),
@@ -194,7 +272,50 @@ pub struct Overrides {
     /// provider 配额方案订正（档位/方案/窗口说明）
     #[serde(default)]
     pub plans: HashMap<String, PlanOverride>,
+    /// 手动新增/修改的 provider 定义（面板 Provider 管理卡写入口）
+    #[serde(default)]
+    pub providers: HashMap<String, ProviderDef>,
+    /// 用户在面板主动删除的模型 id（定期扫描不再自动加回）
+    #[serde(default)]
+    pub deleted_models: Vec<String>,
 }
+
+/// 手动 provider 定义——用户在面板新增/修改，与扫描发现并存
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct ProviderDef {
+    pub base_url: String,
+    pub api_key: Option<String>,
+    /// openai / anthropic
+    #[serde(default = "default_protocol")]
+    pub protocol: String,
+    /// coding / agent / go / api
+    #[serde(default = "default_plan_kind")]
+    pub plan_kind: String,
+    #[serde(default)]
+    pub docs_url: String,
+    /// 档位：lite/pro/max/go/go-plus 等
+    #[serde(default)]
+    pub tier: String,
+    /// 各窗口额度（积分/次数）——5h/weekly/monthly
+    #[serde(default)]
+    pub window_5h: Option<f64>,
+    #[serde(default)]
+    pub window_weekly: Option<f64>,
+    #[serde(default)]
+    pub window_monthly: Option<f64>,
+    /// 模型级系数表（"model|in,cached,out" 多行）
+    #[serde(default)]
+    pub model_rates: String,
+    /// 远程拉取到的模型（缓存）
+    #[serde(default)]
+    pub fetched_models: Vec<String>,
+    /// 删除标记（软删除，面板可恢复）
+    #[serde(default)]
+    pub disabled: bool,
+}
+
+fn default_protocol() -> String { "openai".into() }
+fn default_plan_kind() -> String { "api".into() }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct PlanOverride {

@@ -61,6 +61,10 @@ pub fn session_identity(
     if let Some(v) = header_of(headers, "session_id").filter(|v| !v.is_empty()) {
         return Some(v);
     }
+    // opencode 原生会话头（opencode 官方要求客户端发送）——无需 drop-in 插件
+    if let Some(v) = header_of(headers, "x-opencode-session").filter(|v| !v.is_empty()) {
+        return Some(v);
+    }
     if let Some(v) = header_of(headers, "x-session-id")
         .or_else(|| header_of(headers, "x-session"))
         .filter(|v| !v.is_empty())
