@@ -584,7 +584,18 @@ pub async fn chat_completions(
         insert_header(r.headers_mut(), "x-mr-decision-id", &decision.id);
         r
     } else {
-        json_error(status, "all routed upstreams failed; see x-mr-skipped for per-model reasons")
+        {
+            let mut resp = json_error(map_status(status), "all routed upstreams failed; see x-mr-skipped for per-model reasons");
+            if let Some(sec) = skipped.iter()
+                .filter_map(|s| s.split('(').last().and_then(|t| t.split('s').next()).and_then(|n| n.parse::<u64>().ok()))
+                .max()
+            {
+                if let Ok(hv) = axum::http::HeaderValue::from_str(&sec.to_string()) {
+                    resp.headers_mut().insert("retry-after", hv);
+                }
+            }
+            resp
+        }
     };
     // 引导调用方退避：按链上模型已知的最短冷却给 Retry-After，
     // 让 opencode 等客户端按此退避而不是立即重撞

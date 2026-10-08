@@ -475,7 +475,18 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
         insert_header(r.headers_mut(), "x-mr-decision-id", &decision.id);
         r
     } else {
-        mr_error(status, "all routed upstreams failed; see x-mr-skipped for per-model reasons")
+        {
+            let mut resp = mr_error(map_status(status), "all routed upstreams failed; see x-mr-skipped for per-model reasons");
+            if let Some(sec) = skipped.iter()
+                .filter_map(|s| s.split('(').last().and_then(|t| t.split('s').next()).and_then(|n| n.parse::<u64>().ok()))
+                .max()
+            {
+                if let Ok(hv) = axum::http::HeaderValue::from_str(&sec.to_string()) {
+                    resp.headers_mut().insert("retry-after", hv);
+                }
+            }
+            resp
+        }
     };
     if !skipped.is_empty() {
         insert_header(resp.headers_mut(), "x-mr-skipped", &skipped.join(","));
