@@ -134,10 +134,30 @@ table.mx tr.win td { color:var(--green); }
     <div class="trend-grid" id="trend-grid"><div class="dim2" data-i18n="t_nodata">窗口内暂无样本</div></div>
   </section>
   <section class="card">
-    <h2 data-i18n="plan_card">配额方案</h2>
-    <div class="sub" style="margin-bottom:8px" data-i18n="plan_sub">按 baseUrl 自动匹配官方接入方案 · 点击档位/窗口可订正</div>
-    <table id="plans"><thead></thead><tbody></tbody></table>
+    <h2 style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <span data-i18n="provider_card">Provider 管理</span>
+      <span style="display:flex;gap:6px">
+        <button class="lang-btn" id="pv-add-btn" data-i18n="pv_add">+ 新增 Provider</button>
+        <button class="lang-btn" id="pv-refresh-all-btn" data-i18n="pv_refresh_all">🔄 全部重拉</button>
+      </span>
+    </h2>
+    <div class="sub" style="margin-bottom:8px" data-i18n="provider_sub">手动维护 provider 凭据 / 档位 / 窗口额度 · 扫描发现自动展示</div>
+    <div id="providers-list"></div>
   </section>
+
+  <!-- Provider 编辑抽屉 -->
+  <div id="pv-drawer" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center">
+    <div class="card" style="width:560px;max-width:90vw;max-height:90vh;overflow:auto;padding:16px">
+      <h3 id="pv-drawer-title" data-i18n="pv_edit">编辑 Provider</h3>
+      <div id="pv-form" style="display:grid;grid-template-columns:1fr 2fr;gap:8px;font-size:13px"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="lang-btn" id="pv-cancel-btn" data-i18n="pv_cancel">取消</button>
+        <button class="lang-btn" id="pv-save-btn" data-i18n="pv_save">保存</button>
+        <button class="lang-btn" id="pv-refresh-btn" data-i18n="pv_refresh">🔄 拉取</button>
+        <button class="lang-btn" id="pv-delete-btn" data-i18n="pv_delete" style="border-color:var(--red);color:var(--red)">删除</button>
+      </div>
+    </div>
+  </div>
 </main>
 <script>
 const LANGS = ['zh','en','ko','ja','es','fr'];
@@ -290,6 +310,32 @@ const T = {
   plan_tier:  {zh:'档位', en:'Tier', ko:'등급', ja:'ティア', es:'Nivel', fr:'Palier'},
   plan_used:  {zh:'消耗(5h)', en:'Used (5h)', ko:'소비(5h)', ja:'消費(5h)', es:'Uso (5h)', fr:'Consommé (5h)'},
   plan_over_soft: {zh:'预算超软阈值·已降权（硬任务仍优先）', en:'over soft cap · deprioritized (hard tasks still favored)', ko:'소프트 한도 초과·가중치 감소(어려운 작업 우선)', ja:'ソフト上限超過·優先度 down（難タスクは優先）', es:'sobre el límite suave · despriorizado (tareas duras aún favored)', fr:'au-dessus du seuil doux · dépriorisé (tâches dures toujours favorisées)'},
+  provider_card: {zh:'Provider 管理', en:'Provider management', ko:'Provider 관리', ja:'Provider 관리', es:'Gestión de providers', fr:'Gestion des providers'},
+  provider_sub: {zh:'手动维护 provider 凭据 / 档位 / 窗口额度 · 扫描发现自动展示', en:'maintain credentials / tier / window allowance · scanned providers auto-listed', ko:'provider 자격 증명 / 등급 / 윈도우 한도 수동 관리 · 스캔 발견 자동 표시', ja:'provider 認証 / ティア / ウィンドウ枠を手動管理 · スキャン検出は自動表示', es:'mantén credenciales / nivel / ventana de cuota · escaneo detectado auto-listado', fr:'maintenir credentials / tier / quota · scannés auto-listés'},
+  pv_add: {zh:'+ 新增 Provider', en:'+ Add provider', ko:'+ Provider 추가', ja:'+ Provider 追加', es:'+ Añadir provider', fr:'+ Ajouter provider'},
+  pv_refresh_all: {zh:'🔄 全部重拉', en:'🔄 Refresh all', ko:'🔄 모두 새로고침', ja:'🔄 全て再取得', es:'🔄 Refrescar todo', fr:'🔄 Tout actualiser'},
+  pv_edit: {zh:'编辑 Provider', en:'Edit provider', ko:'Provider 편집', ja:'Provider 編集', es:'Editar provider', fr:'Modifier provider'},
+  pv_cancel: {zh:'取消', en:'Cancel', ko:'취소', ja:'キャンセル', es:'Cancelar', fr:'Annuler'},
+  pv_save: {zh:'保存', en:'Save', ko:'저장', ja:'保存', es:'Guardar', fr:'Enregistrer'},
+  pv_refresh: {zh:'🔄 拉取', en:'🔄 Fetch', ko:'🔄 가져오기', ja:'🔄 取得', es:'🔄 Traer', fr:'🔄 Récupérer'},
+  pv_delete: {zh:'删除', en:'Delete', ko:'삭제', ja:'削除', es:'Eliminar', fr:'Supprimer'},
+  pv_restore: {zh:'恢复', en:'Restore', ko:'복원', ja:'復元', es:'Restaurar', fr:'Restaurer'},
+  pv_field_baseUrl: {zh:'Base URL', en:'Base URL', ko:'Base URL', ja:'Base URL', es:'Base URL', fr:'Base URL'},
+  pv_field_apiKey: {zh:'API Key', en:'API Key', ko:'API Key', ja:'API Key', es:'API Key', fr:'API Key'},
+  pv_field_protocol: {zh:'协议', en:'Protocol', ko:'프로토콜', ja:'プロトコル', es:'Protocolo', fr:'Protocole'},
+  pv_field_planKind: {zh:'方案', en:'Plan', ko:'플랜', ja:'プラン', es:'Plan', fr:'Plan'},
+  pv_field_tier: {zh:'档位', en:'Tier', ko:'등급', ja:'ティア', es:'Nivel', fr:'Tier'},
+  pv_field_window5h: {zh:'5h 额度', en:'5h allowance', ko:'5h 한도', ja:'5h 上限', es:'cuota 5h', fr:'quota 5h'},
+  pv_field_windowWeekly: {zh:'周额度', en:'Weekly allowance', ko:'주간 한도', ja:'週上限', es:'cuota semanal', fr:'quota semaine'},
+  pv_field_windowMonthly: {zh:'月额度', en:'Monthly allowance', ko:'월간 한도', ja:'月上限', es:'cuota mensual', fr:'quota mois'},
+  pv_field_docsUrl: {zh:'文档链接', en:'Docs URL', ko:'문서 링크', ja:'ドキュメント', es:'Docs', fr:'Docs'},
+  pv_field_rates: {zh:'模型系数表（model|in,cached,out / 行）', en:'Model rates (model|in,cached,out / line)', ko:'모델 계수 (model|in,cached,out / 줄)', ja:'モデル係数 (model|in,cached,out / 行)', es:'Tasas por modelo (model|in,cached,out / línea)', fr:'Taux par modèle (model|in,cached,out / ligne)'},
+  pv_field_disabled: {zh:'已禁用', en:'Disabled', ko:'비활성', ja:'無効', es:'Deshabilitado', fr:'Désactivé'},
+  pv_source_manual: {zh:'手动', en:'manual', ko:'수동', ja:'手動', es:'manual', fr:'manuel'},
+  pv_source_scanned: {zh:'扫描发现', en:'scanned', ko:'스캔 발견', ja:'スキャン検出', es:'escaneado', fr:'scanné'},
+  pv_confirm_delete: {zh:'确认删除此 Provider？软删除可恢复。', en:'Delete this provider? Soft-delete can be restored.', ko:'이 Provider를 삭제하시겠습니까? 소프트 삭제는 복원 가능합니다.', ja:'この Provider を削除しますか? ソフト削除は復元可能です。', es:'¿Eliminar este provider? Borrado suave se puede restaurar.', fr:'Supprimer ce provider ? Suppression douce restaurable.'},
+  pv_confirm_baseurl: {zh:'baseUrl 已变更，将重新拉取模型并覆盖 fetched_models。', en:'baseUrl changed, will re-fetch models and overwrite fetched_models.', ko:'baseUrl가 변경되어 모델을 다시 가져와 fetched_models를 덮어씁니다.', ja:'baseUrl 変更済 → モデル再取得で fetched_models 上書き', es:'baseUrl cambió: se re-obtienen modelos y sobrescribe fetched_models.', fr:'baseUrl modifié : ré-fetch des modèles, écrasera fetched_models.'},
+  pv_fetched: {zh:'已拉取 {n} 个模型', en:'fetched {n} models', ko:'{n}개 모델 가져옴', ja:'{n} モデル取得', es:'recuperados {n} modelos', fr:'{n} modèles récupérés'},
   plan_docs:  {zh:'文档', en:'Docs', ko:'문서', ja:'ドキュメント', es:'Docs', fr:'Docs'},
   scheme_credits5h: {zh:'积分制 · 5h+周窗口', en:'credits · 5h+weekly', ko:'크레딧 · 5h+주간', ja:'クレジット · 5h+週', es:'créditos · 5h+semana', fr:'crédits · 5h+semaine'},
   scheme_credits3w: {zh:'积分制 · 5h/周/月', en:'credits · 5h/week/month', ko:'크레딧 · 5h/주/월', ja:'クレジット · 5h/週/月', es:'créditos · 5h/semana/mes', fr:'crédits · 5h/semaine/mois'},
@@ -463,7 +509,7 @@ function decisionDetail(e){
   }
   if (e.filtered && e.filtered.length)
     push2(L, '<span style="color:var(--dim)">'+esc(t('st_filtered_head'))+'：' +
-      e.filtered.map(f => esc(shortId(f.model))+'（'+esc(causeLocal(f.cause))+'）').join('、 ')+'</span>');
+      e.filtered.map(f => '<span title="'+esc(f.model)+'">'+esc(f.model)+'</span>（'+esc(causeLocal(f.cause))+'）').join('、 ')+'</span>');
   if (e.skipped && e.skipped.length)
     push2(L, '<span style="color:var(--red)">'+esc(t('skipped'))+'：'+e.skipped.map(s => esc(s)).join(' → ')+'</span>');
   L.push('<div style="opacity:.6;margin-top:3px">'+esc(t('p_session'))+': '+esc(e.session||'-')+'</div>');
@@ -778,8 +824,175 @@ const RATE_COLS = {
   dollar:  [['m', 'rate_model'], ['a', 'rate_in_d'], ['b', 'rate_cached_d'], ['v', 'rate_out_d'], ['l', 'rate_limit']],
   afp:     [['m', 'rate_model'], ['a', 'rate_in_a'], ['v', 'rate_out_a']],
 };
-function renderPlans(){
-  buildThead(document.getElementById('plans'), PLANS_COLS);
+// Provider 档位下拉联动窗口额度预设（智谱/zai Coding 套餐官方）
+const TIER_PRESETS = {
+  'zhipu-coding': {'lite':[2000,10000,50000],'pro':[12000,60000,240000],'max':[28000,140000,600000]},
+  'zai-devpack':   {'lite':[2000,10000,50000],'pro':[12000,60000,240000],'max':[28000,140000,600000]},
+  'minimax-coding':{'lite':[4000,null,null],'pro':[16000,null,null],'max':[40000,null,null]},
+  'volces-coding': {'lite':[null,null,null],'pro':[null,null,null]},
+};
+function applyTierPreset(planKind, tier, fields){
+  const p = TIER_PRESETS[planKind] && TIER_PRESETS[planKind][tier];
+  if (!p) return;
+  fields.w5h.value = p[0] != null ? p[0] : '';
+  fields.wweek.value = p[1] != null ? p[1] : '';
+  fields.wmonth.value = p[2] != null ? p[2] : '';
+}
+function renderProviders(){
+  const cont = document.getElementById('providers-list');
+  const ps = state.providers || [];
+  if (!ps.length) {
+    cont.innerHTML = '<div class="dim2" style="padding:20px">'+esc(t('t_nodata'))+'</div>';
+    return;
+  }
+  cont.innerHTML = ps.map((p, i) => {
+    const disabled = p.disabled ? ' <span class="la f" style="margin-left:6px">'+esc(t('pv_field_disabled'))+'</span>' : '';
+    const srcBadge = p.source === 'manual'
+      ? '<span class="pbadge">'+esc(t('pv_source_manual'))+'</span>'
+      : '<span class="pbadge" style="background:#1c2d45;color:var(--blue)">'+esc(t('pv_source_scanned'))+'</span>';
+    const kindBadge = (PK_LABEL[p.plan_kind] || 'pk_api') && t(PK_LABEL[p.plan_kind] || 'pk_api') || p.plan_kind;
+    const docs = p.docs_url ? ' <a href="'+esc(p.docs_url)+'" target="_blank" rel="noopener" style="color:var(--blue)">↗</a>' : '';
+    const tName = p.tier || '-';
+    const tShow = tName !== '-';
+    const tVal = (p.allowance != null ? Math.round(p.allowance) : '-') + (p.allowance != null ? ' / 5h' : '');
+    const fetch = p.fetched_models || p.model_count || 0;
+    const summary = tName === '-' ? '' : ' <span class="dim2">('+esc(tName)+' · '+esc(tVal)+')</span>';
+    return '<div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px'+(p.disabled?';opacity:.5':'')+'">'
+      + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      +   '<b style="font-size:13px">'+esc(p.key)+'</b> '+srcBadge
+      +   ' <span class="pbadge" style="background:#1c2d45;color:var(--blue)">'+esc(kindBadge)+'</span>'
+      +   summary + disabled + docs
+      +   '<span style="margin-left:auto"></span>'
+      +   '<button class="lang-btn" data-pv-edit="'+esc(p.key)+'" data-pv-source="'+esc(p.source)+'">'+esc(t('pv_edit'))+'</button>'
+      +   (p.source === 'manual'
+            ? (p.disabled ? '<button class="lang-btn" data-pv-restore="'+esc(p.key)+'">'+esc(t('pv_restore'))+'</button>'
+                              : '<button class="lang-btn" data-pv-del="'+esc(p.key)+'" style="border-color:var(--red);color:var(--red)">'+esc(t('pv_delete'))+'</button>')
+            : '')
+      + '</div>'
+      + '<div class="dim2" style="margin-top:4px;font-size:11px">'
+      +   esc(p.base_url || '') + ' · ' + esc(p.protocol || 'openai') + ' · ' + fetch + ' models'
+      + '</div></div>';
+  }).join('');
+  cont.querySelectorAll('[data-pv-edit]').forEach(b => b.addEventListener('click', () => openProviderDrawer(b.dataset.pvEdit, b.dataset.pvSource === 'manual')));
+  cont.querySelectorAll('[data-pv-del]').forEach(b => b.addEventListener('click', () => confirmDeleteProvider(b.dataset.pvDel)));
+  cont.querySelectorAll('[data-pv-restore]').forEach(b => b.addEventListener('click', () => restoreProvider(b.dataset.pvRestore)));
+}
+function confirmDeleteProvider(key){
+  if (!confirm(t('pv_confirm_delete'))) return;
+  fetch('/api/providers/delete', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({key})}).then(refresh);
+}
+function restoreProvider(key){
+  // 恢复：取该 key 的现有设置 + disabled=false 存回
+  const p = (state.providers||[]).find(x => x.key === key);
+  if (!p) return;
+  fetch('/api/providers', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({...p, key, disabled: false})}).then(refresh);
+}
+function refreshAllProviders(){
+  const ps = (state.providers||[]).filter(p => p.source === 'manual' && !p.disabled);
+  Promise.all(ps.map(p =>
+    fetch('/api/providers/refresh', {method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({key: p.key})})
+  )).then(() => refresh());
+}
+function openProviderDrawer(key, isManual){
+  const isNew = !key;
+  const existing = isNew ? null : (state.providers||[]).find(x => x.key === key);
+  const drawer = document.getElementById('pv-drawer');
+  const form = document.getElementById('pv-form');
+  const title = document.getElementById('pv-drawer-title');
+  title.textContent = isNew ? t('pv_add') : t('pv_edit');
+  const v = existing || { key: '', base_url: '', api_key: '', protocol: 'openai', plan_kind: 'coding', tier: '', docs_url: '', model_rates: '', disabled: false, window_5h: null, window_weekly: null, window_monthly: null };
+  const k = (k2) => esc(v[k2] ?? '');
+  form.innerHTML = [
+    ['pv_field_baseUrl',`<input id="pv-baseUrl" value="${k('base_url')}" placeholder="https://api.open.bigmodel.cn/api/coding/paas/v4" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_apiKey',`<input id="pv-apiKey" type="password" value="${v.api_key?'':''}" placeholder="sk-..." style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_protocol',`<select id="pv-protocol" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px"><option value="openai" ${v.protocol==='openai'?'selected':''}>OpenAI</option><option value="anthropic" ${v.protocol==='anthropic'?'selected':''}>Anthropic</option></select>`],
+    ['pv_field_planKind',`<select id="pv-planKind" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">
+      <option value="">-</option>
+      <option value="coding" ${v.plan_kind==='coding'?'selected':''}>Coding Plan</option>
+      <option value="agent" ${v.plan_kind==='agent'?'selected':''}>Agent Plan</option>
+      <option value="go" ${v.plan_kind==='go'?'selected':''}>OpenCode Go (Token)</option>
+      <option value="api" ${v.plan_kind==='api'?'selected':''}>API 按量</option>
+    </select>`],
+    ['pv_field_tier',`<select id="pv-tier" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px"><option value="">-</option><option value="lite" ${v.tier==='lite'?'selected':''}>Lite</option><option value="pro" ${v.tier==='pro'?'selected':''}>Pro</option><option value="max" ${v.tier==='max'?'selected':''}>Max</option><option value="go" ${v.tier==='go'?'selected':''}>Go</option><option value="go-plus" ${v.tier==='go-plus'?'selected':''}>Go Plus</option></select>`],
+    ['pv_field_window5h',`<input id="pv-w5h" type="number" min="0" value="${v.window_5h??''}" placeholder="2000" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_windowWeekly',`<input id="pv-wweek" type="number" min="0" value="${v.window_weekly??''}" placeholder="10000" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_windowMonthly',`<input id="pv-wmonth" type="number" min="0" value="${v.window_monthly??''}" placeholder="50000" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_docsUrl',`<input id="pv-docsUrl" value="${k('docs_url')}" placeholder="https://docs.bigmodel.cn/..." style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_rates',`<textarea id="pv-rates" rows="4" placeholder="GLM-5.3|6.9,1.7,24&#10;GLM-5.3-Flash|2.3,0.56,8" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-family:monospace;font-size:11px">${esc(v.model_rates||'')}</textarea>`],
+  ].map(([k, html]) => '<label style="color:var(--dim);align-self:center">'+esc(t(k))+'</label>'+html).join('');
+  if (!isNew) form.innerHTML += '<label></label><label style="font-size:11px"><input type="checkbox" id="pv-disabled" '+(v.disabled?'checked':'')+'> '+esc(t('pv_field_disabled'))+'</label>';
+  drawer.style.display = 'flex';
+  // Tier 联动预设
+  const fields = {w5h: document.getElementById('pv-w5h'), wweek: document.getElementById('pv-wweek'), wmonth: document.getElementById('pv-wmonth')};
+  const onPreset = () => applyTierPreset(document.getElementById('pv-planKind').value, document.getElementById('pv-tier').value, fields);
+  document.getElementById('pv-planKind').addEventListener('change', onPreset);
+  document.getElementById('pv-tier').addEventListener('change', onPreset);
+  // 按钮事件
+  document.getElementById('pv-cancel-btn').onclick = () => { drawer.style.display = 'none'; };
+  document.getElementById('pv-save-btn').onclick = () => saveProvider(isNew, isManual);
+  document.getElementById('pv-refresh-btn').onclick = () => refreshProvider();
+  const delBtn = document.getElementById('pv-delete-btn');
+  if (delBtn) {
+    delBtn.onclick = () => { confirmDeleteProvider(document.getElementById('pv-form').dataset.key || ''); drawer.style.display='none'; };
+    delBtn.style.display = isManual ? '' : 'none';
+  }
+  // baseUrl 变更 → 提示重拉
+  document.getElementById('pv-baseUrl').addEventListener('change', () => {
+    if (existing && document.getElementById('pv-baseUrl').value !== existing.base_url) {
+      alert(t('pv_confirm_baseurl'));
+    }
+  });
+  // 暂存 key 到 form.dataset
+  form.dataset.key = key || '';
+}
+function collectProviderForm(){
+  const g = id => document.getElementById(id);
+  return {
+    key: g('pv-form').dataset.key || g('pv-baseUrl').value.split('/').pop() || g('pv-baseUrl').value,
+    base_url: g('pv-baseUrl').value.trim(),
+    api_key: g('pv-apiKey').value,
+    protocol: g('pv-protocol').value,
+    plan_kind: g('pv-planKind').value,
+    tier: g('pv-tier').value,
+    docs_url: g('pv-docsUrl').value,
+    model_rates: g('pv-rates').value,
+    window_5h: g('pv-w5h').value ? Number(g('pv-w5h').value) : null,
+    window_weekly: g('pv-wweek').value ? Number(g('pv-wweek').value) : null,
+    window_monthly: g('pv-wmonth').value ? Number(g('pv-wmonth').value) : null,
+    disabled: g('pv-disabled') ? g('pv-disabled').checked : false,
+  };
+}
+function saveProvider(isNew, isManual){
+  const body = collectProviderForm();
+  if (!body.base_url) { alert('base_url required'); return; }
+  if (!isManual && !isNew) {
+    // 自动发现 provider 不可 POST（写 overrides）—— 提示
+    alert('扫描发现 provider 不可编辑/删除（请到 /etc/agent 配置中调整后由后台任务同步）');
+    return;
+  }
+  fetch('/api/providers', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)})
+    .then(r => r.json().then(j => {
+      if (j.fetched_models != null) alert(t('pv_fetched').replace('{n}', j.fetched_models));
+      document.getElementById('pv-drawer').style.display = 'none';
+      refresh();
+    }));
+}
+function refreshProvider(){
+  const key = document.getElementById('pv-form').dataset.key;
+  if (!key) return;
+  fetch('/api/providers/refresh', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({key})})
+    .then(r => r.json().then(j => {
+      if (j.fetched != null) alert(t('pv_fetched').replace('{n}', j.fetched));
+      refresh();
+    }));
+}
+document.getElementById('pv-add-btn').addEventListener('click', () => openProviderDrawer('', true));
+document.getElementById('pv-refresh-all-btn').addEventListener('click', refreshAllProviders);
+function renderPlans(){ renderProviders(); }
+function renderPwPanel(){
   const tb = document.querySelector('#plans tbody');
   const schemeName = s => s && s.startsWith('scheme_') ? t(s) : esc(s || '-');
   const rows = (state.plans||[]).map(p => {
@@ -922,10 +1135,11 @@ document.getElementById('pw-btn').addEventListener('click', () => {
 
 async function refresh(){
   try {
-    const [statsR, healthR, quotaR, benchR, pwR, plansR, trendsR] = await Promise.all([
+    const [statsR, healthR, quotaR, benchR, pwR, plansR, trendsR, provR] = await Promise.all([
       fetch('/api/stats?window='+encodeURIComponent(state.win)), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks'),
       fetch('/api/policy-weights'), fetch('/api/plans'),
-      fetch('/api/trends?window='+encodeURIComponent(state.twin))]);
+      fetch('/api/trends?window='+encodeURIComponent(state.twin)),
+      fetch('/api/providers')]);
     state.stats  = (await statsR.json()).models  || {};
     state.health = (await healthR.json()).models || {};
     state.quota  = (await quotaR.json()).windows || {};
@@ -933,6 +1147,7 @@ async function refresh(){
     state.policyw = (await pwR.json()) || {};
     state.plans  = (await plansR.json()).providers || [];
     state.trends = (await trendsR.json()).series || [];
+    state.providers = (await provR.json()).providers || [];
     renderPlans();
     renderTrends();
     renderChips();
