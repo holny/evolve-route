@@ -11,11 +11,15 @@ use std::path::{Path, PathBuf};
 
 /// Default endpoints for well-known providers whose opencode entries rely on
 /// built-in provider definitions (no explicit baseURL in user config).
+/// opencode-go 的两个变体（标准 + GitHub 转发）共享同一套餐
+pub const OPENCOD_GO_VARIANTS: &[&str] = &["opencode-go", "opencode-go-github"];
 pub fn provider_default_base_url(provider_id: &str) -> Option<&'static str> {
     match provider_id {
         "zhipuai-coding-plan" => Some("https://open.bigmodel.cn/api/coding/paas/v4"),
         "kimi-coding-plan" => Some("https://api.kimi.com/coding/v1"),
         "github-copilot" => Some("https://api.githubcopilot.com"),
+        // opencode Go 与 GitHub 转发版同一端点
+        v if OPENCOD_GO_VARIANTS.contains(&v) => Some("https://opencode.ai/zen/go/v1"),
         _ => None,
     }
 }

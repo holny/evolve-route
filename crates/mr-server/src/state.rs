@@ -119,7 +119,8 @@ impl Inner {
         // 模型 → plan_key 映射（按 catalog base_url 匹配注册表）
         for m in &self.engine.catalog.models {
             if let Some(key) = mr_core::plans::plan_key_for(&m.base_url)
-                && let Some(allowance) = budgets.get(key)
+                && let Some(&allowance) = budgets.get(key)
+                && allowance > 0.0
                 && let Some((i, c, o)) = sums.get(&m.id)
             {
                 // 同方案多模型共享账户额度——SUM 而非 MAX（MAX 会漏计并发燃烧）
@@ -240,6 +241,7 @@ pub fn build_router(state: AppState) -> axum::Router {
                 .post(crate::meta::api_providers_set))
         .route("/api/providers/delete", axum::routing::post(crate::meta::api_providers_delete))
         .route("/api/providers/refresh", axum::routing::post(crate::meta::api_providers_refresh))
+        .route("/api/providers/status", axum::routing::get(crate::meta::api_providers_status))
         .route(
             "/api/plans",
             axum::routing::get(crate::meta::api_plans).post(crate::meta::api_plans_set),

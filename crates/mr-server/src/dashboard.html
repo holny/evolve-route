@@ -331,6 +331,7 @@ const T = {
   pv_field_docsUrl: {zh:'文档链接', en:'Docs URL', ko:'문서 링크', ja:'ドキュメント', es:'Docs', fr:'Docs'},
   pv_field_rates: {zh:'模型系数表（model|in,cached,out / 行）', en:'Model rates (model|in,cached,out / line)', ko:'모델 계수 (model|in,cached,out / 줄)', ja:'モデル係数 (model|in,cached,out / 行)', es:'Tasas por modelo (model|in,cached,out / línea)', fr:'Taux par modèle (model|in,cached,out / ligne)'},
   pv_field_disabled: {zh:'已禁用', en:'Disabled', ko:'비활성', ja:'無効', es:'Deshabilitado', fr:'Désactivé'},
+  pv_available: {zh:'可用', en:'available', ko:'사용 가능', ja:'利用可能', es:'disponible', fr:'disponible'},
   pv_source_manual: {zh:'手动', en:'manual', ko:'수동', ja:'手動', es:'manual', fr:'manuel'},
   pv_source_scanned: {zh:'扫描发现', en:'scanned', ko:'스캔 발견', ja:'スキャン検出', es:'escaneado', fr:'scanné'},
   pv_confirm_delete: {zh:'确认删除此 Provider？软删除可恢复。', en:'Delete this provider? Soft-delete can be restored.', ko:'이 Provider를 삭제하시겠습니까? 소프트 삭제는 복원 가능합니다.', ja:'この Provider を削除しますか? ソフト削除は復元可能です。', es:'¿Eliminar este provider? Borrado suave se puede restaurar.', fr:'Supprimer ce provider ? Suppression douce restaurable.'},
@@ -666,7 +667,7 @@ function addRow(e){
   }
 }
 
-const state = { stats:{}, bench:{}, health:{}, quota:{}, policyw:null, plans:[], trends:[], win:'overview', twin:'24h' };
+const state = { stats:{}, bench:{}, health:{}, quota:{}, policyw:null, plans:[], trends:[], win:'overview', twin:'24h', providers:[], providersStatus:null, statusTs:0 };
 
 // 评分矩阵模型名 → 飞轮行高亮（事件委托，覆盖后续新增的矩阵单元格）
 feed.addEventListener('click', ev => {
@@ -1106,11 +1107,11 @@ document.getElementById('pw-btn').addEventListener('click', () => {
 
 async function refresh(){
   try {
-    const [statsR, healthR, quotaR, benchR, pwR, plansR, trendsR, provR] = await Promise.all([
+    const [statsR, healthR, quotaR, benchR, pwR, plansR, trendsR, provR, statR] = await Promise.all([
       fetch('/api/stats?window='+encodeURIComponent(state.win)), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks'),
       fetch('/api/policy-weights'), fetch('/api/plans'),
       fetch('/api/trends?window='+encodeURIComponent(state.twin)),
-      fetch('/api/providers')]);
+      fetch('/api/providers'), fetch('/api/providers/status')]);
     state.stats  = (await statsR.json()).models  || {};
     state.health = (await healthR.json()).models || {};
     state.quota  = (await quotaR.json()).windows || {};
@@ -1119,6 +1120,7 @@ async function refresh(){
     state.plans  = (await plansR.json()).providers || [];
     state.trends = (await trendsR.json()).series || [];
     state.providers = (await provR.json()).providers || [];
+    state.providersStatus = (await statR.json());
     renderPlans();
     renderTrends();
     renderChips();

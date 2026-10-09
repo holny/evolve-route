@@ -622,6 +622,91 @@ pub async fn api_trends(
     (axum::Json(json!({"window_ms": window_ms, "series": series}))).into_response()
 }
 
+/// Provider 实时状态（每 5s 轮询）：health、最后成功时间、当前使用率
+pub async fn api_providers_status(State(st): State<AppState>) -> Response {
+    let now_ms = mr_memory::health::now();
+    let health_snap = st.health.snapshot();
+    let sums = st.quota.plan_usage_sums(now_ms, 5 * 3600 * 1000);
+    let soft_pct = st.config.policy.plan_soft_pct;
+    let ov = crate::state::load_overrides(&st.config.data.dir);
+    let mut out: Vec<Value> = Vec::new();
+    let manual_bases: std::collections::HashSet<String> = ov.providers.values().map(|p| p.base_url.clone()).collect();
+    let mut used_by_url: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for m in &st.engine.catalog.models {
+        if !m.plan { continue; }
+        if let Some((i, c, o)) = sums.get(&m.id) {
+            let credits = mr_core::plans::plan_credits_used(&m.base_url, &m.id, *i, *c, *o);
+            *used_by_url.entry(m.base_url.clone()).or_insert(0.0) += credits;
+        }
+    }
+    for (key, pd) in &ov.providers {
+        if pd.disabled { continue; }
+        let used = used_by_url.get(&pd.base_url).copied().unwrap_or(0.0);
+        let allowance = pd.window_5h;
+        let pressure = allowance.filter(|a| *a > 0.0).map(|a| used / a);
+        let cool = health_snap.iter()
+            .filter(|(k, h)| k.split('\u{1f}').next().map(|m| st.engine.catalog.models.iter().any(|mm| mm.id == m && mm.base_url == pd.base_url)).unwrap_or(false))
+            .map(|(_, h)| h.cooldown_remaining_ms(now_ms))
+            .max();
+        out.push(json!({
+            "key": key, "source": "manual",
+            "base_url": pd.base_url, "tier": pd.tier, "plan_kind": pd.plan_kind,
+            "allowance_5h": allowance,
+            "used_5h": (used * 100.0).round() / 100.0,
+            "pressure": pressure,
+            "soft_pct": soft_pct,
+            "cooldown_remaining_ms": cool,
+            "available": cool.is_none(),
+            "fetched_models_count": pd.fetched_models.len(),
+        }));
+    }
+    use std::collections::HashMap;
+    let mut grouped: HashMap<String, Value> = HashMap::new();
+    for m in &st.engine.catalog.models {
+        if manual_bases.contains(&m.base_url) { continue; }
+        let profile = mr_core::plans::plan_for(&m.base_url);
+        let plan_key = profile.map(|p| p.key.to_string()).unwrap_or_default();
+        let entry = grouped.entry(m.provider.clone()).or_insert_with(|| json!({
+            "key": m.provider.clone(),
+            "source": "scanned",
+            "plan_kind": profile.map(|p| p.plan_kind).unwrap_or("api"),
+            "docs_url": profile.map(|p| p.docs_url).unwrap_or(""),
+            "model_count": 0u64,
+            "models": Vec::<Value>::new(),
+            "allowance_5h": ov.providers.get(&plan_key).and_then(|p| p.window_5h),
+        }));
+        if let Some(arr) = entry.get_mut("models").and_then(|v| v.as_array_mut()) {
+            arr.push(serde_json::Value::String(m.id.clone()));
+        }
+        if let Some(o) = entry.as_object_mut() {
+            let cur = o.get("model_count").and_then(|v| v.as_u64()).unwrap_or(0);
+            o.insert("model_count".into(), serde_json::json!(cur + 1));
+        }
+    }
+    for (provider, mut e) in grouped {
+        let used: f64 = e.get("models").and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|id| id.as_str()).filter_map(|id| {
+                let mm = st.engine.catalog.models.iter().find(|m| m.id == id)?;
+                sums.get(id).map(|(i, c, o)| mr_core::plans::plan_credits_used(&mm.base_url, &mm.id, *i, *c, *o))
+            }).sum())
+            .unwrap_or(0.0);
+        let allowance = e.get("allowance_5h").and_then(|v| v.as_f64());
+        let pressure = allowance.filter(|a| *a > 0.0).map(|a| used / a);
+        let cool = health_snap.iter()
+            .filter(|(k, _)| k.split('\u{1f}').next().map(|m| st.engine.catalog.models.iter().any(|mm| mm.id == m && mm.provider == provider)).unwrap_or(false))
+            .map(|(_, h)| h.cooldown_remaining_ms(now_ms))
+            .max();
+        e.as_object_mut().map(|o| {
+            o.insert("used_5h".into(), json!((used * 100.0).round() / 100.0));
+            o.insert("pressure".into(), json!(pressure));
+            o.insert("cooldown_remaining_ms".into(), json!(cool));
+            o.insert("available".into(), json!(cool.is_none()));
+        });
+        out.push(e);
+    }
+    (axum::Json(json!({"providers": out, "soft_pct": soft_pct, "now": now_ms}))).into_response()
+}
+
 /// Provider 管理列表：内置注册表 + 扫描发现 + 手动定义，合并展示
 pub async fn api_providers(State(st): State<AppState>) -> Response {
     let ov = crate::state::load_overrides(&st.config.data.dir);
