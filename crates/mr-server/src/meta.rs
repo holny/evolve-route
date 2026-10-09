@@ -722,29 +722,60 @@ pub async fn api_providers_status(State(st): State<AppState>) -> Response {
     let soft_pct = st.config.policy.plan_soft_pct;
     let ov = crate::state::load_overrides(&st.config.data.dir);
     let mut out: Vec<Value> = Vec::new();
-    let manual_bases: std::collections::HashSet<String> = ov.providers.values().map(|p| p.base_url.clone()).collect();
+    let snap = st.engine.catalog_snapshot();
+    use std::hash::{Hash, Hasher};
+    let key_fp = |k: &str| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        k.hash(&mut h);
+        format!("{:016x}", h.finish())
+    };
+    let group_fp = |provider: &str| -> String {
+        snap.iter()
+            .find(|x| x.provider == provider)
+            .and_then(|x| x.key_values().first().cloned())
+            .map(|k| key_fp(&k))
+            .unwrap_or_default()
+    };
+    // 身份遮蔽（与 /api/providers 同规则）：baseUrl+apiKey 指纹
+    let manual_idents: std::collections::HashSet<(String, String)> = ov.providers.iter()
+        .filter(|(_, p)| !p.disabled)
+        .map(|(k, p)| {
+            let fp = p.api_key.as_deref().map(|s| key_fp(s))
+                .or_else(|| p.key_fp.clone())
+                .unwrap_or_else(|| group_fp(k));
+            (p.base_url.clone(), fp)
+        })
+        .collect();
+    // 用量按账号（provider）归属：同端点多账号不互串
+    let mut used_by_provider: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     let mut used_by_url: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-    for m in &st.engine.catalog_snapshot() {
+    for m in &snap {
         if !m.plan { continue; }
         if let Some((i, c, o)) = sums.get(&m.id) {
             let credits = mr_core::plans::plan_credits_used(&m.base_url, &m.id, *i, *c, *o);
+            *used_by_provider.entry(m.provider.clone()).or_insert(0.0) += credits;
             *used_by_url.entry(m.base_url.clone()).or_insert(0.0) += credits;
         }
     }
     for (key, pd) in &ov.providers {
         if pd.disabled { continue; }
-        let used = used_by_url.get(&pd.base_url).copied().unwrap_or(0.0);
+        let has_named = snap.iter().any(|m| &m.provider == key);
+        let used = if has_named {
+            used_by_provider.get(key).copied().unwrap_or(0.0)
+        } else {
+            used_by_url.get(&pd.base_url).copied().unwrap_or(0.0)
+        };
         let allowance = pd.window_5h;
         let pressure = allowance.filter(|a| *a > 0.0).map(|a| used / a);
         let cool = health_snap.iter()
-            .filter(|(k, h)| k.split('\u{1f}').next().map(|m| st.engine.catalog_snapshot().iter().any(|mm| mm.id == m && mm.base_url == pd.base_url)).unwrap_or(false))
+            .filter(|(k, _)| k.split('\u{1f}').next().map(|m| snap.iter().any(|mm| mm.id == m && mm.provider == *key)).unwrap_or(false))
             .map(|(_, h)| h.cooldown_remaining_ms(now_ms))
             .max();
         out.push(json!({
             "key": key, "source": "manual",
             "base_url": pd.base_url, "tier": pd.tier, "plan_kind": pd.plan_kind,
             "allowance_5h": allowance,
-            "used_5h": (used * 100.0).round() / 100.0,
+            "used_5h": if used > 0.0 { (used * 100.0).round() / 100.0 } else { 0.0 },
             "pressure": pressure,
             "soft_pct": soft_pct,
             "cooldown_remaining_ms": cool,
@@ -754,8 +785,8 @@ pub async fn api_providers_status(State(st): State<AppState>) -> Response {
     }
     use std::collections::HashMap;
     let mut grouped: HashMap<String, Value> = HashMap::new();
-    for m in &st.engine.catalog_snapshot() {
-        if manual_bases.contains(&m.base_url) { continue; }
+    for m in &snap {
+        if manual_idents.contains(&(m.base_url.clone(), group_fp(&m.provider))) { continue; }
         let profile = mr_core::plans::plan_for(&m.base_url);
         let plan_key = profile.map(|p| p.key.to_string()).unwrap_or_default();
         let entry = grouped.entry(m.provider.clone()).or_insert_with(|| json!({
@@ -776,7 +807,6 @@ pub async fn api_providers_status(State(st): State<AppState>) -> Response {
         }
     }
     for (provider, mut e) in grouped {
-        let snap = st.engine.catalog_snapshot();
         let used: f64 = e.get("models").and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|id| id.as_str()).filter_map(|id| {
                 let mm = snap.iter().find(|m| m.id == id)?;
@@ -817,13 +847,16 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
         format!("{:016x}", h.finish())
     };
     // 1. 手动定义的（最优先——用户自己加的）
+    let snap_all = st.engine.catalog_snapshot();
     for (key, pd) in &ov.providers {
         if pd.disabled { continue; }
-        // 手动也查用量（base_url 匹配的模型消耗合计）
-        let used = st.engine.catalog_snapshot().iter()
-            .filter(|m| m.base_url == pd.base_url)
-            .filter_map(|m| sums.get(&m.id))
-            .map(|(i, c, o)| mr_core::plans::plan_credits_used(&pd.base_url, "", *i, *c, *o))
+        // 手动也查用量：按账号归属——目录里有同名 provider（编辑自发现条的
+        // overlay）按 provider 过滤；纯自定义条目退回 base_url 匹配
+        let has_named = snap_all.iter().any(|m| &m.provider == key);
+        let used = snap_all.iter()
+            .filter(|m| if has_named { &m.provider == key } else { m.base_url == pd.base_url })
+            .filter_map(|m| sums.get(&m.id).map(|s| (&m.id, s)))
+            .map(|(id, (i, c, o))| mr_core::plans::plan_credits_used(&pd.base_url, id, *i, *c, *o))
         .sum::<f64>();
         out.push(json!({
             "key": key, "source": "manual",
@@ -835,17 +868,34 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
             "fetched_models": pd.fetched_models,
             "has_key": pd.api_key.is_some(),
             "key_fp": pd.api_key.as_deref().map(key_fp).unwrap_or_default(),
-            "used_5h": (used * 100.0).round() / 100.0,
+            "used_5h": if used > 0.0 { (used * 100.0).round() / 100.0 } else { 0.0 },
             "soft_pct": soft_pct,
         }));
     }
-    // 2. 目录里实际存在的（扫描+内置合并，去重手动已有的 base_url）
-    let manual_urls: Vec<&str> = ov.providers.values().map(|p| p.base_url.as_str()).collect();
+    // 2. 目录里实际存在的（扫描+内置合并）。遮蔽按身份（baseUrl+apiKey 指纹，
+    // 用户裁决）判断：手动条目与发现组同账号 → 已由手动行展示；同端点不同
+    // key 是不同账号（如 opencode-go 与 opencode-go-github）各自展示
+    let group_fp = |provider: &str| -> String {
+        snap_all.iter()
+            .find(|x| x.provider == provider)
+            .and_then(|x| x.key_values().first().cloned())
+            .map(|k| key_fp(&k))
+            .unwrap_or_default()
+    };
+    let manual_idents: std::collections::HashSet<(String, String)> = ov.providers.iter()
+        .filter(|(_, p)| !p.disabled)
+        .map(|(k, p)| {
+            // 无显式 key 时回退：编辑自发现 provider 的 overlay 条目按同组现有 key 指纹回填
+            let fp = p.api_key.as_deref().map(|s| key_fp(s))
+                .or_else(|| p.key_fp.clone())
+                .unwrap_or_else(|| group_fp(k));
+            (p.base_url.clone(), fp)
+        })
+        .collect();
     let mut seen_providers = std::collections::HashSet::new();
-    for m in &st.engine.catalog_snapshot() {
-        if manual_urls.iter().any(|u| *u == m.base_url) { continue; }
-        // 按 provider 名去重（不同 provider 同 base_url 各自展示，如 opencode-go 与 opencode-go-github）
+    for m in &snap_all {
         if !seen_providers.insert(m.provider.clone()) { continue; }
+        if manual_idents.contains(&(m.base_url.clone(), group_fp(&m.provider))) { continue; }
         let profile = mr_core::plans::plan_for(&m.base_url);
         let plan_key = profile.map(|p| p.key.to_string()).unwrap_or_default();
         let pov = ov.plans.get(&plan_key);
@@ -855,10 +905,10 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
         let tier_str = pov.and_then(|p| p.tier.clone()).unwrap_or_default();
         let allowance_weekly = mr_core::plans::tier_allowance_by_key(&plan_key, &tier_str, 1);
         let allowance_monthly = mr_core::plans::tier_allowance_by_key(&plan_key, &tier_str, 2);
-        // 用量：该 base_url 下所有模型的 5h 积分合计（逐模型按各自系数折算）
-        let snap = st.engine.catalog_snapshot();
-        let models_at_url: Vec<&mr_core::types::ModelRecord> = snap.iter()
-            .filter(|x| x.base_url == m.base_url)
+        // 用量：该 provider（账号）全部模型的 5h 积分合计——同端点多账号按
+        // provider 归属，不按 base_url（会把别家账号的用量算进来）
+        let models_at_url: Vec<&mr_core::types::ModelRecord> = snap_all.iter()
+            .filter(|x| x.provider == m.provider)
             .collect();
         let used: f64 = models_at_url.iter()
             .filter_map(|mm| {
@@ -942,7 +992,23 @@ pub async fn api_providers_set(
             base_url_changed = entry.base_url != u;
             entry.base_url = u;
         }
-        if let Some(k) = text("api_key") { entry.api_key = Some(k); }
+        if let Some(k) = text("api_key") {
+            entry.api_key = Some(k);
+            entry.key_fp = None; // 显式 key 即身份，指纹失效
+        }
+        // 未填 key 的编辑（发现 provider 的 overlay）：回填该组现有 key 指纹，
+        // 保持 apiKey+baseUrl 身份可判定（否则同端点不同账号会被误遮蔽/误判重）
+        if entry.api_key.is_none() && entry.key_fp.is_none() {
+            if let Some(k) = st.engine.catalog_snapshot().iter()
+                .find(|m| m.provider == key)
+                .and_then(|m| m.key_values().first().cloned())
+            {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                k.hash(&mut h);
+                entry.key_fp = Some(format!("{:016x}", h.finish()));
+            }
+        }
         if let Some(v) = text("protocol") { entry.protocol = v; }
         if let Some(v) = text("plan_kind") { entry.plan_kind = v; }
         if let Some(v) = text("docs_url") { entry.docs_url = v; }

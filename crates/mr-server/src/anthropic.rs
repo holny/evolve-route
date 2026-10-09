@@ -387,6 +387,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                 st.events.clone(),
                 st.flywheel.clone(),
                 st.sessions.clone(),
+                st.quota.clone(),
                 st.bus.clone(),
                 parsed.clone(),
                 false,

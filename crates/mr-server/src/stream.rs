@@ -127,6 +127,7 @@ pub fn telemetry_body<E>(
     events: EventLog,
     flywheel: Flywheel,
     sessions: SessionStore,
+    quota: std::sync::Arc<QuotaLedger>,
     bus: tokio::sync::broadcast::Sender<Value>,
     request: Value,
     anthropic_mode: bool,
@@ -143,6 +144,7 @@ where
             events: Some(events),
             flywheel: Some(flywheel),
             sessions: Some(sessions),
+            quota: Some(quota),
             bus: Some(bus),
             request,
             acc: StreamAcc::new(anthropic_mode),
@@ -362,6 +364,7 @@ struct Finalizer {
     events: Option<EventLog>,
     flywheel: Option<Flywheel>,
     sessions: Option<SessionStore>,
+    quota: Option<std::sync::Arc<QuotaLedger>>,
     bus: Option<tokio::sync::broadcast::Sender<Value>>,
     request: Value,
     acc: StreamAcc,
@@ -412,6 +415,11 @@ impl Drop for Finalizer {
                 }
                 None => Some(json!({"quality": q})),
             };
+        }
+        // 统一收尾（与非流式同路径）：含订阅方案用量记账（quota 缺席时退化为仅落盘）
+        if let (Some(fw), Some(q)) = (&self.flywheel, &self.quota) {
+            finalize_event(&events, fw, q, self.bus.as_ref().expect("bus"), &t);
+            return;
         }
         let event = t.event_value();
         events.record(event.clone());

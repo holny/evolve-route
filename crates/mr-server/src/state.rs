@@ -15,7 +15,8 @@ pub struct Inner {
     pub sessions: SessionStore,
     pub events: EventLog,
     pub health: HealthRegistry,
-    pub quota: QuotaLedger,
+    /// 共享记账（Arc：流式 Finalizer 与 API 读侧必须同一实例，否则用量入不了账）
+    pub quota: std::sync::Arc<QuotaLedger>,
     pub flywheel: Flywheel,
     pub bus: broadcast::Sender<serde_json::Value>,
     pub http: reqwest::Client,
@@ -109,7 +110,7 @@ pub fn build_state(config: FileConfig) -> AppState {
         sessions: SessionStore::new(),
         events,
         health: HealthRegistry::new(),
-        quota: QuotaLedger::new(),
+        quota: std::sync::Arc::new(QuotaLedger::new()),
         flywheel,
         bus,
         http,
@@ -314,6 +315,11 @@ pub struct Overrides {
 pub struct ProviderDef {
     pub base_url: String,
     pub api_key: Option<String>,
+    /// 身份指纹（用户裁决：apiKey+baseUrl 唯一标识 provider）。编辑发现
+    /// provider 而未重填 key 时回填其现有 key 指纹——同端点不同 key 的账号
+    /// （如 opencode-go 与 opencode-go-github）不因此被遮蔽
+    #[serde(default)]
+    pub key_fp: Option<String>,
     /// openai / anthropic
     #[serde(default = "default_protocol")]
     pub protocol: String,
