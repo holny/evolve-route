@@ -14,9 +14,9 @@
 
 ---
 
-> **不选最好的模型——选最合适的。**
+> **Not the best model — the right one, for every request.**
 >
-> 一个本地部署的 LLM 智能路由网关：决策模型逐请求判定任务画像，飞轮从每次结果中学习，科学公式保证每次决策可追溯。**你的数据从不出主机。**
+> A local-first LLM routing gateway: a decision model judges every request's task profile, a flywheel learns from every outcome, and a scientific formula keeps every decision traceable. **Your data never leaves your machine.**
 
 ![EvolveRoute architecture](docs/assets/architecture.svg)
 
@@ -64,13 +64,13 @@ Plans are auto-detected from base URLs, and every window (5h / weekly / monthly)
 
 
 ## Features
-- **本地部署，数据安全** — One Rust single-binary (~7 MB), zero runtime dependencies, no Docker, no Python, no cloud. The whole routing chain runs in-process on your machine: user data, session content, and telemetry signals **never leave the host**. Every decision lands in a local JSONL event log — fully auditable, exportable, deletable.
-- **决策模型智能判断，懂经济账** — A decision model (TypeSafe Jev + a multilingual heuristic second opinion, take-conservative) judges every request on 8 signals (domain, difficulty, needs-vision, triviality, tool-density, high-stakes, session depth, size). Each candidate is **priced in its plan's own currency before it is scored** (credits for zhipu / Z.ai / MiniMax, dollars for opencode Go, AFP for volces), then the five factors are fused with difficulty-linked weights. Three-tier budget protection: >60% quota deprioritizes, >85% breaks session stickiness, >95% filters out — saving headroom for the tasks that actually need it.
-- **科学公式归因** — Five factors (quality · speed · cost · reliability · headroom) combined with difficulty-linked weights and a flywheel bias multiplier — see [The routing formula](#the-routing-formula) for the full derivation. Every term in the score traces back to a named quantity on the request, the model, or the flywheel. No black box.
-- **自进化飞轮** — Every request feeds the flywheel. 4 layers of feedback (transport success, tool-call syntax validity, session-confirmed semantic loops, plugin-reported outcomes) rewrite the per-model learned bias, observed reliability, and token calibration — long-term 50% + last-30 30% + last-10 20%. **Usage is the learning rate.**
-- **多 Agent + 多 Provider 适配** — opencode / Claude Code / Codex / Pi (coding agents), openclaw / hermes / dsh (local harnesses), and any OpenAI- or Anthropic-compatible client. No code changes to your stack. Routes to any OpenAI-compatible **or** Anthropic upstream; Switchyard handles bidirectional streaming translation (event mapping + deterministic IDs) so Claude Code works out of the box. Subscription plans (zhipu coding, Z.ai, opencode zen, volces, MiniMax) and pay-as-you-go APIs share one endpoint.
-- **极速决策，零依赖部署** — Single Rust binary, 6.7 MB; cold start <30 ms; one request adds <300 ms (a Jev call + heuristic fallback). Multi-key pool rotation, provider- and endpoint-level circuit breaking, and an out-of-chain last-resort sweep keep routing alive through single-vendor outages.
-- **本地面板管控，全程决策可见** — Zero-build dashboard at `http://127.0.0.1:8787`: live decision stream with plain-language reasons, scoring matrix, fallback chains with per-hop causes, latency waterfall, model trends, provider & quota management, flywheel learning state. Every response carries `x-ev-model / x-ev-reason / x-ev-decision-id`; `/api/events` exposes the JSONL decision log for query and replay.
+- **Local-first, data-safe** — One Rust single-binary (~7 MB), zero runtime dependencies, no Docker, no Python, no cloud. The whole routing chain runs in-process on your machine: user data, session content, and telemetry signals **never leave the host**. Every decision lands in a local JSONL event log — fully auditable, exportable, deletable.
+- **Decision-model intelligence, economics-aware** — A decision model (TypeSafe Jev + a multilingual heuristic second opinion, take-conservative) judges every request on 8 signals (domain, difficulty, needs-vision, triviality, tool-density, high-stakes, session depth, size). Each candidate is **priced in its plan's own currency before it is scored** (credits for zhipu / Z.ai / MiniMax, dollars for opencode Go, AFP for volces), then the five factors are fused with difficulty-linked weights. Three-tier budget protection: >60% quota deprioritizes, >85% breaks session stickiness, >95% filters out — saving headroom for the tasks that actually need it.
+- **Scientific formula, no black box** — Five factors (quality · speed · cost · reliability · headroom) combined with difficulty-linked weights and a flywheel bias multiplier — see [The routing formula](#the-routing-formula) for the full derivation. Every term in the score traces back to a named quantity on the request, the model, or the flywheel. No black box.
+- **Self-evolving flywheel** — Every request feeds the flywheel. 4 layers of feedback (transport success, tool-call syntax validity, session-confirmed semantic loops, plugin-reported outcomes) rewrite the per-model learned bias, observed reliability, and token calibration — long-term 50% + last-30 30% + last-10 20%. **Usage is the learning rate.**
+- **Any Agent, any Provider** — opencode / Claude Code / Codex / Pi (coding agents), openclaw / hermes / dsh (local harnesses), and any OpenAI- or Anthropic-compatible client. No code changes to your stack. Routes to any OpenAI-compatible **or** Anthropic upstream; Switchyard handles bidirectional streaming translation (event mapping + deterministic IDs) so Claude Code works out of the box. Subscription plans (zhipu coding, Z.ai, opencode zen, volces, MiniMax) and pay-as-you-go APIs share one endpoint.
+- **Fast decisions, zero-deps deployment** — Single Rust binary, 6.7 MB; cold start <30 ms; one request adds <300 ms (a Jev call + heuristic fallback). Multi-key pool rotation, provider- and endpoint-level circuit breaking, and an out-of-chain last-resort sweep keep routing alive through single-vendor outages.
+- **Full dashboard control, every decision visible** — Zero-build dashboard at `http://127.0.0.1:8787`: live decision stream with plain-language reasons, scoring matrix, fallback chains with per-hop causes, latency waterfall, model trends, provider & quota management, flywheel learning state. Every response carries `x-ev-model / x-ev-reason / x-ev-decision-id`; `/api/events` exposes the JSONL decision log for query and replay.
 
 ## Quick Start
 
