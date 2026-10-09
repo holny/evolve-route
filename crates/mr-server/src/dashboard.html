@@ -139,6 +139,7 @@ table.mx tr.win td { color:var(--green); }
       <span style="display:flex;gap:6px">
         <button class="lang-btn" id="pv-add-btn" data-i18n="pv_add">+ 新增 Provider</button>
         <button class="lang-btn" id="pv-refresh-all-btn" data-i18n="pv_refresh_all">🔄 全部重拉</button>
+        <button class="lang-btn" id="pv-scan-btn" data-i18n="pv_scan">🔍 全局扫描</button>
       </span>
     </h2>
     <div class="sub" style="margin-bottom:8px" data-i18n="provider_sub">手动维护 provider 凭据 / 档位 / 窗口额度 · 扫描发现自动展示</div>
@@ -332,6 +333,11 @@ const T = {
   pv_field_rates: {zh:'模型系数表（model|in,cached,out / 行）', en:'Model rates (model|in,cached,out / line)', ko:'모델 계수 (model|in,cached,out / 줄)', ja:'モデル係数 (model|in,cached,out / 行)', es:'Tasas por modelo (model|in,cached,out / línea)', fr:'Taux par modèle (model|in,cached,out / ligne)'},
   pv_field_disabled: {zh:'已禁用', en:'Disabled', ko:'비활성', ja:'無効', es:'Deshabilitado', fr:'Désactivé'},
   pv_available: {zh:'可用', en:'available', ko:'사용 가능', ja:'利用可能', es:'disponible', fr:'disponible'},
+  pv_scan: {zh:'🔍 全局扫描', en:'🔍 Scan all', ko:'🔍 전체 스캔', ja:'🔍 全スキャン', es:'🔍 Escanear todo', fr:'🔍 Tout scanner'},
+  pv_dup_warn: {zh:'⚠ 与现有 provider 重复（baseURL+apiKey 相同）', en:'⚠ duplicate of existing provider (same baseURL+apiKey)', ko:'⚠ 기존 provider와 중복(baseURL+apiKey 동일)', ja:'⚠ 既存 providerと重複(baseURL+apiKey 同一)', es:'⚠ duplicado de provider existente (mismo baseURL+apiKey)', fr:'⚠ doublon d\'un provider existant (même baseURL+apiKey)'},
+  pv_5h: {zh:'5小时', en:'5 hours', ko:'5시간', ja:'5時間', es:'5 horas', fr:'5 heures'},
+  pv_week: {zh:'一周', en:'weekly', ko:'주간', ja:'週', es:'semana', fr:'semaine'},
+  pv_month: {zh:'一月', en:'monthly', ko:'월간', ja:'月', es:'mes', fr:'mois'},
   pv_source_manual: {zh:'手动', en:'manual', ko:'수동', ja:'手動', es:'manual', fr:'manuel'},
   pv_source_scanned: {zh:'扫描发现', en:'scanned', ko:'스캔 발견', ja:'スキャン検出', es:'escaneado', fr:'scanné'},
   pv_confirm_delete: {zh:'确认删除此 Provider？软删除可恢复。', en:'Delete this provider? Soft-delete can be restored.', ko:'이 Provider를 삭제하시겠습니까? 소프트 삭제는 복원 가능합니다.', ja:'この Provider を削除しますか? ソフト削除は復元可能です。', es:'¿Eliminar este provider? Borrado suave se puede restaurar.', fr:'Supprimer ce provider ? Suppression douce restaurable.'},
@@ -878,21 +884,32 @@ function renderProviders(){
     const allowance = (p.windows && p.windows['5h']) || p.allowance;
     const used = p.used_5h || 0;
     const soft = p.soft_pct || 60;
+    // 三窗口配额（5h/周/月）+ 重复标记
+    const wkAllow = p.windows && p.windows['weekly'];
+    const moAllow = p.windows && p.windows['monthly'];
+    const isDup = (state.providers||[]).filter(x =>
+      x.base_url === p.base_url && (x.has_key === p.has_key) && x.key !== p.key).length > 0;
+    const dupBadge = isDup ? '<span class="la f" style="margin-left:4px">'+esc(t('pv_dup_warn'))+'</span>' : '';
     let budgetHtml = '';
-    if (allowance != null && allowance > 0) {
-      const pct = Math.min(100, Math.round(100 * used / allowance));
-      const over = pct >= soft;
-      const col = pct >= 90 ? 'var(--red)' : over ? 'var(--amber)' : 'var(--green)';
-      const reset = p.next_reset_epoch_ms
-        ? '<span class="la f" style="margin-left:6px">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(p.next_reset_epoch_ms))+'</span>'
-        : '';
-      budgetHtml = '<div style="margin-top:6px;max-width:400px">'
-        + '<div style="display:flex;justify-content:space-between;font-size:11px;gap:6px">'
-        + '<span style="color:'+col+'">'+pct+'%</span>'
-        + '<span class="dim2">'+used+' / '+allowance+' (5h)</span></div>'
-        + '<div style="height:4px;background:#21262d;border-radius:2px;margin-top:2px">'
+    const bar = (a, u, label) => {
+      if (a == null || a <= 0) return '';
+      const pct = Math.min(100, Math.round(100 * u / a));
+      const col = pct >= 90 ? 'var(--red)' : pct >= soft ? 'var(--amber)' : 'var(--green)';
+      return '<div style="display:flex;align-items:center;gap:6px;margin-top:2px;font-size:10px">'
+        + '<span style="min-width:28px;color:var(--dim)">'+esc(label)+'</span>'
+        + '<div style="flex:1;height:4px;background:#21262d;border-radius:2px">'
         + '<div style="width:'+pct+'%;height:4px;background:'+col+';border-radius:2px"></div></div>'
-        + reset + '</div>';
+        + '<span style="min-width:80px;text-align:right;color:'+col+'">'+pct+'%</span>'
+        + '<span style="min-width:90px;text-align:right;color:var(--dim)">'+u+' / '+a+'</span></div>';
+    };
+    if (allowance || wkAllow || moAllow) {
+      budgetHtml = '<div style="margin-top:6px;max-width:420px">'
+        + bar(allowance, used, t('pv_5h'))
+        + bar(wkAllow, used * 7, t('pv_week'))
+        + bar(moAllow, used * 30, t('pv_month'));
+      if (p.next_reset_epoch_ms)
+        budgetHtml += '<span class="la f" style="margin-top:2px">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(p.next_reset_epoch_ms))+'</span>';
+      budgetHtml += '</div>';
     }
     const summary = tName === '-' ? '' : ' <span class="dim2">('+esc(tName)+' · '+esc(tVal)+')</span>';
     // 实时状态（providersStatus 轮询数据，按 key 匹配）
@@ -909,7 +926,7 @@ function renderProviders(){
       : '';
     return '<div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px'+(p.disabled?';opacity:.5':'')+'">'
       + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-      +   '<b style="font-size:13px">'+esc(p.key)+'</b> '+srcBadge+statusBadge
+      +   '<b style="font-size:13px">'+esc(p.key)+'</b> '+srcBadge+statusBadge+dupBadge
       +   ' <span class="pbadge" style="background:#1c2d45;color:var(--blue)">'+esc(kindBadge)+'</span>'
       +   summary + disabled + docs + winInfo
       +   '<span style="margin-left:auto"></span>'
@@ -958,7 +975,7 @@ function openProviderDrawer(key, isManual){
   const v = existing || { key: '', base_url: '', api_key: '', protocol: 'openai', plan_kind: 'coding', tier: '', docs_url: '', model_rates: '', disabled: false, window_5h: null, window_weekly: null, window_monthly: null };
   const k = (k2) => esc(v[k2] ?? '');
   form.innerHTML = [
-    ['pv_field_baseUrl',`<input id="pv-baseUrl" value="${k('base_url')}" placeholder="https://api.open.bigmodel.cn/api/coding/paas/v4" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_baseUrl',`<input id="pv-baseUrl" value="${k('base_url')}" ${!isManual && !isNew ? 'readonly style="opacity:.6"' : ''} placeholder="https://api.open.bigmodel.cn/api/coding/paas/v4" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
     ['pv_field_apiKey',`<input id="pv-apiKey" type="password" value="${v.api_key?'':''}" placeholder="sk-..." style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
     ['pv_field_protocol',`<select id="pv-protocol" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px"><option value="openai" ${v.protocol==='openai'?'selected':''}>OpenAI</option><option value="anthropic" ${v.protocol==='anthropic'?'selected':''}>Anthropic</option></select>`],
     ['pv_field_planKind',`<select id="pv-planKind" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">
@@ -1020,11 +1037,15 @@ function collectProviderForm(){
 function saveProvider(isNew, isManual){
   const body = collectProviderForm();
   if (!body.base_url) { alert('base_url required'); return; }
-  if (!isManual && !isNew) {
-    // 自动发现 provider 不可 POST（写 overrides）—— 提示
-    alert('扫描发现 provider 不可编辑/删除（请到 /etc/agent 配置中调整后由后台任务同步）');
-    return;
+  // baseURL+apiKey 重复检测（编辑自身除外）
+  const dup = (state.providers||[]).find(x =>
+    x.base_url === body.base_url && x.key !== body.key &&
+    (isManual ? true : x.source === 'manual'));
+  if (dup) {
+    if (!confirm(t('pv_dup_warn')+'\n\n'+dup.key+' — still save?')) return;
   }
+  // 扫描发现的 provider 也可编辑 overlay 字段（tier/plan_kind/windows/rates/docs_url）——
+  // 这些写入 overrides 不影响 agent 原始配置；baseUrl/apiKey 来自 agent 配置不建议在此改
   fetch('/api/providers', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)})
     .then(r => r.json().then(j => {
       if (j.fetched_models != null) alert(t('pv_fetched').replace('{n}', j.fetched_models));
@@ -1043,6 +1064,12 @@ function refreshProvider(){
 }
 document.getElementById('pv-add-btn').addEventListener('click', () => openProviderDrawer('', true));
 document.getElementById('pv-refresh-all-btn').addEventListener('click', refreshAllProviders);
+document.getElementById('pv-scan-btn').addEventListener('click', () => {
+  fetch('/api/providers/scan', {method:'POST'}).then(r => r.json()).then(j => {
+    alert(t('pv_scan')+' → '+j.catalog_size+' models');
+    refresh();
+  });
+});
 function renderPlans(){ renderProviders(); }
 const TREND_COLORS = ['#58a6ff','#3fb950','#d29922','#f85149','#8957e5','#39d2c0'];
 function trendSvg(series, pick, fmt, y0forced) {

@@ -91,7 +91,7 @@ impl Default for ModelRecord {
     fn default() -> Self {
         Self {
             id: String::new(),
-            provider: "custom".into(),
+            provider: String::new(),
             protocol: Protocol::OpenAI,
             base_url: String::new(),
             api_key_env: None,

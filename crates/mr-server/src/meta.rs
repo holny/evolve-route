@@ -622,6 +622,14 @@ pub async fn api_trends(
     (axum::Json(json!({"window_ms": window_ms, "series": series}))).into_response()
 }
 
+/// 全局扫描：手动触发 agent 配置 + 远程 /models 全量重扫
+pub async fn api_providers_scan(State(st): State<AppState>) -> Response {
+    st.rescan_discovery();
+    st.refresh_remote_models();
+    let count = st.engine.catalog.models.len();
+    (axum::Json(json!({"status": "ok", "catalog_size": count}))).into_response()
+}
+
 /// Provider 实时状态（每 5s 轮询）：health、最后成功时间、当前使用率
 pub async fn api_providers_status(State(st): State<AppState>) -> Response {
     let now_ms = mr_memory::health::now();
@@ -1021,19 +1029,28 @@ pub async fn api_plans_set(
     }
     crate::state::save_overrides(dir, &ov);
     // 档位变化 → 预算额度即时更新（registry 档位表驱动）
-    let tier = ov.plans.get(&key).and_then(|p| p.tier.clone());
-    let allowance_5h = tier.as_deref().and_then(|t| mr_core::plans::tier_allowance_by_key(&key, t, 0));
-    let allowance_weekly = tier.as_deref().and_then(|t| mr_core::plans::tier_allowance_by_key(&key, t, 1));
-    let allowance_monthly = tier.as_deref().and_then(|t| mr_core::plans::tier_allowance_by_key(&key, t, 2));
+    // provider 名不一定等于套餐注册表 key（如 opencode-go-github → opencode-go），
+    // 通过 base_url 匹配注册表找到正确的 plan_key
+    let base_url = ov.providers.get(&key).map(|p| p.base_url.clone()).unwrap_or_default();
+    let plan_key = mr_core::plans::plan_for(&base_url)
+        .map(|p| p.key.to_string())
+        .unwrap_or(key.clone());
+    let tier: String = ov.providers.get(&key)
+        .map(|p| p.tier.clone())
+        .filter(|t| !t.is_empty())
+        .or_else(|| text("tier"))
+        .unwrap_or_default();
+    let allowance_5h = if tier.is_empty() { None } else { mr_core::plans::tier_allowance_by_key(&plan_key, &tier, 0) };
+    let allowance_weekly = if tier.is_empty() { None } else { mr_core::plans::tier_allowance_by_key(&plan_key, &tier, 1) };
+    let allowance_monthly = if tier.is_empty() { None } else { mr_core::plans::tier_allowance_by_key(&plan_key, &tier, 2) };
+    // 预算写入用 plan_key（路由按 plan_key 查预算）
     if let Some(a) = allowance_5h {
         if let Ok(mut b) = st.plan_budgets.lock() {
-            b.insert(key.clone(), a);
+            b.insert(plan_key.clone(), a);
         }
-    } else if let Ok(mut b) = st.plan_budgets.lock() {
-        b.remove(&key);
     }
-    let e = ov.plans.get(&key).cloned().unwrap_or_default();
-    (axum::Json(json!({"status": "ok", "key": key, "override": e, "allowance_5h": allowance_5h, "allowance_weekly": allowance_weekly, "allowance_monthly": allowance_monthly}))).into_response()
+    let e = ov.providers.get(&key).cloned().unwrap_or_default();
+    (axum::Json(json!({"status": "ok", "key": key, "plan_key": plan_key, "override": e, "allowance_5h": allowance_5h, "allowance_weekly": allowance_weekly, "allowance_monthly": allowance_monthly}))).into_response()
 }
 
 /// SSE stream of routing events for the dashboard.

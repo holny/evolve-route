@@ -237,9 +237,15 @@ impl FileConfig {
                         keys.push(KeySlot { label: env.clone(), value: v });
                     }
         let api_key = entry.api_key_env.as_ref().map(|env| std::env::var(env).unwrap_or_default());
+        // provider 为空时从 id 前缀推断（"zhipuai-coding-plan/glm-5.3" → "zhipuai-coding-plan"）
+        let provider = if entry.provider.is_empty() {
+            entry.id.split('/').next().unwrap_or(&entry.id).to_string()
+        } else {
+            entry.provider.clone()
+        };
         ModelRecord {
             id: entry.id.clone(),
-            provider: entry.provider.clone(),
+            provider,
             protocol: entry.protocol,
             base_url: entry.base_url.trim_end_matches('/').to_string(),
             api_key_env: entry.api_key_env.clone(),
