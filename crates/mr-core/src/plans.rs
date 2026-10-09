@@ -150,8 +150,10 @@ pub const REGISTRY: &[PlanProfile] = &[
         windows: "月度美元按模型限额 · 5h=月20% · 周=月50% · 月=100%",
         models_note: "Go/Plus 月限: Flash $60/$180 · GLM-5.3 $15/$120 · GLM-5.2 $60/$180 · Kimi-K3 $15/$60 · MiniMax-M3 $60/$180 · DeepSeek-V4-Pro $15/$60 (每模型独立)",
         docs_url: "https://opencode.ai/docs/go/",
+        // 账户订阅价口径（Go $20/月 · Go+ $200/月），5h=月20% 周=50%（官方比例）；
+        // per-model 月度美元限额另见 model_rates 第 4 列（每模型独立）
         tiers: "go / go-plus",
-        tier_allowances: "",
+        tier_allowances: "go|4|10|20\ngo-plus|40|100|200",
         model_rates: "glm-5.3-flash|0.15|0.03|0.50|$60\nglm-5.3|1.40|0.26|4.40|$15\nglm-5.2|1.40|0.26|4.40|$60\nkimi-k3|3.00|0.30|15.00|$15\nkimi-k2.7-code|0.95|0.19|4.00|$60\nminimax-m3|0.30|0.06|1.20|$60\nminimax-m2.7|0.30|0.06|1.20|$60\ndeepseek-v4-pro|0.66|0.022|1.98|$15\ndeepseek-v4-flash|0.15|0.003|0.60|$30\nqwen3.8-max|2.00|0.25|6.00|$15\nqwen3.8-flash|0.15|0.016|0.47|$30\nqwen3.7-plus|0.40|0.04|1.60|$60\ngpt-6-luna|0.10|0.01|0.50|$15\nlongcat-2.0|0.30|0.006|1.20|$60\nlongcat-2.5-preview-free|0|0|0|Unlimited",
         rates_kind: "dollar",
         rates_note: "$/1M tokens (input / cached-read / output) · Go 档月限，Plus 限额更高(Flash $180/5.3 $120…) · 5h=月20% 周=50%",
@@ -264,13 +266,37 @@ pub fn model_price_hint(base_url: &str, model_id: &str) -> Option<f32> {
 }
 
 
-/// 积分系数（输入/缓存命中/输出）——按官方文档的模型级倍率；非积分制返回 None
+/// 积分系数（输入/缓存命中/输出）——按官方文档的模型级倍率；非积分制返回 None。
+/// 美元制（opencode-go）：单价 $/1M × 100 预折入积分公式（used=(tok×k)/1e4=美元），
+/// 使 plan_credits_used 对两类方案统一返回「账户货币量」。
 pub fn credit_multipliers(base_url: &str, model_id: &str) -> Option<(f64, f64, f64)> {
     let p = plan_for(base_url)?;
     let m = model_id.to_lowercase();
     match p.key {
         "zhipu-coding" | "zai-devpack" | "minimax-coding" => {
             if m.contains("flash") { Some((2.3, 0.56, 8.0)) } else { Some((6.9, 1.7, 24.0)) }
+        }
+        "opencode-go" => {
+            // model_rates 单价 ($/1M: in/cached/out) × 100 → 美元折算系数
+            const PRICE_X100: &[(&str, f64, f64, f64)] = &[
+                ("glm-5.3-flash", 15.0, 3.0, 50.0),
+                ("glm-5.3", 140.0, 26.0, 440.0),
+                ("glm-5.2", 140.0, 26.0, 440.0),
+                ("kimi-k3", 300.0, 30.0, 1500.0),
+                ("kimi-k2.7-code", 95.0, 19.0, 400.0),
+                ("minimax-m3", 30.0, 6.0, 120.0),
+                ("minimax-m2.7", 30.0, 6.0, 120.0),
+                ("deepseek-v4-pro", 66.0, 2.2, 198.0),
+                ("deepseek-v4-flash", 15.0, 0.3, 60.0),
+                ("qwen3.8-max", 200.0, 25.0, 600.0),
+                ("qwen3.8-flash", 15.0, 1.6, 47.0),
+                ("qwen3.7-plus", 40.0, 4.0, 160.0),
+                ("gpt-6-luna", 10.0, 1.0, 50.0),
+                ("longcat-2.0", 30.0, 0.6, 120.0),
+            ];
+            PRICE_X100.iter()
+                .find(|(name, _, _, _)| m.contains(name))
+                .map(|(_, ki, kc, ko)| (*ki, *kc, *ko))
         }
         "volces-coding" | "volces-agent" => {
             let k = if m.contains("kimi-k3") {

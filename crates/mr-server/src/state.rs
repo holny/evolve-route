@@ -84,7 +84,10 @@ pub fn build_state(config: FileConfig) -> AppState {
         }));
     }
 
-    // 订阅方案预算：档位→额度（registry），显式 allowance 覆盖优先
+    // 订阅方案预算：档位→额度（registry），显式 allowance 覆盖优先。
+    // 仅取 plans 层（方案级）；手动 provider 档位额度只进展示层（meta），
+    // 不入路由预算——同 plan_key 多账号（如 opencode-go 与 -github）档位
+    // 各异，方案级注入会错把一家档位额度压到别家账号头上
     let mut plan_budgets: HashMap<String, f64> = HashMap::new();
     for (key, po) in &ov.plans {
         if let Some(tier) = &po.tier

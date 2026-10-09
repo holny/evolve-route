@@ -765,7 +765,10 @@ pub async fn api_providers_status(State(st): State<AppState>) -> Response {
         } else {
             used_by_url.get(&pd.base_url).copied().unwrap_or(0.0)
         };
-        let allowance = pd.window_5h;
+        let allowance = pd.window_5h.or_else(|| {
+            let pk = mr_core::plans::plan_for(&pd.base_url).map(|p| p.key).unwrap_or("");
+            mr_core::plans::tier_allowance_by_key(pk, &pd.tier, 0)
+        });
         let pressure = allowance.filter(|a| *a > 0.0).map(|a| used / a);
         let cool = health_snap.iter()
             .filter(|(k, _)| k.split('\u{1f}').next().map(|m| snap.iter().any(|mm| mm.id == m && mm.provider == *key)).unwrap_or(false))
@@ -850,6 +853,9 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
     let snap_all = st.engine.catalog_snapshot();
     for (key, pd) in &ov.providers {
         if pd.disabled { continue; }
+        // 档位联动：显式窗口额度 > 注册表档位额度（选档位后配额条立即生效）
+        let plan_key = mr_core::plans::plan_for(&pd.base_url).map(|p| p.key).unwrap_or("");
+        let tier_allow = |w: usize| mr_core::plans::tier_allowance_by_key(plan_key, &pd.tier, w);
         // 手动也查用量：按账号归属——目录里有同名 provider（编辑自发现条的
         // overlay）按 provider 过滤；纯自定义条目退回 base_url 匹配
         let has_named = snap_all.iter().any(|m| &m.provider == key);
@@ -863,7 +869,11 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
             "base_url": pd.base_url, "protocol": pd.protocol,
             "plan_kind": pd.plan_kind, "docs_url": pd.docs_url,
             "tier": pd.tier,
-            "windows": {"5h": pd.window_5h, "weekly": pd.window_weekly, "monthly": pd.window_monthly},
+            "windows": {
+                "5h": pd.window_5h.or_else(|| tier_allow(0)),
+                "weekly": pd.window_weekly.or_else(|| tier_allow(1)),
+                "monthly": pd.window_monthly.or_else(|| tier_allow(2)),
+            },
             "model_rates": pd.model_rates,
             "fetched_models": pd.fetched_models,
             "has_key": pd.api_key.is_some(),

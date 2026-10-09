@@ -902,12 +902,14 @@ function renderProviders(){
       if (a == null || a <= 0) return '';
       const pct = Math.min(100, Math.round(100 * u / a));
       const col = pct >= 90 ? 'var(--red)' : pct >= soft ? 'var(--amber)' : 'var(--green)';
+      const uS = Math.round(u * 100) / 100;
+      const aS = Math.round(a * 100) / 100;
       return '<div style="display:flex;align-items:center;gap:6px;margin-top:2px;font-size:10px">'
         + '<span style="min-width:28px;color:var(--dim)">'+esc(label)+'</span>'
         + '<div style="flex:1;height:4px;background:#21262d;border-radius:2px">'
         + '<div style="width:'+pct+'%;height:4px;background:'+col+';border-radius:2px"></div></div>'
         + '<span style="min-width:80px;text-align:right;color:'+col+'">'+pct+'%</span>'
-        + '<span style="min-width:90px;text-align:right;color:var(--dim)">'+u+' / '+a+'</span></div>';
+        + '<span style="min-width:90px;text-align:right;color:var(--dim)">'+uS+' / '+aS+'</span></div>';
     };
     if (allowance || wkAllow || moAllow) {
       budgetHtml = '<div style="margin-top:6px;max-width:420px">'
