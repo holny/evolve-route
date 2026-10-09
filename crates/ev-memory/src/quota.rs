@@ -170,6 +170,31 @@ impl QuotaLedger {
                 updated_epoch_ms: now,
             });
         }
+        // 通用 weekly / monthly 窗口（zhipu/volces/策略派等 namespace 的变体）——
+        // 失败响应 429 常带这两个 scope 的 reset（用户裁决：三窗口隔离展示）
+        let generic_windows: &[(&str, &str)] = &[
+            ("weekly", "x-ratelimit-weekly"),
+            ("monthly", "x-ratelimit-monthly"),
+            ("weekly", "ratelimit-weekly-token"),
+            ("monthly", "ratelimit-monthly-token"),
+        ];
+        for (scope, prefix) in generic_windows {
+            let remaining = get(&format!("{prefix}-remaining"));
+            let limit = get(&format!("{prefix}-limit"));
+            if remaining.is_none() && limit.is_none() { continue; }
+            // reset 可能是 RFC3339（absolute）或秒数（relative）
+            let reset = headers
+                .get(format!("{prefix}-reset"))
+                .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+                .and_then(|raw| parse_rfc3339_ms(&raw).or_else(|| raw.parse::<u64>().ok().map(|s| now.saturating_add(s * 1000))));
+            out.push(WindowState {
+                scope: (*scope).into(),
+                remaining,
+                limit,
+                reset_epoch_ms: reset,
+                updated_epoch_ms: now,
+            });
+        }
         out
     }
 

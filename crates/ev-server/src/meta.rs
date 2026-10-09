@@ -985,14 +985,17 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
     (axum::Json(json!({"providers": out}))).into_response()
 }
 
-/// Provider 测实时配额（每次响应头到达即更新）——面板 quota bars 的权威源
+/// Provider 测实时配额（每次响应头到达即更新，含失败响应 429 reset/remaining）——
+/// 面板 quota bars 的权威源（用户裁决：以 Provider 测为准）
 fn observed_for_plan(quota: &std::sync::Arc<ev_memory::quota::QuotaLedger>, base_url: &str, now_ms: u64) -> Value {
     let Some(pk) = ev_core::plans::plan_key_for(base_url) else { return json!({}) };
     // 5 分钟内有效（panel 5s 轮询，足够新鲜）
     let mut out = serde_json::Map::new();
-    for scope in ["5h", "7d", "tokens", "requests", "monthly"] {
+    for scope in ["5h", "7d", "tokens", "requests", "weekly", "monthly"] {
         if let Some(w) = quota.observed_window(pk, scope, now_ms, 5 * 60 * 1000) {
             out.insert(scope.into(), json!({
+                // remaining=0 且 reset 未到 → 窗口对抗（provider 明示该窗口耗尽）
+                "exhausted": w.remaining == Some(0),
                 "remaining": w.remaining, "limit": w.limit,
                 "reset_epoch_ms": w.reset_epoch_ms, "updated_epoch_ms": w.updated_epoch_ms,
             }));

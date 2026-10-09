@@ -310,6 +310,9 @@ pub async fn chat_completions(
         let status = resp.status();
 
         if fallback_eligible(status.as_u16()) {
+            // 失败路径也捕获 provider 配额头（用户裁决：429/402 的 reset/remaining
+            // 是权威信号——须在 bytes() 消耗 resp 之前读取头部）
+            let failure_windows = ev_memory::QuotaLedger::parse_headers(resp.headers());
             // 重置时间提取：retry-after(秒) 优先，回退 x-ratelimit-reset-*（纪元 ms 或时长 ms）
             let retry_after_ms = resp
                 .headers()
@@ -330,10 +333,14 @@ pub async fn chat_completions(
                                 n
                             }
                         })
-                });
+                });;
             let err_body = resp.bytes().await.unwrap_or_default();
             let snippet =
                 String::from_utf8_lossy(&err_body.slice(..err_body.len().min(MAX_ERROR_BODY))).into_owned();
+            // 400 响应体入日志——上游拒绝原因需要可见（用户裁决：不可黑盒）
+            if status.as_u16() == 400 {
+                tracing::warn!(model = %cand, status = 400, body = %snippet[..snippet.len().min(300)], "upstream 400 — request rejected");
+            }
             let failure = classify_failure(status.as_u16(), &snippet, retry_after_ms);
             tracing::warn!(model = %cand, status = status.as_u16(), kind = failure.kind.label(), "upstream failure, marking health");
             st.events.record(json!({
@@ -361,6 +368,16 @@ pub async fn chat_completions(
                     | HealthKind::RateLimited
             ) {
                 dead_providers.insert(record.provider.clone());
+            }
+            // 失败响应同样捕获 provider 配额头（用户裁决：429/402 的 reset/remaining
+            // 是权威信号，丢弃会导致前端展示与真实状态脱钩）
+            {
+                if !failure_windows.is_empty() {
+                    st.quota.observe(&format!("{cand}{KEY_SEP}{key_idx}"), failure_windows.clone());
+                    if let Some(pk) = ev_core::plans::plan_key_for(&record.base_url) {
+                        st.quota.observe_provider(pk, &failure_windows);
+                    }
+                }
             }
             st.health.mark_failure(&health_id, failure);
             let kind_label = {

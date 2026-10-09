@@ -913,11 +913,37 @@ function renderProviders(){
         + '<span style="min-width:80px;text-align:right;color:'+col+'">'+pct+'%</span>'
         + '<span style="min-width:90px;text-align:right;color:var(--dim)">'+uS+' / '+aS+'</span></div>';
     };
-    if (allowance || wkAllow || moAllow) {
-      budgetHtml = '<div style="margin-top:6px;max-width:420px">'
-        + bar(allowance, used, t('pv_5h'))
-        + bar(wkAllow, used * 7, t('pv_week'))
-        + bar(moAllow, used * 30, t('pv_month'));
+    // 三窗口展示（用户裁决）：provider 实测优先（observed.remaining / limit /
+    // reset），本地 token 估算兜底；重置时间显示钟面时刻而非倒计时。
+    // scope 映射：7d ≈ weekly（同一窗口，不同 provider 命名不同）
+    const obsWin = (k) => obs[k] || (k === 'weekly' ? obs['7d'] : null);
+    const winBar = (label, allowanceKey, simFactor) => {
+      const a = p.windows && p.windows[allowanceKey];
+      const o = obsWin(allowanceKey);
+      // provider 实测 with reset time
+      if (o && o.remaining != null && o.limit != null && o.limit > 0) {
+        const rem = o.remaining, lim = o.limit;
+        const pct = Math.min(100, Math.round(100 * (lim - rem) / lim));
+        const col = pct >= 90 ? 'var(--red)' : pct >= soft ? 'var(--amber)' : 'var(--green)';
+        const resetTxt = o.reset_epoch_ms
+          ? ' · <span style="color:var(--fg)">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(o.reset_epoch_ms))+'</span>'
+          : '';
+        return '<div style="display:flex;align-items:center;gap:6px;margin-top:2px;font-size:10px">'
+          + '<span style="min-width:28px;color:var(--dim)">'+esc(label)+'</span>'
+          + '<div style="flex:1;height:4px;background:#21262d;border-radius:2px">'
+          + '<div style="width:'+pct+'%;height:4px;background:'+col+';border-radius:2px"></div></div>'
+          + '<span style="min-width:80px;text-align:right;color:'+col+'">'+pct+'%</span>'
+          + '<span style="min-width:120px;text-align:right;color:var(--dim)">'+(lim-rem)+' / '+lim+resetTxt+'</span></div>';
+      }
+      // 本地估算兜底（无 provider 观测值）
+      if (a == null || a <= 0) return '';
+      return bar(a, used * simFactor, label);
+    };
+    if (allowance || wkAllow || moAllow || Object.keys(obs).length) {
+      budgetHtml = '<div style="margin-top:6px;max-width:520px">'
+        + winBar(t('pv_5h'), '5h', 1)
+        + winBar(t('pv_week'), 'weekly', 7)
+        + winBar(t('pv_month'), 'monthly', 30);
       if (p.next_reset_epoch_ms)
         budgetHtml += '<span class="la f" style="margin-top:2px">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(p.next_reset_epoch_ms))+'</span>';
       budgetHtml += '</div>';

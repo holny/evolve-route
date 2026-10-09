@@ -270,6 +270,8 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
 
         let status = resp.status();
         if fallback_eligible(status.as_u16()) {
+            // 失败路径同样捕获 provider 配额头（用户裁决：须在 bytes() 消耗 resp 前读取）
+            let failure_windows = ev_memory::QuotaLedger::parse_headers(resp.headers());
             let retry_after_ms = resp
                 .headers()
                 .get("retry-after")
@@ -297,6 +299,15 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                     | HealthKind::RateLimited
             ) {
                 dead_providers.insert(record.provider.clone());
+            }
+            // 失败响应同样捕获 provider 配额头（与 relay 同规则）
+            {
+                if !failure_windows.is_empty() {
+                    st.quota.observe(&format!("{cand}\u{1f}{key_idx}"), failure_windows.clone());
+                    if let Some(pk) = ev_core::plans::plan_key_for(&record.base_url) {
+                        st.quota.observe_provider(pk, &failure_windows);
+                    }
+                }
             }
             st.health.mark_failure(&health_id, failure);
             let kind_label = {

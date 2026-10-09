@@ -103,7 +103,9 @@ pub fn classify_failure(status: u16, body_snippet: &str, retry_after_ms: Option<
             until_epoch_ms: None,
         },
         400 if ["context", "too long", "maximum context", "context length",
-                "exceeds", "prompt is too long", "上下文", "超出了模型"]
+                "exceeds", "prompt is too long", "上下文", "超出了模型",
+                "input length", "token limit", "max_tokens", "input tokens",
+                "内容过长", "长度超过"]
             .iter()
             .any(|k| lower.contains(k)) =>
         {
@@ -130,8 +132,12 @@ pub fn classify_failure(status: u16, body_snippet: &str, retry_after_ms: Option<
             if no_credit.iter().any(|k| lower.contains(k)) {
                 Failure { kind: HealthKind::PaymentRequired, message: "no credit".into(), until_epoch_ms: None }
             } else if quota.iter().any(|k| lower.contains(k)) {
+                // 窗口标签（用户裁决：哪个门限超了要可判定——5h/weekly/monthly）；
                 // 上游告知重置时间时精确冷却；否则固定 5 分钟探测节奏
-                Failure { kind: HealthKind::QuotaExhausted, message: "quota window exhausted".into(), until_epoch_ms: until }
+                let win = if lower.contains("weekly") || lower.contains("week") { " (weekly)" }
+                    else if lower.contains("monthly") || lower.contains("month") { " (monthly)" }
+                    else { " (5h)" };
+                Failure { kind: HealthKind::QuotaExhausted, message: format!("quota window exhausted{win}"), until_epoch_ms: until }
             } else {
                 Failure {
                     kind: HealthKind::RateLimited,
