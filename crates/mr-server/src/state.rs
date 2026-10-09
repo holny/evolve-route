@@ -73,7 +73,7 @@ pub fn build_state(config: FileConfig) -> AppState {
     let mut plan_budgets: HashMap<String, f64> = HashMap::new();
     for (key, po) in &ov.plans {
         if let Some(tier) = &po.tier
-            && let Some(a) = mr_core::plans::tier_allowance_by_key(key, tier)
+            && let Some(a) = mr_core::plans::tier_allowance_by_key(key, tier, 0)
         {
             plan_budgets.insert(key.clone(), a);
         }

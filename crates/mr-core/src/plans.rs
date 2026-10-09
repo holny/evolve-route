@@ -106,7 +106,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "编码套餐内 token 折算额度（具体积分见 MiniMax 控制台/Coding Plan 文档），非高峰时段更优。套餐与 Zhipu/Volces Coding Plan 同类（按量按 plan 档位限速）",
         docs_url: "https://platform.minimax.io/docs/coding-plan",
         tiers: "lite / pro / max",
-        tier_allowances: "lite|4000\npro|16000\nmax|40000",
+        tier_allowances: "lite|4000|20000|80000\npro|16000|80000|320000\nmax|40000|200000|800000",
         model_rates: "MiniMax-M3|6.9|1.7|24\nMiniMax-M2.7|2.3|0.56|8\nMiniMax-M2.7-highspeed|2.3|0.56|8",
         rates_kind: "credits",
         rates_note: "积分系数（输入/缓存命中/输出）· 消耗=(入+缓存+出)×系数/1万 · 同智谱/z.ai 编码套餐口径",
@@ -121,7 +121,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "积分=(入×系+缓存×系+出×系)/1w · GLM-5.3: 6.9/1.7/24 · Flash: 2.3/0.56/8 · 非高峰5折(高峰=周一~五14-18 UTC+8)",
         docs_url: "https://docs.bigmodel.cn/cn/coding-plan/overview",
         tiers: "lite / pro / max",
-        tier_allowances: "lite|2000\npro|12000\nmax|28000",
+        tier_allowances: "lite|2000|10000|40000\npro|12000|60000|240000\nmax|28000|140000|560000",
         model_rates: "GLM-5.3|6.9|1.7|24\nGLM-5.3-Flash|2.3|0.56|8",
         rates_kind: "credits",
         rates_note: "积分系数（输入/缓存命中/输出）· 消耗=(入+缓存+出)×系数/1万 · 非高峰(工作日14-18 UTC+8之外)5折",
@@ -136,7 +136,7 @@ pub const REGISTRY: &[PlanProfile] = &[
         models_note: "credits=(in×k+cached×k+out×k)/10k · GLM-5.3: 6.9/1.7/24 · Flash: 2.3/0.56/8 · off-peak 50% (peak=Mon-Fri 14-18 UTC+8)",
         docs_url: "https://docs.z.ai/devpack/overview",
         tiers: "lite / pro / max",
-        tier_allowances: "lite|2000\npro|12000\nmax|28000",
+        tier_allowances: "lite|2000|10000|40000\npro|12000|60000|240000\nmax|28000|140000|560000",
         model_rates: "GLM-5.3|6.9|1.7|24\nGLM-5.3-Flash|2.3|0.56|8",
         rates_kind: "credits",
         rates_note: "credit multipliers (input/cached/output) · usage=(sum×k)/10k · off-peak 50% (peak=Mon-Fri 14-18 UTC+8)",
@@ -295,14 +295,20 @@ pub fn plan_key_for(base_url: &str) -> Option<&'static str> {
 }
 
 /// 档位对应额度（积分）；未登记返回 None
-pub fn tier_allowance_by_key(key: &str, tier: &str) -> Option<f64> {
+/// 档位对应额度（积分）；未登记返回 None。
+/// 格式两代兼容："tier|5h" 或 "tier|5h|weekly|monthly"
+/// window: 0=5h, 1=weekly, 2=monthly
+pub fn tier_allowance_by_key(key: &str, tier: &str, window: usize) -> Option<f64> {
     let p = REGISTRY.iter().find(|p| p.key == key)?;
     let t = tier.to_lowercase();
     p.tier_allowances
         .split('\n')
         .filter_map(|l| l.split_once('|'))
         .find(|(k, _)| k.eq_ignore_ascii_case(&t))
-        .and_then(|(_, v)| v.parse::<f64>().ok())
+        .and_then(|(_, v)| {
+            let parts: Vec<&str> = v.split('|').collect();
+            parts.get(window).or_else(|| parts.first()).and_then(|s| s.parse::<f64>().ok()).filter(|f| *f > 0.0)
+        })
 }
 
 /// 窗口内积分消耗（官方系数折算）；非积分制（如 OpenCode Go 美元制）返回 0（v2 接入）

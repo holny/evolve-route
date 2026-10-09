@@ -750,6 +750,9 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
         let tier = pov.and_then(|p| p.tier.clone())
             .unwrap_or_default();
         let allowance_5h = budgets.get(&plan_key).copied();
+        let tier_str = pov.and_then(|p| p.tier.clone()).unwrap_or_default();
+        let allowance_weekly = mr_core::plans::tier_allowance_by_key(&plan_key, &tier_str, 1);
+        let allowance_monthly = mr_core::plans::tier_allowance_by_key(&plan_key, &tier_str, 2);
         // 用量：该 base_url 下所有模型的 5h 积分合计（逐模型按各自系数折算）
         let models_at_url: Vec<&mr_core::types::ModelRecord> = st.engine.catalog.models.iter()
             .filter(|x| x.base_url == m.base_url)
@@ -772,15 +775,15 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
             .min();
         let model_ids: Vec<&str> = models_at_url.iter().map(|mm| mm.id.as_str()).collect();
         out.push(json!({
-            "key": format!("discovered:{}", m.provider), "source": "discovered",
+            "key": m.provider.clone(), "source": "discovered",
             "base_url": m.base_url, "protocol": if m.protocol == mr_core::types::Protocol::Anthropic { "anthropic" } else { "openai" },
             "plan_kind": profile.map(|p| p.plan_kind).unwrap_or("api"),
             "docs_url": profile.map(|p| p.docs_url).unwrap_or(""),
             "tier": tier,
             "windows": {
                 "5h": allowance_5h,
-                "weekly": None::<f64>,
-                "monthly": None::<f64>,
+                "weekly": allowance_weekly,
+                "monthly": allowance_monthly,
             },
             "model_rates": profile.map(|p| p.model_rates).unwrap_or(""),
             "model_count": model_ids.len(),
@@ -1018,8 +1021,10 @@ pub async fn api_plans_set(
     crate::state::save_overrides(dir, &ov);
     // 档位变化 → 预算额度即时更新（registry 档位表驱动）
     let tier = ov.plans.get(&key).and_then(|p| p.tier.clone());
-    let allowance = tier.as_deref().and_then(|t| mr_core::plans::tier_allowance_by_key(&key, t));
-    if let Some(a) = allowance {
+    let allowance_5h = tier.as_deref().and_then(|t| mr_core::plans::tier_allowance_by_key(&key, t, 0));
+    let allowance_weekly = tier.as_deref().and_then(|t| mr_core::plans::tier_allowance_by_key(&key, t, 1));
+    let allowance_monthly = tier.as_deref().and_then(|t| mr_core::plans::tier_allowance_by_key(&key, t, 2));
+    if let Some(a) = allowance_5h {
         if let Ok(mut b) = st.plan_budgets.lock() {
             b.insert(key.clone(), a);
         }
@@ -1027,7 +1032,7 @@ pub async fn api_plans_set(
         b.remove(&key);
     }
     let e = ov.plans.get(&key).cloned().unwrap_or_default();
-    (axum::Json(json!({"status": "ok", "key": key, "override": e, "allowance": allowance}))).into_response()
+    (axum::Json(json!({"status": "ok", "key": key, "override": e, "allowance_5h": allowance_5h, "allowance_weekly": allowance_weekly, "allowance_monthly": allowance_monthly}))).into_response()
 }
 
 /// SSE stream of routing events for the dashboard.
