@@ -11,10 +11,10 @@ Agent ──► 网关入口 ──► 身份提取 ──► 预处理 ──�
 
 | 头 | 优先级 | 用途 |
 |---|---|---|
-| `x-mr-client` | 1 | 用户插件或自定义 |
+| `x-ev-client` | 1 | 用户插件或自定义 |
 | `originator`（codex）| 2 | Codex CLI |
 | `user-agent` 映射 | 3 | claude-cli→claude-code, codex-cli→codex, opencode-cli→opencode |
-| `x-mr-session` | 1 | 用户插件 |
+| `x-ev-session` | 1 | 用户插件 |
 | `session_id`（codex）| 2 | Codex |
 | `x-opencode-session` | 1 | **opencode 原生**（官方协议要求） |
 | `metadata.user_id` `_session_` 段 | 3 | claude-code |
@@ -192,7 +192,7 @@ if p > soft_pct/100:               // soft_pct 默认 60
 
 难度越高压制越轻，硬任务仍可用订阅内模型。
 
-### 3.7 任务判定（mr-decision 双判官）
+### 3.7 任务判定（ev-decision 双判官）
 
 `HybridBackend = Jev(LLM, 1-3s) + Heuristic(0ms)`，按 8 维 prompt：
 

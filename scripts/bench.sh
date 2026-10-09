@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# ModelRoute M1 latency baseline.
+# EvolveRoute M1 latency baseline.
 # Measures added latency of the gateway vs direct mock-upstream access
 # on loopback. Requires the built binary (cargo build).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BIN=./target/debug/modelroute
+BIN=./target/debug/evolveroute
 N=${N:-100}
 MOCK_PORT=9101
 GW_PORT=8787
 
-pkill -f "modelroute mock-upstream" 2>/dev/null || true
-pkill -f "modelroute serve" 2>/dev/null || true
+pkill -f "evolveroute mock-upstream" 2>/dev/null || true
+pkill -f "evolveroute serve" 2>/dev/null || true
 sleep 0.2
 
 nohup $BIN mock-upstream --port $MOCK_PORT >/tmp/bench-mock.log 2>&1 &
@@ -32,7 +32,7 @@ bench() { # url body n -> ms list on stdout
   local url=$1 body=$2 n=$3
   for _ in $(seq 1 "$n"); do
     curl -s -o /dev/null -w '%{time_total}\n' -X POST "$url" \
-      -H 'content-type: application/json' -H 'x-mr-session: bench' -d "$body"
+      -H 'content-type: application/json' -H 'x-ev-session: bench' -d "$body"
   done
 }
 

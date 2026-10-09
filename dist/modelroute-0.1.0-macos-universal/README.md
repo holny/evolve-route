@@ -1,4 +1,4 @@
-# ModelRoute
+# EvolveRoute
 
 **多 Agent LLM 智能路由网关** —— 把任务交给最适合的模型，而不是最好的模型。
 
@@ -11,7 +11,7 @@
 - ✅ 硬约束安全网：上下文窗口（含 10% 余量）/ 视觉模态 / 凭据 / 未知窗口禁入
 - ✅ 会话粘性：同会话零决策调用复用（防抖动、省成本），任务变化自动解除
 - ✅ 外科手术式字节改写：仅改 `model` 字段，请求其余字节逐字节保留（会话内容不可变铁律）
-- ✅ 可观测：`x-mr-model / x-mr-reason / x-mr-decision-id` 响应头 + JSONL 决策日志（TTFT/usage/缓存命中捕获）
+- ✅ 可观测：`x-ev-model / x-ev-reason / x-ev-decision-id` 响应头 + JSONL 决策日志（TTFT/usage/缓存命中捕获）
 - ✅ 多语言 heuristic：语言无关信号（代码密度/工具/长度）为主力 + ASCII 技术词跨语言命中 + 多脚本日常词表
 - ✅ M2：飞轮（token 校准/实测可靠性/决策回填，snapshot 持久化）+ TypeSafe Jev / laya 决策后端 + Web 面板（/ 内嵌，SSE 实时）+ stats CLI
 - ✅ M3（提前）：discovery（opencode/codex）+ 死模型侦测（402/404/429/配额冷却）+ 同请求降级链 + opencode 原生插件 + 用户权重/学习偏置
@@ -30,7 +30,7 @@ claude
 
 ## opencode 插件
 
-零依赖 drop-in：`cp adapters/opencode/dropin/modelroute.ts <项目>/.opencode/plugins/`
+零依赖 drop-in：`cp adapters/opencode/dropin/evolveroute.ts <项目>/.opencode/plugins/`
 网关自动获得精确会话粘性 + 工具成败真值上报（飞轮 L4 信号）。`MODELROUTE_FEEDBACK=0` 可关。
 
 ## 多 key 池化与配额窗口
@@ -58,23 +58,23 @@ backend = "laya"      # 本地 laya sidecar（scripts/laya_server.py，uvicorn -
 ```bash
 cargo build
 # 1. 起一个假上游（演示用，真实使用时换成各家 provider）
-./target/debug/modelroute mock-upstream --port 9101
-# 2. 起网关（默认读取 ./modelroute.toml 或 ~/.modelroute/modelroute.toml）
-./target/debug/modelroute serve --port 8787
+./target/debug/evolveroute mock-upstream --port 9101
+# 2. 起网关（默认读取 ./evolveroute.toml 或 ~/.evolveroute/evolveroute.toml）
+./target/debug/evolveroute serve --port 8787
 ```
 
 ```bash
 curl http://127.0.0.1:8787/v1/chat/completions \
   -H 'content-type: application/json' \
-  -H 'x-mr-session: my-session' \
+  -H 'x-ev-session: my-session' \
   -d '{"model":"auto","messages":[{"role":"user","content":"你好"}]}'
-# 响应头: x-mr-model: mini
-#         x-mr-reason: domain=Chitchat diff=0.4 est=5tok -> mini | filtered: ...
+# 响应头: x-ev-model: mini
+#         x-ev-reason: domain=Chitchat diff=0.4 est=5tok -> mini | filtered: ...
 ```
 
 ## 配置模型目录
 
-编辑 `modelroute.toml`（模板见 `config/modelroute.default.toml`）：
+编辑 `evolveroute.toml`（模板见 `config/evolveroute.default.toml`）：
 
 ```toml
 [[models]]
@@ -88,7 +88,7 @@ tiers = { reasoning = 0.45, coding = 0.8, vision = 0.0, agentic = 0.75 }
 speed_tier = 0.85
 ```
 
-`modelroute models` 查看目录（含来源标记）；`modelroute doctor` 体检配置与凭据。
+`evolveroute models` 查看目录（含来源标记）；`evolveroute doctor` 体检配置与凭据。
 
 ## 决策管线（一句话版）
 
@@ -118,16 +118,16 @@ added latency:      0.31ms  (budget p50 < 5ms: PASS)
 // opencode.json
 {
   "provider": {
-    "modelroute": {
+    "evolveroute": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "ModelRoute",
+      "name": "EvolveRoute",
       "options": { "baseURL": "http://127.0.0.1:8787/v1" },
       "models": {
         "auto": { "name": "Auto (smart routing)" }
       }
     }
   },
-  "model": "modelroute/auto"
+  "model": "evolveroute/auto"
 }
 ```
 
@@ -136,10 +136,10 @@ added latency:      0.31ms  (budget p50 < 5ms: PASS)
 ```toml
 # ~/.codex/config.toml
 model = "auto"
-model_provider = "modelroute"
+model_provider = "evolveroute"
 
-[model_providers.modelroute]
-name = "ModelRoute"
+[model_providers.evolveroute]
+name = "EvolveRoute"
 base_url = "http://127.0.0.1:8787/v1"
 wire_api = "chat"
 env_key = "MODELROUTE_KEY"   # 任意非空值即可，网关不校验

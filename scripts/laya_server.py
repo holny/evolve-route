@@ -1,4 +1,4 @@
-"""Laya decision-model sidecar for ModelRoute.
+"""Laya decision-model sidecar for EvolveRoute.
 
 Exposes laya's System-1 typed decisions (choice/score/noul) over local HTTP
 so the Rust gateway can use the multilingual decision model with ~35ms
@@ -9,7 +9,7 @@ Install & run:
     pip install "laya[judge]" fastapi "uvicorn[standard]"
     uvicorn laya_server:app --host 127.0.0.1 --port 8321
 
-Gateway config (modelroute.toml):
+Gateway config (evolveroute.toml):
     [decision]
     backend = "laya"
     # LAYA_URL env overrides http://127.0.0.1:8321
@@ -20,7 +20,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-app = FastAPI(title="modelroute-laya-sidecar")
+app = FastAPI(title="evolveroute-laya-sidecar")
 
 # 语言感知检查点（laya README）：CJK 文本走 multilingual（100+语言），
 # 英文走 typed-decisions（针对 typed workflow 微调，benchmark 最优）。

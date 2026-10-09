@@ -38,7 +38,7 @@ jobs:
 
       - name: build
         run: >
-          cargo build --release --target ${{ matrix.target }} -p mr-server
+          cargo build --release --target ${{ matrix.target }} -p ev-server
         # cross builds musl static binaries (ring's C code needs the musl
         # toolchain from the cross container); msvc handles arm64 natively
         # on windows runners via the installed VS ARM64 tools.
@@ -47,11 +47,11 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          STAGE="modelroute-$VERSION-${{ matrix.target }}"
+          STAGE="evolveroute-$VERSION-${{ matrix.target }}"
           mkdir "$STAGE"
-          cp "target/${{ matrix.target }}/release/modelroute" "$STAGE/"
+          cp "target/${{ matrix.target }}/release/evolveroute" "$STAGE/"
           cp README.md LICENSE THIRD-PARTY-NOTICES.md "$STAGE/" 2>/dev/null || true
-          cp config/modelroute.default.toml "$STAGE/modelroute.default.toml" 2>/dev/null || true
+          cp config/evolveroute.default.toml "$STAGE/evolveroute.default.toml" 2>/dev/null || true
           tar -czf "$STAGE.tar.gz" "$STAGE"
           shasum -a 256 "$STAGE.tar.gz" > "$STAGE.tar.gz.sha256"
 
@@ -60,11 +60,11 @@ jobs:
         shell: pwsh
         run: |
           $VERSION = "$env:GITHUB_REF_NAME" -replace '^v',''
-          $STAGE = "modelroute-$VERSION-${{ matrix.target }}"
+          $STAGE = "evolveroute-$VERSION-${{ matrix.target }}"
           New-Item -ItemType Directory -Force "$STAGE" | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/modelroute.exe" "$STAGE/"
+          Copy-Item "target/${{ matrix.target }}/release/evolveroute.exe" "$STAGE/"
           Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md "$STAGE/" -ErrorAction SilentlyContinue
-          Copy-Item config/modelroute.default.toml "$STAGE/modelroute.default.toml" -ErrorAction SilentlyContinue
+          Copy-Item config/evolveroute.default.toml "$STAGE/evolveroute.default.toml" -ErrorAction SilentlyContinue
           Compress-Archive -Path "$STAGE" -DestinationPath "$STAGE.zip"
           (Get-FileHash "$STAGE.zip" -Algorithm SHA256).Hash + "  $STAGE.zip" | Out-File "$STAGE.zip.sha256"
 
@@ -72,10 +72,10 @@ jobs:
         with:
           name: release-${{ matrix.target }}
           path: |
-            modelroute-*.tar.gz
-            modelroute-*.tar.gz.sha256
-            modelroute-*.zip
-            modelroute-*.zip.sha256
+            evolveroute-*.tar.gz
+            evolveroute-*.tar.gz.sha256
+            evolveroute-*.zip
+            evolveroute-*.zip.sha256
 
   release:
     needs: build
@@ -88,8 +88,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            modelroute-*.tar.gz
-            modelroute-*.tar.gz.sha256
-            modelroute-*.zip
-            modelroute-*.zip.sha256
+            evolveroute-*.tar.gz
+            evolveroute-*.tar.gz.sha256
+            evolveroute-*.zip
+            evolveroute-*.zip.sha256
           generate_release_notes: true

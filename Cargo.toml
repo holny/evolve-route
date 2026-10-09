@@ -1,24 +1,24 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/mr-core",
-    "crates/mr-decision",
-    "crates/mr-memory",
-    "crates/mr-discovery",
-    "crates/mr-server",
+    "crates/ev-core",
+    "crates/ev-decision",
+    "crates/ev-memory",
+    "crates/ev-discovery",
+    "crates/ev-server",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/your-org/model-route"
+repository = "https://github.com/your-org/evolveroute"
 
 [workspace.dependencies]
-mr-core = { path = "crates/mr-core" }
-mr-decision = { path = "crates/mr-decision" }
-mr-memory = { path = "crates/mr-memory" }
-mr-discovery = { path = "crates/mr-discovery" }
+ev-core = { path = "crates/ev-core" }
+ev-decision = { path = "crates/ev-decision" }
+ev-memory = { path = "crates/ev-memory" }
+ev-discovery = { path = "crates/ev-discovery" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
