@@ -743,7 +743,8 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
     let mut seen_providers = std::collections::HashSet::new();
     for m in &st.engine.catalog.models {
         if manual_urls.iter().any(|u| *u == m.base_url) { continue; }
-        if !seen_providers.insert(m.base_url.clone()) { continue; }
+        // 按 provider 名去重（不同 provider 同 base_url 各自展示，如 opencode-go 与 opencode-go-github）
+        if !seen_providers.insert(m.provider.clone()) { continue; }
         let profile = mr_core::plans::plan_for(&m.base_url);
         let plan_key = profile.map(|p| p.key.to_string()).unwrap_or_default();
         let pov = ov.plans.get(&plan_key);

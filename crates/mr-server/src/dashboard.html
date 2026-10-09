@@ -895,11 +895,23 @@ function renderProviders(){
         + reset + '</div>';
     }
     const summary = tName === '-' ? '' : ' <span class="dim2">('+esc(tName)+' · '+esc(tVal)+')</span>';
+    // 实时状态（providersStatus 轮询数据，按 key 匹配）
+    const stat = ((state.providersStatus||{}).providers||[]).find(s => s.key === p.key) || {};
+    const onCool = stat.cooldown_remaining_ms && stat.cooldown_remaining_ms > 0;
+    const statusBadge = onCool
+      ? '<span class="la f">⏳ '+Math.ceil(stat.cooldown_remaining_ms/1000)+'s</span>'
+      : '<span class="la c">✓</span>';
+    // 周月窗口展示
+    const wk = p.windows && p.windows['weekly'];
+    const mo = p.windows && p.windows['monthly'];
+    const winInfo = (allowance || wk || mo)
+      ? '<span class="dim2" style="font-size:10px;margin-left:4px">5h:'+(allowance??'-')+' 周:'+(wk??'-')+' 月:'+(mo??'-')+'</span>'
+      : '';
     return '<div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px'+(p.disabled?';opacity:.5':'')+'">'
       + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-      +   '<b style="font-size:13px">'+esc(p.key)+'</b> '+srcBadge
+      +   '<b style="font-size:13px">'+esc(p.key)+'</b> '+srcBadge+statusBadge
       +   ' <span class="pbadge" style="background:#1c2d45;color:var(--blue)">'+esc(kindBadge)+'</span>'
-      +   summary + disabled + docs
+      +   summary + disabled + docs + winInfo
       +   '<span style="margin-left:auto"></span>'
       +   '<button class="lang-btn" data-pv-edit="'+esc(p.key)+'" data-pv-source="'+esc(p.source)+'">'+esc(t('pv_edit'))+'</button>'
       +   (p.source === 'manual'
