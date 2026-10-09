@@ -161,26 +161,7 @@ evolveroute service install   # 另有：start / stop / restart / status
 深入阅读：[架构](docs/ARCHITECTURE.md) · [决策流](docs/DECISION-FLOW.md) · [评分因子](docs/FACTORS.md) · [模块](docs/MODULES.md)
 
 ## 路由决策公式
-
-每个候选模型的得分**逐请求实时计算**——下列因子全部来自方案注册表、厂商官方费率与飞轮：
-
-$$\text{score}(m) = w_q Q + w_s S + w_c C + w_r R + w_h H \;\times\; \sqrt{\,u_m \cdot b_m\,}$$
-
-| 因子 | 计算方式 |
-|---|---|
-| 质量 `Q` | $1 - \rho\,(1 - \tau^{\,1+2\rho})$——难度越高，对档位的要求指数级抬升；高风险任务再乘推理档 |
-| 质量及格线 | $1 - 0.45\,\rho$——线以下**直接出局**（难度 3 → 只有质量 ≥ 0.55 的模型入围） |
-| 速度 `S` | $0.7\,\text{先验} + 0.3\,\text{实测 tok/s}$ |
-| 成本 `C` | 订阅模型：方案内最便宜系数 ÷ 自身系数（官方乘数）· 按量：最低价 ÷ 自身价格 |
-| 可靠 `R` | $0.5 R_\infty + 0.3 R_{30} + 0.2 R_{10}$——长期基线 + 近 30 次 + 近 10 次（缺层权重归并） |
-| 余量 `H` | $(W - n_{in} - n_{out}) / W$——估算消耗后的剩余上下文 |
-
-权重本身**随难度移动**（$\hat d = $ 难度 $/ 3$）：
-
-$$w_c \times (2 - 1.6\hat d) \qquad w_q \times (0.75 + 0.25\hat d) \qquad \text{（随后归一化）}$$
-
-简单任务（$\hat d \to 0$）：成本权重**翻倍**——便宜模型胜出。复杂任务（$\hat d \to 1$）：成本权重降到 40%——质量主导。得分再乘 $\sqrt{\text{用户权重} \times \text{学习偏置}}$（钳制 0.4–1.8）：飞轮只能微调，不能独裁。最后：10% ε-greedy 探索采样次优模型、稳定会话复用已选模型、配额烧超 95% 的方案整体出局。
-
+![EvolveRoute formula](docs/assets/formula-zh.png)
 ## 开发
 
 ```bash
