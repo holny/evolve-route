@@ -1066,7 +1066,10 @@ document.getElementById('pv-add-btn').addEventListener('click', () => openProvid
 document.getElementById('pv-refresh-all-btn').addEventListener('click', refreshAllProviders);
 document.getElementById('pv-scan-btn').addEventListener('click', () => {
   fetch('/api/providers/scan', {method:'POST'}).then(r => r.json()).then(j => {
-    alert(t('pv_scan')+' → '+j.catalog_size+' models');
+    const provs = (j.providers_scanned || []).map(p =>
+      '  '+p.name+' ('+p.models+' models)').join('\n');
+    const newM = j.new_models ? '\n\n'+t('pv_scan_new')+': '+j.new_models : '';
+    alert(t('pv_scan')+'\n'+provs+newM+'\n\ntotal: '+j.catalog_size+' models');
     refresh();
   });
 });

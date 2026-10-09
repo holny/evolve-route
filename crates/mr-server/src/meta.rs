@@ -624,10 +624,25 @@ pub async fn api_trends(
 
 /// 全局扫描：手动触发 agent 配置 + 远程 /models 全量重扫
 pub async fn api_providers_scan(State(st): State<AppState>) -> Response {
+    let before = st.engine.catalog.models.len();
     st.rescan_discovery();
     st.refresh_remote_models();
-    let count = st.engine.catalog.models.len();
-    (axum::Json(json!({"status": "ok", "catalog_size": count}))).into_response()
+    let after = st.engine.catalog.models.len();
+    // 按 provider 统计扫描结果
+    let mut providers: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    for m in &st.engine.catalog.models {
+        *providers.entry(m.provider.clone()).or_insert(0) += 1;
+    }
+    let providers_scanned: Vec<Value> = providers.iter()
+        .map(|(name, count)| json!({"name": name, "models": count}))
+        .collect();
+    let new_models = after.saturating_sub(before);
+    (axum::Json(json!({
+        "status": "ok",
+        "catalog_size": after,
+        "new_models": new_models,
+        "providers_scanned": providers_scanned,
+    }))).into_response()
 }
 
 /// Provider 实时状态（每 5s 轮询）：health、最后成功时间、当前使用率
@@ -803,6 +818,11 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
             "next_reset_epoch_ms": next_reset,
         }));
     }
+    out.sort_by(|a, b| {
+        let ka = a.get("key").and_then(|v| v.as_str()).unwrap_or("");
+        let kb = b.get("key").and_then(|v| v.as_str()).unwrap_or("");
+        ka.cmp(kb)
+    });
     (axum::Json(json!({"providers": out}))).into_response()
 }
 
@@ -878,10 +898,23 @@ pub async fn api_providers_delete(
     };
     let dir = &st.config.data.dir;
     let mut ov = crate::state::load_overrides(dir);
+    let remove_models = body.get("remove_models").and_then(|v| v.as_bool()).unwrap_or(false);
+    let base_url = body.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
+    // 手动 provider：软删除（disabled）
     if let Some(e) = ov.providers.get_mut(&key) {
         e.disabled = true;
         crate::state::save_overrides(dir, &ov);
         (axum::Json(json!({"status": "ok", "key": key, "disabled": true}))).into_response()
+    } else if remove_models && !base_url.is_empty() {
+        // 发现 provider：从 catalog_models 移除该 base_url 下的全部模型
+        let removed = st.catalog_models.lock()
+            .map(|mut m| {
+                let before = m.len();
+                m.retain(|x| x.base_url != base_url);
+                before - m.len()
+            })
+            .unwrap_or(0);
+        (axum::Json(json!({"status": "ok", "key": key, "removed_models": removed}))).into_response()
     } else {
         (StatusCode::NOT_FOUND, axum::Json(json!({"error": {"message": "provider not found"}}))).into_response()
     }
