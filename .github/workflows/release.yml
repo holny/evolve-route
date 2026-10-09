@@ -38,7 +38,7 @@ jobs:
 
       - name: build
         run: >
-          cargo build --release --target ${{ matrix.target }} -p ev-server
+          ${{ matrix.cross == true && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }} -p ev-server
         # cross builds musl static binaries (ring's C code needs the musl
         # toolchain from the cross container); msvc handles arm64 natively
         # on windows runners via the installed VS ARM64 tools.
