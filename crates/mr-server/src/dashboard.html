@@ -778,7 +778,7 @@ function renderWheel(){
       '<td class="num">'+n50(tr.learned_bias)+'</td>' +
       '<td class="num">'+(s.success_rate==null?'-':Math.round(s.success_rate*100)+'%')+'</td>' +
       '<td class="num">'+(s.cache_hit_rate==null?'-':Math.round(s.cache_hit_rate*100)+'%')+'</td>' +
-      '<td class="num">'+(p.plan_kind && p.plan_kind !== 'api'
+      '<td class="num">'+(s.plan_kind && s.plan_kind !== 'api'
         ? '<span class="pbadge" title="'+esc(t('w_cost._t'))+'">'+esc(t('w_sub'))+'</span>'
         : fmtCost(s.est_cost, s.currency))+'</td>' +
       '<td class="num">'+(s.samples??0)+'</td>' +
