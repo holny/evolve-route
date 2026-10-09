@@ -126,19 +126,19 @@ impl QuotaLedger {
         let get = |name: &str| -> Option<u64> {
             headers.get(name).and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok())
         };
-        // anthropic unified windows
+        // anthropic unified windows（同 scope 多 header 合并：remaining/limit/reset 分开放）
+        let mut anthro: std::collections::HashMap<&str, (Option<u64>, Option<u64>, Option<u64>)> = std::collections::HashMap::new();
         for (scope, tag) in [("5h", "anthropic-ratelimit-unified-5h-token"), ("7d", "anthropic-ratelimit-unified-7d-token")] {
-            let remaining = get(&format!("{tag}-remaining"));
-            let limit = get(&format!("{tag}-limit"));
-            let reset = headers
-                .get(format!("{tag}-reset"))
-                .and_then(|v| v.to_str().ok())
-                .and_then(parse_rfc3339_ms);
-            if remaining.is_some() || limit.is_some() {
+            let entry = anthro.entry(scope).or_insert((None, None, None));
+            if let Some(v) = get(&format!("{tag}-remaining")) { entry.0 = Some(v); }
+            if let Some(v) = get(&format!("{tag}-limit"))     { entry.1 = Some(v); }
+            if let Some(v) = headers.get(format!("{tag}-reset")).and_then(|v| v.to_str().ok()).and_then(parse_rfc3339_ms) { entry.2 = Some(v); }
+        }
+        for (scope, (remaining, limit, reset)) in anthro {
+            if remaining.is_some() || limit.is_some() || reset.is_some() {
                 out.push(WindowState {
                     scope: scope.into(),
-                    remaining,
-                    limit,
+                    remaining, limit,
                     reset_epoch_ms: reset,
                     updated_epoch_ms: now,
                 });
@@ -171,27 +171,47 @@ impl QuotaLedger {
             });
         }
         // 通用 weekly / monthly 窗口（zhipu/volces/策略派等 namespace 的变体）——
-        // 失败响应 429 常带这两个 scope 的 reset（用户裁决：三窗口隔离展示）
-        let generic_windows: &[(&str, &str)] = &[
-            ("weekly", "x-ratelimit-weekly"),
-            ("monthly", "x-ratelimit-monthly"),
-            ("weekly", "ratelimit-weekly-token"),
-            ("monthly", "ratelimit-monthly-token"),
+        // 失败响应 429 常带这两个 scope 的 reset（用户裁决：三窗口隔离展示）。
+        // 多种 header 命名：anthropic 风格 -token- / 通用裸名 / vendor 风格 ratelimit-。
+        let generic_windows: &[(&str, &str, &[&str])] = &[
+            ("weekly",  "x-ratelimit-weekly",  &["", "-token"]),
+            ("monthly", "x-ratelimit-monthly", &["", "-token"]),
+            ("weekly",  "ratelimit-weekly",    &["-token"]),
+            ("monthly", "ratelimit-monthly",   &["-token"]),
         ];
-        for (scope, prefix) in generic_windows {
-            let remaining = get(&format!("{prefix}-remaining"));
-            let limit = get(&format!("{prefix}-limit"));
-            if remaining.is_none() && limit.is_none() { continue; }
-            // reset 可能是 RFC3339（absolute）或秒数（relative）
-            let reset = headers
-                .get(format!("{prefix}-reset"))
-                .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
-                .and_then(|raw| parse_rfc3339_ms(&raw).or_else(|| raw.parse::<u64>().ok().map(|s| now.saturating_add(s * 1000))));
+        for (scope, prefix, suffixes) in generic_windows {
+            // 探测多种 header 命名变体
+            let mut remaining: Option<u64> = None;
+            let mut limit: Option<u64> = None;
+            let mut reset_raw: Option<String> = None;
+            for suf in suffixes.iter() {
+                if remaining.is_none() {
+                    remaining = headers.get(format!("{prefix}{suf}-remaining"))
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.parse::<u64>().ok());
+                }
+                if limit.is_none() {
+                    limit = headers.get(format!("{prefix}{suf}-limit"))
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.parse::<u64>().ok());
+                }
+                if reset_raw.is_none() {
+                    reset_raw = headers.get(format!("{prefix}{suf}-reset"))
+                        .and_then(|v| v.to_str().ok().map(|s| s.to_string()));
+                }
+                if remaining.is_some() || limit.is_some() || reset_raw.is_some() { break; }
+            }
+            if remaining.is_none() && limit.is_none() && reset_raw.is_none() { continue; }
+            // reset 三态：RFC3339 / 绝对 epoch 秒数（>10 年 = >315360000）/ 相对 now+秒
+            let reset_epoch_ms = reset_raw.as_deref().and_then(|raw| {
+                if let Some(ms) = parse_rfc3339_ms(raw) { return Some(ms); }
+                raw.parse::<u64>().ok().map(|n| if n > 315_360_000 { n * 1000 } else { now.saturating_add(n * 1000) })
+            });
             out.push(WindowState {
                 scope: (*scope).into(),
                 remaining,
                 limit,
-                reset_epoch_ms: reset,
+                reset_epoch_ms,
                 updated_epoch_ms: now,
             });
         }
@@ -464,5 +484,59 @@ mod plan_usage_tests {
         l.note_plan_usage("m1", 13.0, 0.0, 10.0, now);
         let sums = l.plan_usage_sums(now, 5 * 3600 * 1000);
         assert_eq!(sums.get("m1"), Some(&(13.0, 0.0, 10.0)), "sums={:?}", sums);
+    }
+}
+
+#[cfg(test)]
+mod quota_observe_failure_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn hdr(pairs: &[(&'static str, &'static str)]) -> http::HeaderMap {
+        let mut h = http::HeaderMap::new();
+        for (k, v) in pairs { h.insert(*k, v.parse().unwrap()); }
+        h
+    }
+
+    #[test]
+    fn parses_429_monthly_with_reset() {
+        // anthropic 风格：失败响应也带 5h/weekly/monthly reset 头
+        let h = hdr(&[
+            ("anthropic-ratelimit-unified-5h-token-remaining", "0"),
+            ("anthropic-ratelimit-unified-5h-token-reset", "2026-10-09T13:00:00Z"),
+            ("anthropic-ratelimit-unified-7d-token-remaining", "1000"),
+            ("anthropic-ratelimit-unified-7d-token-reset", "2026-10-14T00:00:00Z"),
+            ("x-ratelimit-monthly-remaining", "0"),
+            ("x-ratelimit-monthly-reset", "1736380800"), // 5h 后的 epoch seconds
+        ]);
+        let ws = QuotaLedger::parse_headers(&h);
+        let mut by_scope: HashMap<String, WindowState> = ws.into_iter().map(|w| (w.scope.clone(), w)).collect();
+        {
+            let w5h = by_scope.remove("5h").unwrap();
+            assert_eq!(w5h.remaining, Some(0));
+            assert!(w5h.reset_epoch_ms.is_some());
+        }
+        assert_eq!(by_scope.remove("7d").unwrap().remaining, Some(1000));
+        let monthly = by_scope.remove("monthly").unwrap();
+        assert_eq!(monthly.remaining, Some(0));
+        // 1736380800 epoch seconds (2025-01-09T16:00:00Z) → epoch ms
+        assert_eq!(monthly.reset_epoch_ms, Some(1736380800 * 1000));
+    }
+
+    #[test]
+    fn generic_weekly_monthly_parsed() {
+        // 任意 vendor 通用 weekly / monthly 头
+        let h = hdr(&[
+            ("x-ratelimit-weekly-remaining", "100"),
+            ("x-ratelimit-weekly-reset", "1736380800"),
+            ("x-ratelimit-monthly-limit", "50000"),
+            ("x-ratelimit-monthly-reset", "1736380800"),
+        ]);
+        let ws = QuotaLedger::parse_headers(&h);
+        let weekly = ws.iter().find(|w| w.scope == "weekly").expect("weekly");
+        assert_eq!(weekly.remaining, Some(100));
+        assert_eq!(weekly.reset_epoch_ms, Some(1736380800 * 1000));
+        let monthly = ws.iter().find(|w| w.scope == "monthly").expect("monthly");
+        assert_eq!(monthly.limit, Some(50000));
     }
 }
