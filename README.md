@@ -1,199 +1,176 @@
+<div align="center">
+
 # EvolveRoute
 
-**多 Agent LLM 智能路由网关** —— 把任务交给最适合的模型，而不是最好的模型。
+**A local LLM routing gateway with a decision model at its core. It evolves with every request.**
 
-一个本地单二进制网关：各编码 Agent（opencode / codex / claude-code / pi / dsh / openclaw / hermes）把模型指向 `http://127.0.0.1:8787` 并使用 `model = "auto"`，网关按请求实时决策——简单问答落便宜模型、复杂重构落强模型、**大上下文绝不进小窗口模型**，并全程可观测（为什么路由、路由到哪、花了多少）。
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org)
+[![Tests](https://img.shields.io/badge/tests-94%20passing-brightgreen.svg)](#development)
 
-## 当前状态：M1 已交付
+[English](README.md) | [中文](README.zh-CN.md)
 
-- ✅ OpenAI 协议网关（`/v1/chat/completions` 流式/非流式透传）
-- ✅ heuristic 决策引擎：8 信号判定 + 两阶段评分（质量及格线 → 成本/速度决胜）
-- ✅ 硬约束安全网：上下文窗口（含 10% 余量）/ 视觉模态 / 凭据 / 未知窗口禁入
-- ✅ 会话粘性：同会话零决策调用复用（防抖动、省成本），任务变化自动解除
-- ✅ 外科手术式字节改写：仅改 `model` 字段，请求其余字节逐字节保留（会话内容不可变铁律）
-- ✅ 可观测：`x-ev-model / x-ev-reason / x-ev-decision-id` 响应头 + JSONL 决策日志（TTFT/usage/缓存命中捕获）
-- ✅ 多语言 heuristic：语言无关信号（代码密度/工具/长度）为主力 + ASCII 技术词跨语言命中 + 多脚本日常词表
-- ✅ M2：飞轮（token 校准/实测可靠性/决策回填，snapshot 持久化）+ TypeSafe Jev / laya 决策后端 + Web 面板（/ 内嵌，SSE 实时）+ stats CLI
-- ✅ M3（提前）：discovery（opencode/codex）+ 死模型侦测（402/404/429/配额冷却）+ 同请求降级链 + opencode 原生插件 + 用户权重/学习偏置
-- ✅ M3：Anthropic 入口（/v1/messages + count_tokens 实装）+ **Switchyard 跨协议双向翻译**（OpenAI↔Anthropic，含流式事件映射与确定性 ID）——claude-code 已可接入，7 家 Agent 全通
-- ✅ M4：**多 key 池化**（model×key 记账，402/配额自动轮换）+ **配额窗口账本**（成功响应头学习，`/api/quota`，引擎余量预判拦截）+ **models.dev 参考元数据**（仅补缺失字段）+ discovery 补齐（openclaw/hermes/dsh）
-- ⏳ M4 余项：pi/dsh/openclaw/hermes 原生插件（当前为配置发现接入）
+</div>
 
-## claude-code 接入
+---
+
+**EvolveRoute** is a single-binary gateway that sits between your coding agents and your LLM providers. Point your agents at `http://127.0.0.1:8787` with `model = "auto"` — for every request, a decision model judges the task (domain, difficulty, vision, tool-density, stakes…) and routes it to the best *fitting* model: cheap models for chit-chat, strong models for complex refactors, and **oversized contexts never enter small-window models**. Everything is observable: why it routed, where it went, what it cost.
+
+It is **local-first** (no cloud dependency for routing), **economics-aware** (subscription quotas, credit multipliers, per-model dollar limits), and **self-evolving** (a flywheel learns from every outcome and rewrites its own scoring biases).
+
+```text
+┌──────────┐  ┌─────────┐  ┌──────────┐  ┌────────┐
+│ opencode │  │ claude  │  │  codex   │  │  ...   │     any agent,
+└────┬─────┘  └────┬────┘  └────┬─────┘  └───┬────┘     OpenAI or Anthropic protocol
+     │  OpenAI     │ Anthropic  │  OpenAI    │
+     └─────────────┴─────┬──────┴────────────┘
+                         ▼
+              ┌─────────────────────┐
+              │     EvolveRoute     │  judge → score → route
+              │  (decision model)   │  learn → evolve → repeat
+              └──────────┬──────────┘
+        ┌────────┬───────┼────────┬──────────┐
+        ▼        ▼       ▼        ▼          ▼
+    zhipu     opencode  volces   minimax   deepseek …   any OpenAI/Anthropic
+    coding    zen go    coding   coding    API          provider
+```
+
+## Why EvolveRoute
+
+| | EvolveRoute | LiteLLM / OpenRouter | RouteLLM |
+|---|---|---|---|
+| **Routing decision** | Decision model judges *every request* (8 signals) + heuristic second opinion, fail-open | Config/prefix rules, or model-based router trained offline | Trained router models, offline |
+| **Self-evolution** | Flywheel: 4-layer feedback (transport / tool-syntax / semantic loop / plugin) rewrites per-model learned bias & reliability | Static weights | Static after training |
+| **Subscription economics** | Per-plan credit multipliers, tier allowances (5h/week/month), quota budget protection (soft-deprioritize → sticky-break → hard-filter) | Cost tracking only | – |
+| **Deployment** | One Rust binary (~7 MB), zero deps, no Docker/DB | Python + DB | Python |
+| **Protocol** | OpenAI ↔ Anthropic bidirectional translation (incl. streaming) | OpenAI-centric | OpenAI |
+| **Multi-agent** | Native identity for opencode / codex / claude-code / pi (session-aware stickiness) | Generic | Generic |
+| **Failure handling** | Multi-key pools → per-provider & per-endpoint circuit breaking → fallback chain → **out-of-chain last-resort sweep** | Retries | – |
+
+## Features
+
+- **Decision model in the loop** — a judge model scores every request on 8 signals (domain, difficulty, needs-vision, triviality, tool-density, high-stakes, session depth…), fused with a multilingual heuristic judge (double-judge, take-conservative). Decision failure never blocks routing.
+- **Two-phase scoring** — hard constraints first (context window with headroom, vision modality, credentials, proven max-accepted), then a quality floor, then composite weights (quality / speed / cost / stability / headroom) with **difficulty-linked weighting**: cheap models favored for easy tasks, premium models unlocked as difficulty rises.
+- **The flywheel** — every request feeds back: transport success, tool-call syntax validity, session-confirmed semantic loops, plugin-reported outcomes. Per-model learned bias, observed reliability (long-term 50% + last-30 30% + last-10 20%), and token calibration evolve the ranking automatically.
+- **Subscription economics** — built-in plan registry (zhipu coding, z.ai, opencode zen, volces coding/agent, minimax, pay-as-you-go) with official credit multipliers and tier allowances. Budget protection at three levels: >60% quota deprioritizes, >85% breaks stickiness, >95% filters out — saving headroom for hard tasks.
+- **Failure resilience** — multi-key pools with model×key accounting, provider-account and endpoint-level circuit breaking, ranked fallback chains, context-overflow rerouting, and an out-of-chain last-resort sweep when the whole chain dies.
+- **Cross-protocol** — OpenAI-ingress requests are transparently translated to Anthropic upstreams (and responses back), including streaming event mapping with deterministic IDs. Claude Code works out of the box.
+- **Session stickiness** — stable sessions reuse the chosen model (zero re-decision latency) with bounded turns; task shifts, budget pressure, or context growth break it automatically. ε-greedy exploration (10%) keeps sampling runner-ups so the flywheel never starves.
+- **Observability** — built-in zero-build dashboard (`/`): live decision stream with plain-language reasons, scoring matrix, fallback chains with per-hop causes, latency waterfall (preprocess / decision / TTFT / streaming), model trends, provider & quota management, flywheel learning state — in 6 languages. Plus `x-ev-model / x-ev-reason / x-ev-decision-id` response headers and JSONL event logs.
+
+## Quick Start
+
+**Requirements:** Rust stable (2024 edition), any OpenAI-compatible or Anthropic provider credentials.
 
 ```bash
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
-export ANTHROPIC_MODEL=auto        # 走智能路由
-claude
+git clone https://github.com/your-org/evolve-route.git
+cd evolve-route
+cargo build --release
+
+# binary at target/release/evolveroute
+./target/release/evolveroute serve
+# gateway listening on http://127.0.0.1:8787
 ```
-网关自动：anthropic 请求 → （跨协议翻译）→ 任意 OpenAI 兼容上游；响应回译为 anthropic 形状。
 
-## opencode 插件
-
-零依赖 drop-in：`cp adapters/opencode/dropin/evolveroute.ts <项目>/.opencode/plugins/`
-网关自动获得精确会话粘性 + 工具成败真值上报（飞轮 L4 信号）。`MODELROUTE_FEEDBACK=0` 可关。
-
-## 多 key 池化与配额窗口
+Configuration lives at `~/.evolveroute/evolveroute.toml` (a default is embedded and written on first run). Point providers with their base URLs and API keys:
 
 ```toml
+[server]
+host = "127.0.0.1"
+port = 8787
+
 [[models]]
-id = "claude"
-api_keys_env = ["ANTHROPIC_KEY_1", "ANTHROPIC_KEY_2"]   # 轮换池
-```
-某 key 余额不足/配额耗尽 → 网关按 model×key 记账冷却并自动轮换下一把；
-成功响应的限额头（anthropic unified 5h/7d、openai ratelimit）持续校准窗口余量，
-余量 < 请求预估时该模型在硬约束层被预判拦截。`/api/quota` 查看窗口账本。
-
-## 模型能力榜单（决策依据 #23）
-
-内置策展快照（config/benchmarks-seed.json，随二进制嵌入）为已发现模型提供冷启动
-能力分层（coding/reasoning/agentic 0-1），**零网络即可用**；配置 HTTP 源可覆盖：
-
-```toml
-[benchmarks]
-enabled = true
-interval_hours = 24
-[[benchmarks.sources]]
-name = "lmarena"
-url = "https://datasets-server.huggingface.co/rows?dataset=...&length=100"
-format = "lmarena_rows"
-[benchmarks.sources.headers]
-authorization = "Bearer ${HF_TOKEN}"
+id = "zhipuai-coding-plan/glm-5.3"
+provider = "zhipuai-coding-plan"
+base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
+api_key_env = "ZHIPU_API_KEY"
+upstream_model = "glm-5.3"
+context_window = 1024000
+cost = { input = 0.0, output = 0.0 }   # plan models: marginal cost ≈ 0
 ```
 
-别名三层置信度匹配（#24）：glm-5.2/GLM-5.2/glm5.2 精确同判；后缀即身份（v4-flash ≠ v4-pro）；
-glm-latest 取家族最新（conf 0.7）；auto 取家族均值（0.5）；用户显式 tiers 压到 0.3 混合。
-`/api/benchmarks` 查看应用明细，面板有实时卡片。
+### Connect your agents
 
-## 决策后端
-
-```toml
-[decision]
-backend = "auto"      # 探测 TYPESAFE_API_KEY → Jev；否则 heuristic
-backend = "laya"      # 本地 laya sidecar（scripts/laya_server.py，uvicorn --port 8321）
-```
-判定失败自动回退 heuristic，永不阻塞请求。
-
-## 编译与分发
-
-```bash
-cargo build --release -p ev-server
-# 产物: target/release/evolveroute（单二进制，~6MB）
-```
-
-一键打包（macOS universal: arm64+x86_64 合并）:
-
-```bash
-./scripts/dist.sh    # 产出 dist/evolveroute-<ver>-macos-universal.tar.gz + sha256
-```
-
-全平台发布（打 tag `v*` 触发 GitHub Actions，产出 6 目标产物 + SHA256 + Release）:
-
-| 目标 | Runner | 产物 |
-|---|---|---|
-| aarch64-apple-darwin | macos-14 | macOS Apple Silicon |
-| x86_64-apple-darwin | macos-13 | macOS Intel |
-| x86_64-unknown-linux-musl | ubuntu + cross | Linux x64 **静态二进制**（任意发行版免依赖） |
-| aarch64-unknown-linux-musl | ubuntu + cross | Linux ARM64（云服务器/树莓派级）静态 |
-| x86_64-pc-windows-msvc | windows | Windows x64 |
-| aarch64-pc-windows-msvc | windows | Windows ARM64 |
-
-TLS 走 rustls（纯 Rust + ring），全目标无 OpenSSL 依赖；musl 目标全静态链接。
-
-## 快速开始
-
-```bash
-cargo build
-# 1. 起一个假上游（演示用，真实使用时换成各家 provider）
-./target/debug/evolveroute mock-upstream --port 9101
-# 2. 起网关（默认读取 ./evolveroute.toml 或 ~/.evolveroute/evolveroute.toml）
-./target/debug/evolveroute serve --port 8787
-```
-
-```bash
-curl http://127.0.0.1:8787/v1/chat/completions \
-  -H 'content-type: application/json' \
-  -H 'x-ev-session: my-session' \
-  -d '{"model":"auto","messages":[{"role":"user","content":"你好"}]}'
-# 响应头: x-ev-model: mini
-#         x-ev-reason: domain=Chitchat diff=0.4 est=5tok -> mini | filtered: ...
-```
-
-## 配置模型目录
-
-编辑 `evolveroute.toml`（模板见 `config/evolveroute.default.toml`）：
-
-```toml
-[[models]]
-id = "deepseek-chat"
-provider = "deepseek"
-base_url = "https://api.deepseek.com/v1"
-api_key_env = "DEEPSEEK_API_KEY"
-context_window = 64000
-cost = { input = 0.27, output = 1.1 }        # $/Mtok
-tiers = { reasoning = 0.45, coding = 0.8, vision = 0.0, agentic = 0.75 }
-speed_tier = 0.85
-```
-
-`evolveroute models` 查看目录（含来源标记）；`evolveroute doctor` 体检配置与凭据。
-
-## 决策管线（一句话版）
-
-四本账（粘性/缓存/配额/摘要）→ 粘性快路径 → 8 信号判定（heuristic 兜底，M2 升级 Jev/laya）→ 硬约束过滤 → 质量及格线过滤 → 成本/速度/可靠性复合评分 → 置信门控 → 决策+自然语言解释 → 执行 → 遥测回写飞轮。
-
-完整设计文档（21 项决策记录、架构、模块设计）见设计评审稿；关键原则：
-
-1. **会话内容不可变**：同协议仅外科改写路由字段；跨协议翻译语义 1:1 且字节确定性；永不摘要/截断/压缩。
-2. **安全网优先于智能**：上下文装不下就换模型，而不是压缩内容。
-3. **缓存是货币化考虑项而非壁垒**：换模滞回按真金白银折算，hard/high-stakes 任务清零。
-4. **决策全程可观测**：每条路由带 reason，事件全落本地 JSONL。
-
-## 基线
-
-```
-scripts/bench.sh   # 网关新增延迟（debug 构建, 100 req）
-direct upstream:    p50=0.33ms
-via gateway:        p50=0.64ms
-added latency:      0.31ms  (budget p50 < 5ms: PASS)
-```
-
-## 接入各 Agent（M1 手工配置）
-
-### opencode
+**opencode** (`~/.config/opencode/opencode.jsonc`):
 
 ```jsonc
-// opencode.json
 {
   "provider": {
     "evolveroute": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "EvolveRoute",
       "options": { "baseURL": "http://127.0.0.1:8787/v1" },
       "models": {
-        "auto": { "name": "Auto (smart routing)" }
+        "auto": {
+          "name": "Auto (smart routing)",
+          "attachment": true,
+          "reasoning": true,
+          "tool_call": true
+        }
       }
     }
-  },
-  "model": "evolveroute/auto"
+  }
 }
 ```
 
-### codex
+**Claude Code:**
 
-```toml
-# ~/.codex/config.toml
-model = "auto"
-model_provider = "evolveroute"
-
-[model_providers.evolveroute]
-name = "EvolveRoute"
-base_url = "http://127.0.0.1:8787/v1"
-wire_api = "chat"
-env_key = "MODELROUTE_KEY"   # 任意非空值即可，网关不校验
+```bash
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+export ANTHROPIC_MODEL=auto
+claude
 ```
 
-claude-code 接入需 Anthropic 协议入口（M3）。pi/dsh/openclaw/hermes 同理走 OpenAI 兼容 baseURL，M4 提供逐家文档与 discovery 自动扫描。
+**Any OpenAI-compatible client:** base URL `http://127.0.0.1:8787/v1`, model `auto`.
+
+### Run as a service (macOS LaunchAgent)
+
+```bash
+evolveroute service install   # also: start / stop / restart / status
+```
+
+## The dashboard
+
+Open `http://127.0.0.1:8787/`:
+
+- **Live decision stream** — every request with its 8-signal judgment, chosen model, and a plain-language reason
+- **Scoring matrix** — top candidates with per-factor scores (quality / speed / cost / reliability / headroom)
+- **Fallback chains** — which models were tried, which failed, and exactly why
+- **Latency waterfall** — preprocess / decision / TTFT / streaming, per request
+- **Provider management** — add/edit/scan providers, tier allowances (5h/week/month), live provider-reported quotas, one-click reconciliation
+- **Flywheel card** — learned bias, observed reliability, calibration, semantic confirmations per model
+
+## How routing decisions work
+
+```
+request → estimate tokens → hard constraints (window / vision / credentials)
+        → decision model judge (8 signals, heuristic backup)
+        → quality floor → composite score (difficulty-linked weights)
+        → ε-greedy exploration (10%) → session stickiness check
+        → route → observe outcome → feed the flywheel
+```
+
+Deep dives: [Architecture](docs/ARCHITECTURE.md) · [Decision flow](docs/DECISION-FLOW.md) · [Scoring factors](docs/FACTORS.md) · [Modules](docs/MODULES.md) *(Chinese, English translation welcome)*
+
+## Development
+
+```bash
+cargo build --release
+cargo test          # 94 tests
+cargo clippy        # zero warnings policy
+```
+
+Workspace layout:
+
+| Crate | Role |
+|---|---|
+| `ev-core` | Decision engine, scoring, catalog, plan registry, config |
+| `ev-decision` | Decision-model backends (TypeSafe Jev, laya, heuristic) + protocol translation |
+| `ev-discovery` | Agent config scanning, remote /models fetching, models.dev enrichment |
+| `ev-memory` | Flywheel, quota ledger, health registry, session store, event log |
+| `ev-server` | Axum gateway, relay, dashboard, provider APIs, CLI |
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-Apache-2.0。见 `LICENSE` 与 `THIRD-PARTY-NOTICES.md`（Switchyard/laya 归属）。
+[MIT](LICENSE)

@@ -2,7 +2,7 @@
   "name": "opencode-evolveroute",
   "version": "0.2.0",
   "description": "EvolveRoute adapter for opencode: session stamping, tool outcome feedback, error reporting",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -13,5 +13,10 @@
     "@opencode-ai/plugin": "*",
     "typescript": "^5.6.0"
   },
-  "keywords": ["opencode", "llm", "routing", "evolveroute"]
+  "keywords": [
+    "opencode",
+    "llm",
+    "routing",
+    "evolveroute"
+  ]
 }
