@@ -180,6 +180,7 @@ const T = {
   allnormal: {zh:'全部正常（无异常记录）', en:'all normal (no incidents)', ko:'모두 정상(이상 기록 없음)', ja:'すべて正常（異常記録なし）', es:'todo normal (sin incidentes)', fr:'tout est normal (aucun incident)'},
   noquota:   {zh:'尚未观测到限额头', en:'no rate-limit headers observed yet', ko:'아직 레이트 리밋 헤더 관찰 안 됨', ja:'まだレート制限ヘッダーは観測なし', es:'aún sin cabeceras de límite', fr:'pas encore d\'en-têtes de limite'},
   wheelcold: {zh:'飞轮经验积累中…', en:'flywheel warming up…', ko:'플라이휠 경험 축적 중…', ja:'フライホイール経験蓄積中…', es:'volante acumulando experiencia…', fr:'volant en accumulation d\'expérience…'},
+  w_sub: {zh:'订阅', en:'sub', ko:'구독', ja:'サブ', es:'sub', fr:'abo'},
   funnel:    {zh:'决策漏斗', en:'funnel', ko:'결정 퍼널', ja:'決定ファネル', es:'embudo de decisión', fr:'entonnoir de décision'},
   filtered:  {zh:'剔除', en:'filtered out', ko:'제외', ja:'除外', es:'filtrados', fr:'filtrés'},
   translated:{zh:'协议翻译', en:'protocol translated', ko:'프로토콜 번역', ja:'プロトコル翻訳', es:'protocolo traducido', fr:'protocole traduit'},
@@ -226,11 +227,11 @@ const T = {
   w_cache:  {zh:'缓存%', en:'Cache%', ko:'캐시%', ja:'ｷｬｯｼｭ%', es:'Caché%', fr:'Cache%',
     _t:{zh:'缓存命中率 = 缓存 tokens ÷ prompt tokens', en:'cache hit rate = cached ÷ prompt tokens', ko:'캐시 적중률 = 캐시 토큰 ÷ 프롬프트 토큰', ja:'命中率 = キャッシュ ÷ プロンプトトークン', es:'tasa de acierto = caché ÷ prompt', fr:'taux de succès = cache ÷ prompt'}},
   w_cost:   {zh:'费用', en:'Cost', ko:'비용', ja:'費用', es:'Coste', fr:'Coût',
-    _t:{zh:'累计估算费用（目录单价 × 累计 tokens，按厂商币种）', en:'cumulative estimated cost (catalog price × tokens, vendor currency)', ko:'누적 추정 비용(카탈로그 단가 × 누적 토큰, 벤더 통화)', ja:'累計推定費用（カタログ単価 × 累計トークン、ベンダー通貨）', es:'coste estimado acumulado (precio × tokens, moneda del proveedor)', fr:'coût estimé cumulé (prix × jetons, devise du fournisseur)'}},
+    _t:{zh:'订阅制方案显示「订阅」（边际成本≈0，套餐摊薄）；按量方案 = 目录单价 × 累计 tokens（按厂商币种）', en:'subscription plans show "sub" (marginal cost ≈ 0, plan amortized); pay-as-you-go = catalog price × tokens (vendor currency)', ko:'구독 플랜은 "구독" 표시(한계 비용≈0); 종량제 = 카탈로그 단가 × 누적 토큰', ja:'サブスク プランは「サブ」表示（限界費用≈0）; 従量課金 = カタログ単価 × 累計トークン', es:'planes de suscripción muestran "sub" (coste marginal ≈ 0); por uso = precio × tokens', fr:'les plans par abonnement affichent "sub" (coût marginal ≈ 0); à l\'usage = prix × jetons'}},
   w_samples:{zh:'样本', en:'Samples', ko:'샘플', ja:'サンプル', es:'Muestras', fr:'Échant.',
     _t:{zh:'飞轮样本量（请求数），学习项达 5 样本后生效（冷启动保护）', en:'flywheel sample size; learning kicks in at 5', ko:'플라이휠 샘플 수(요청 수), 학습은 5 샘플부터(콜드스타트 보호)', ja:'サンプル数（リクエスト数）、学習は5サンプルから（コールドスタート保護）', es:'muestras del volante; el aprendizaje inicia en 5', fr:'échantillons du volant; l\'apprentissage démarre à 5'}},
   w_fb:     {zh:'反馈', en:'Feedback', ko:'피드백', ja:'フィードバック', es:'Feedback', fr:'Retour',
-    _t:{zh:'插件上报的工具执行反馈 ok/total（L4 最高精度信号）', en:'plugin-reported tool feedback ok/total (L4)', ko:'플러그인 보고 도구 실행 피드백 ok/total(L4 최고 정밀 신호)', ja:'プラグイン報告のツール実行フィードバック ok/total（L4）', es:'feedback de herramientas del plugin ok/total (L4)', fr:'retour d\'exécution des outils du plugin ok/total (L4)'}},
+    _t:{zh:'主显 L3 语义回路（上一轮工具调用被会话执行确认 matched/total，已折入可靠性）；括号内为 L4 插件显式反馈（需装 opencode 插件回传）', en:'L3 semantic loop primary (previous-turn tool calls confirmed executed by session, folded into reliability); L4 plugin feedback in parens (needs opencode plugin)', ko:'L3 시맨틱 루프 기본(세션에서 실행 확인된 도구 호출, 신뢰성에 반영); 괄호 안 L4 플러그인 피드백', ja:'L3 セマンティックループ優先（セッションで実行確認されたツール呼び出し、信頼性に反映）; 括弧内は L4 プラグインフィードバック', es:'bucle semántico L3 primario (llamadas confirmadas por la sesión, integrado en fiabilidad); feedback L4 del plugin en paréntesis', fr:'boucle sémantique L3 en principal (outils confirmés par la session, intégré à la fiabilité); retour plugin L4 entre parenthèses'}},
   w_weight: {zh:'权重', en:'Weight', ko:'가중치', ja:'重み', es:'Peso', fr:'Poids',
     _t:{zh:'最终权重 = 用户 weight × 学习偏置，开方软化后乘入评分', en:'final weight = user weight × learned bias, sqrt-softened into score', ko:'최종 가중치 = 사용자 weight × 학습 편향, 제곱근 완화 후 점수에 곱', ja:'最終重み = ユーザーweight × 学習バイアス、平方根緩和してスコアに乗算', es:'peso final = peso usuario × sesgo, suavizado con raíz', fr:'poids final = poids utilisateur × biais, adouci par racine'}},
   p_sticky: {zh:'粘性复用', en:'sticky reuse', ko:'스티키 재사용', ja:'スティキー再利用', es:'reutilización sticky', fr:'réutilisation sticky'},
@@ -766,6 +767,7 @@ function renderWheel(){
     const uw = s.user_weight ?? 1;
     const lb = tr.learned_bias ?? 1;
     const fb = s.feedback || {ok:0,total:0};
+    const sem = s.semantic || {matched:0,total:0};
     const act = lastAct[id];
     const actB = act ? '<span class="la '+(act.a==='c'?'c':'f')+'" title="'+timeStr(new Date(act.t))+'">'+(act.a==='c'?t('la_chosen'):t('la_failed'))+'</span>' : '';
     return '<tr class="wheel-row" data-model="'+esc(id)+'"><td title="'+esc(id)+'">'+esc(id.length>28?id.slice(0,27)+'…':id)+actB+'</td>' +
@@ -776,9 +778,12 @@ function renderWheel(){
       '<td class="num">'+n50(tr.learned_bias)+'</td>' +
       '<td class="num">'+(s.success_rate==null?'-':Math.round(s.success_rate*100)+'%')+'</td>' +
       '<td class="num">'+(s.cache_hit_rate==null?'-':Math.round(s.cache_hit_rate*100)+'%')+'</td>' +
-      '<td class="num">'+fmtCost(s.est_cost, s.currency)+'</td>' +
+      '<td class="num">'+(p.plan_kind && p.plan_kind !== 'api'
+        ? '<span class="pbadge" title="'+esc(t('w_cost._t'))+'">'+esc(t('w_sub'))+'</span>'
+        : fmtCost(s.est_cost, s.currency))+'</td>' +
       '<td class="num">'+(s.samples??0)+'</td>' +
-      '<td class="num">'+fb.ok+'/'+fb.total+'</td>' +
+      '<td class="num">'+esc(String(sem.matched ?? 0)+'/'+String(sem.total ?? 0))
+        + (fb.total > 0 ? ' <span class="dim2">('+fb.ok+'/'+fb.total+')</span>' : '')+'</td>' +
       '<td class="num"><span class="wedit" title="'+esc(t('m_interv._t'))+'" data-wmodel="'+esc(id)+'" data-wcur="'+uw+'">'+Math.round(50*Math.sqrt(uw*lb))+'</span></td></tr>';
   });
   wb.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="12" style="color:var(--dim)">'+t('wheelcold')+'</td></tr>';
