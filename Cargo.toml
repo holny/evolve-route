@@ -12,7 +12,7 @@ members = [
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/your-org/evolveroute"
+repository = "https://github.com/holny/evolve-route"
 
 [workspace.dependencies]
 ev-core = { path = "crates/ev-core" }
