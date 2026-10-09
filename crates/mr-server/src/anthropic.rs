@@ -117,7 +117,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
     let original_choice = decision.chosen.clone();
     let is_stream = parsed.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
 
-    let attempts: Vec<String> = match &target {
+    let (attempts, sweep_from): (Vec<String>, usize) = match &target {
         Target::Auto(_) => {
             let mut seen = std::collections::HashSet::new();
             let mut list: Vec<String> = decision
@@ -140,9 +140,25 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
                     }
                 }
             }
-            list
+            // 链外兜底（用户裁决，与 relay 同规则）：主链全灭时目录里其余
+            // provider 的模型队尾一试（含冷却中/未评分的），上限 6 个
+            let sweep_from = list.len();
+            let cat = st.engine.catalog_snapshot();
+            let self_addr = format!("{}:{}", st.config.server.host, st.config.server.port);
+            for m in &cat {
+                if list.len() - sweep_from >= 6 {
+                    break;
+                }
+                if m.base_url.contains(&self_addr) {
+                    continue;
+                }
+                if seen.insert(m.id.clone()) {
+                    list.push(m.id.clone());
+                }
+            }
+            (list, sweep_from)
         }
-        Target::Direct(_) => vec![decision.chosen.clone()],
+        Target::Direct(_) => (vec![decision.chosen.clone()], usize::MAX),
     };
 
     let mut skipped: Vec<String> = Vec::new();
@@ -153,7 +169,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
     let mut dead_providers: std::collections::HashSet<String> = std::collections::HashSet::new();
     // 网络级熔断（与 relay 同规则）：transport 错误按 baseUrl 熔断
     let mut dead_routes: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for cand in &attempts {
+    for (cand_idx, cand) in attempts.iter().enumerate() {
         let Some(record) = st.catalog_get(cand) else { continue };
         if dead_providers.contains(&record.provider) {
             skipped.push(format!("{cand}(provider {} account-level failure)", record.provider));
@@ -191,8 +207,12 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
         if let Some(h) = health_snap.get(&health_id)
             && !h.available(now_ms_v)
         {
-            skipped.push(format!("{cand}[{key_idx}] cooldown"));
-            continue;
+            // 链外兜底段冷却放行（与 relay 同规则）：全灭好过硬报错
+            if cand_idx < sweep_from {
+                skipped.push(format!("{cand}[{key_idx}] cooldown"));
+                continue;
+            }
+            skipped.push(format!("{cand}[{key_idx}] last-resort (cooling)"));
         }
 
         let (fwd_body, url) = if to_openai {

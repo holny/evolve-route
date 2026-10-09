@@ -3,7 +3,7 @@ use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use mr_core::config::{BenchmarksCfg, CatalogCfg, DataCfg, DecisionCfg, DiscoveryCfg, FileConfig, ModelEntry, PolicyCfg, QuotaCfg, ServerCfg};
 use mr_core::types::{Cost, Tiers};
-use mr_server::state::{build_router, build_state};
+use mr_server::state::{build_router, build_state, AppState};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
@@ -258,6 +258,80 @@ async fn no_credit_model_is_skipped_and_marked() {
     let (_, headers, _) = send(app, chat_request("auto", json!("你好"), json!({}))).await;
     assert_eq!(headers["x-mr-model"], "standard");
     assert!(headers.get("x-mr-skipped").is_none(), "no retry waste on second request");
+}
+
+#[tokio::test]
+async fn chain_exhausted_sweeps_out_of_chain_models() {
+    // 用户场景复刻：主链+评分补位全灭（全 402），唯一活模型 mock-rescue
+    // 处于健康冷却（决策期被过滤、不在链上）——链外兜底必须仍试它
+    let dead: std::collections::HashSet<String> = ["mock-mini", "mock-standard", "mock-frontier"]
+        .iter().map(|s| s.to_string()).collect();
+    let dead2 = dead.clone();
+    let app2 = axum::Router::new().route(
+        "/v1/chat/completions",
+        axum::routing::post(move |body: axum::body::Bytes| {
+            let dead = dead2.clone();
+            async move {
+                let v: Value = serde_json::from_slice(&body).unwrap();
+                let model = v["model"].as_str().unwrap_or("unknown").to_string();
+                if dead.contains(&model) {
+                    return axum::http::Response::builder()
+                        .status(402)
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"error":{"message":"Insufficient Balance"}}"#))
+                        .unwrap();
+                }
+                axum::http::Response::builder()
+                    .status(200)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"model": model, "choices": [{"message": {"role": "assistant", "content": "rescued"}}],
+                               "usage": {"prompt_tokens": 5, "completion_tokens": 1}})
+                            .to_string(),
+                    ))
+                    .unwrap()
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move { axum::serve(listener, app2).await.unwrap(); });
+
+    let mut cfg = test_config(port);
+    cfg.data.dir = std::env::temp_dir().join(format!("mr-test-sweep-{}", std::process::id())).to_string_lossy().into_owned();
+    let mk = |id: &str, upstream: &str, window: u64, inp: f32, outp: f32, coding: f32, speed: f32| ModelEntry {
+        id: id.into(),
+        provider: format!("mock-{id}"),
+        base_url: format!("http://127.0.0.1:{port}/v1"),
+        api_key_env: None,
+        upstream_model: Some(upstream.into()),
+        context_window: Some(window),
+        max_output: 4096,
+        cost: Some(Cost { input: inp, output: outp }),
+        tiers: Tiers { reasoning: coding * 0.9, coding, vision: 0.0, agentic: coding },
+        speed_tier: speed,
+        source_note: None,
+        ..Default::default()
+    };
+    // 独立 provider 的链外活模型（mock upstream 只放行它）
+    cfg.models.push(mk("rescue", "mock-rescue", 64_000, 0.3, 1.0, 0.60, 0.8));
+
+    let st: AppState = build_state(cfg);
+    // 预置冷却：rescue 决策期被过滤、不进链（模拟 zhipu 429 后的场景）
+    st.health.mark_failure("rescue", mr_memory::health::Failure {
+        kind: mr_core::types::HealthKind::RateLimited,
+        message: "429".into(),
+        until_epoch_ms: Some(mr_memory::health::now() + 300_000),
+    });
+    let app = build_router(st);
+
+    let (status, headers, raw) = send(app, chat_request("auto", json!("你好"), json!({}))).await;
+    let skipped_hdr = headers.get("x-mr-skipped").map(|v| v.to_str().unwrap().to_string()).unwrap_or_default();
+    assert_eq!(status, StatusCode::OK, "body: {}\nskipped: {}", String::from_utf8_lossy(&raw), skipped_hdr);
+    assert_eq!(headers["x-mr-model"], "rescue",
+        "cooling out-of-chain model must be tried as last resort");
+    let skipped = headers.get("x-mr-skipped").map(|v| v.to_str().unwrap().to_string()).unwrap_or_default();
+    assert!(skipped.contains("last-resort"), "sweep must be marked in skipped: {skipped}");
 }
 
 #[tokio::test]

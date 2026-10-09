@@ -137,7 +137,7 @@ pub async fn chat_completions(
     // Chain exhausted → keep pulling from the full eligible ranking (scores,
     // desc) up to fallback_depth so a top-3 outage never takes the whole
     // provider fleet down with it.
-    let attempts: Vec<String> = match &target {
+    let (attempts, sweep_from): (Vec<String>, usize) = match &target {
         Target::Auto(_) => {
             let mut seen = std::collections::HashSet::new();
             let mut list: Vec<String> = decision
@@ -160,9 +160,27 @@ pub async fn chat_completions(
                     }
                 }
             }
-            list
+            // 链外兜底（用户裁决）：链+评分补位全灭时，目录里其余 provider 的
+            // 模型仍一试（冷却中的 zhipu / 未入评分的 MiniMax 也纳入）——队尾
+            // 追加即天然只在全灭路径被尝试；上限 6 个防长尾延迟。自指 base_url 的不试
+            // （无凭据模型与主链同权照试——本地上游可免鉴权）。
+            let sweep_from = list.len();
+            let cat = st.engine.catalog_snapshot();
+            let self_addr = format!("{}:{}", st.config.server.host, st.config.server.port);
+            for m in &cat {
+                if list.len() - sweep_from >= 6 {
+                    break;
+                }
+                if m.base_url.contains(&self_addr) {
+                    continue;
+                }
+                if seen.insert(m.id.clone()) {
+                    list.push(m.id.clone());
+                }
+            }
+            (list, sweep_from)
         }
-        Target::Direct(_) => vec![decision.chosen.clone()],
+        Target::Direct(_) => (vec![decision.chosen.clone()], usize::MAX),
     };
 
     let mut skipped: Vec<String> = Vec::new();
@@ -181,7 +199,7 @@ pub async fn chat_completions(
     // 自递归防护（审查 M-6）：候选 base_url 指向自身监听地址时出局——
     // 不依赖用户给网关条目起什么名字（命名约定不可靠）
     let self_addr = format!("{}:{}", st.config.server.host, st.config.server.port);
-    for cand in &attempts {
+    for (cand_idx, cand) in attempts.iter().enumerate() {
         let Some(record) = st.catalog_get(cand) else { continue };
         if record.base_url.contains(&self_addr) || record.base_url.contains("127.0.0.1:8787") {
             skipped.push(format!("{cand}(self-loop: points back at this gateway)"));
@@ -219,7 +237,12 @@ pub async fn chat_completions(
             format!("{cand}{KEY_SEP}{key_idx}")
         };
         if let Some(h) = health_snap.get(&health_id)
-            && !h.available(now_ms) {
+            && !h.available(now_ms)
+        {
+            // 链外兜底段（cand_idx >= sweep_from）冷却不再拦——全灭好过硬报错，
+            // 单次尝试不会形成打爆（失败会重新记账冷却）
+            let sweep = cand_idx >= sweep_from;
+            if !sweep {
                 let remaining = h
                     .cooldown_remaining_ms(now_ms)
                     .map(|ms| format!(" for {}s", ms / 1000))
@@ -227,6 +250,8 @@ pub async fn chat_completions(
                 skipped.push(format!("{cand}[{key_idx}]({}){remaining}", h.kind.label()));
                 continue;
             }
+            skipped.push(format!("{cand}[{key_idx}](last-resort, {} cooling)", h.kind.label()));
+        }
         let (fwd_body, url) = if to_anthropic {
             let mut openai_value: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
             if let Some(obj) = openai_value.as_object_mut() {
@@ -609,7 +634,7 @@ pub async fn chat_completions(
         let snap = st.health.snapshot();
         let now_ms = mr_memory::health::now();
         let mut ra: Option<u64> = None;
-        for cand in &attempts {
+    for cand in &attempts {
             for (k, h) in &snap {
                 if k.split(KEY_SEP).next() == Some(cand.as_str())
                     && let Some(ms) = h.cooldown_remaining_ms(now_ms)
