@@ -336,6 +336,8 @@ const T = {
   pv_field_disabled: {zh:'已禁用', en:'Disabled', ko:'비활성', ja:'無効', es:'Deshabilitado', fr:'Désactivé'},
   pv_available: {zh:'可用', en:'available', ko:'사용 가능', ja:'利用可能', es:'disponible', fr:'disponible'},
   pv_scan: {zh:'🔍 全局扫描', en:'🔍 Scan all', ko:'🔍 전체 스캔', ja:'🔍 全スキャン', es:'🔍 Escanear todo', fr:'🔍 Tout scanner'},
+  pv_prov_obs: {zh:'Provider 测', en:'Provider live', ko:'Provider 실측', ja:'Provider 実測', es:'Proveedor en vivo', fr:'Provider direct'},
+  pv_reconcile: {zh:'对账', en:'Sync', ko:'동기화', ja:'同期', es:'Sincronizar', fr:'Synchroniser'},
   pv_confirm_delete_disc: {zh:'删除该扫描发现的 Provider？其全部模型将移出目录（重启/扫描不会自动加回，可重新扫描恢复）。', en:"Delete this scanned provider? All its models leave the catalog (won't come back on restart/scan; re-add via scan after restore).", ko:'이 스캔된 Provider를 삭제하시겠습니까? 모든 모델이 목록에서 제거됩니다(재스캔으로 복원 가능).', ja:'このスキャン検出 Provider を削除しますか？全モデルがカタログから削除されます（再スキャンで復元可能）。', es:'¿Eliminar este provider escaneado? Todos sus modelos salen del catálogo (restaurable re-escaneando).', fr:'Supprimer ce provider scanné ? Tous ses modèles quittent le catalogue (restaurable en re-scan).'},
   pv_5h: {zh:'5小时', en:'5 hours', ko:'5시간', ja:'5時間', es:'5 horas', fr:'5 heures'},
   pv_week: {zh:'一周', en:'weekly', ko:'주간', ja:'週', es:'semana', fr:'semaine'},
@@ -920,6 +922,34 @@ function renderProviders(){
         budgetHtml += '<span class="la f" style="margin-top:2px">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(p.next_reset_epoch_ms))+'</span>';
       budgetHtml += '</div>';
     }
+    // Provider 测实时余量（用户裁决：以 Provider 测为准；本地 token 估算仅兜底）
+    let provHtml = '';
+    const obs = p.observed || {};
+    const obsRows = [];
+    const obsMap = {
+      '5h': t('pv_5h'),
+      '7d': t('pv_week'),
+      'tokens': t('pv_5h'),
+      'requests': 'req',
+    };
+    Object.keys(obsMap).forEach(k => {
+      const w = obs[k]; if (!w || w.remaining == null) return;
+      const age = Math.max(0, Math.floor((Date.now() - (w.updated_epoch_ms||0))/1000));
+      const limTxt = w.limit != null ? w.limit : '?';
+      const lowPct = w.limit ? Math.round(100 * (1 - w.remaining / w.limit)) : 0;
+      const col = lowPct >= 90 ? 'var(--red)' : lowPct >= 60 ? 'var(--amber)' : 'var(--green)';
+      const ageTxt = age < 60 ? age+'s' : Math.floor(age/60)+'m';
+      obsRows.push('<span class="dim2" style="font-size:10px;margin-right:10px">'
+        + '<b style="color:'+col+'">'+esc(obsMap[k])+'</b>: '+w.remaining+' / '+limTxt
+        + ' <span class="dim2">('+ageTxt+' 前)</span></span>');
+    });
+    if (obsRows.length) {
+      provHtml = '<div style="margin-top:4px">'
+        + '<span class="dim2" style="font-size:10px;margin-right:6px">📡 '+esc(t('pv_prov_obs'))+':</span>'
+        + obsRows.join('')
+        + '<button class="lang-btn" data-pv-reconcile="'+esc(p.key)+'" style="font-size:10px;padding:1px 6px">🔄 '+esc(t('pv_reconcile'))+'</button>'
+        + '</div>';
+    }
     const summary = tName === '-' ? '' : ' <span class="dim2">('+esc(tName)+' · '+esc(tVal)+')</span>';
     // 实时状态（providersStatus 轮询数据，按 key 匹配）
     const stat = ((state.providersStatus||{}).providers||[]).find(s => s.key === p.key) || {};
@@ -949,17 +979,26 @@ function renderProviders(){
       +   esc(p.base_url || '') + ' · ' + esc(p.protocol || 'openai') + ' · ' + fetch + ' models'
       + '</div>'
       + budgetHtml
+      + provHtml
       + '</div>';
   }).join('');
   cont.querySelectorAll('[data-pv-edit]').forEach(b => b.addEventListener('click', () => openProviderDrawer(b.dataset.pvEdit, b.dataset.pvSource === 'manual')));
   cont.querySelectorAll('[data-pv-del]').forEach(b => b.addEventListener('click', () => confirmDeleteProvider(b.dataset.pvDel)));
   cont.querySelectorAll('[data-pv-del-disc]').forEach(b => b.addEventListener('click', () => confirmDeleteDiscovered(b.dataset.pvDelDisc, b.dataset.pvUrl)));
+  cont.querySelectorAll('[data-pv-reconcile]').forEach(b => b.addEventListener('click', () => reconcileProvider(b.dataset.pvReconcile)));
   cont.querySelectorAll('[data-pv-restore]').forEach(b => b.addEventListener('click', () => restoreProvider(b.dataset.pvRestore)));
 }
 function confirmDeleteProvider(key){
   if (!confirm(t('pv_confirm_delete'))) return;
   fetch('/api/providers/delete', {method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify({key})}).then(refresh);
+}
+function reconcileProvider(key){
+  const btn = document.querySelector('[data-pv-reconcile="'+CSS.escape(key)+'"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  fetch('/api/providers/reconcile', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({key})}).then(r=>r.json()).then(() => refresh()).catch(()=>refresh())
+    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '🔄 '+t('pv_reconcile'); } });
 }
 function confirmDeleteDiscovered(key, baseUrl){
   if (!confirm(t('pv_confirm_delete_disc'))) return;

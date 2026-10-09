@@ -128,6 +128,13 @@ impl Inner {
         self.engine.catalog.read().ok().and_then(|c| c.get(id).cloned())
     }
 
+    /// Provider 实时配额上报（每次响应头部到达即写）——面板展示以此为准。
+    /// plan_key 由调用方按 record.base_url 解析；headers 为原始上游响应头
+    pub fn observe_provider_quota(&self, plan_key: &str, headers: &axum::http::HeaderMap) {
+        let parsed = mr_memory::quota::QuotaLedger::parse_headers(headers);
+        self.quota.observe_provider(plan_key, &parsed);
+    }
+
     /// 订阅方案预算压力（plan_key → 消耗占比）：额度内积分消耗 / 档位额度。
     /// 无额度配置（未声明档位）的方案无压力。
     pub fn plan_pressure_map(&self) -> HashMap<String, f32> {
@@ -267,9 +274,10 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/api/providers/delete", axum::routing::post(crate::meta::api_providers_delete))
         .route("/api/providers/refresh", axum::routing::post(crate::meta::api_providers_refresh))
         .route("/api/providers/status", axum::routing::get(crate::meta::api_providers_status))
-        .route("/api/providers/scan", axum::routing::post(crate::meta::api_providers_scan))
+                .route("/api/providers/scan", axum::routing::post(crate::meta::api_providers_scan))
         .route("/api/providers/scan-progress", axum::routing::get(crate::meta::api_providers_scan_progress))
         .route("/api/providers/restore", axum::routing::post(crate::meta::api_providers_restore))
+        .route("/api/providers/reconcile", axum::routing::post(crate::meta::api_providers_reconcile))
         .route(
             "/api/plans",
             axum::routing::get(crate::meta::api_plans).post(crate::meta::api_plans_set),

@@ -374,7 +374,11 @@ pub async fn chat_completions(
 
         // quota window learning from success headers (before body consumed)
         let windows = mr_memory::QuotaLedger::parse_headers(resp.headers());
-        st.quota.observe(&format!("{cand}{KEY_SEP}{key_idx}"), windows);
+        st.quota.observe(&format!("{cand}{KEY_SEP}{key_idx}"), windows.clone());
+        // provider 实时配额（panel 配额展示以此为准，不靠本地 token 累加估算）
+        if let Some(pk) = mr_core::plans::plan_key_for(&record.base_url) {
+            st.quota.observe_provider(pk, &windows);
+        }
         // success path
         let success_health_id = if keys.is_empty() {
             cand.clone()

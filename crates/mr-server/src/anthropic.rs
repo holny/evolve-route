@@ -317,7 +317,11 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
         st.health.mark_ok(&success_health_id);
         // quota-window learning from success headers (pre-body consumption)
         let windows = mr_memory::QuotaLedger::parse_headers(resp.headers());
-        st.quota.observe(&success_health_id, windows);
+        st.quota.observe(&success_health_id, windows.clone());
+        // provider 实时配额（panel 配额展示以此为准）
+        if let Some(pk) = mr_core::plans::plan_key_for(&record.base_url) {
+            st.quota.observe_provider(pk, &windows);
+        }
         decision.chosen = cand.clone();
         decision.upstream_model = record.upstream_model.clone();
         decision.id = format!("{}-{}", decision.id, skipped.len());

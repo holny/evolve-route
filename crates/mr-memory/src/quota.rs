@@ -28,6 +28,25 @@ pub struct QuotaLedger {
     inner: Mutex<HashMap<String, Vec<WindowState>>>,
     /// 订阅方案用量账本（模型 → token 记录，滚动保留 24h）
     plan_usage: Mutex<UsageMap>,
+    /// provider 测的实时配额（plan_key + window_scope → 最近一次响应头里的剩余/限额）。
+    /// 面板配额展示以此为权威源——本地按 token 累加的估算容易与 provider 真实值漂移
+    /// （错误响应消耗配额但不返回 usage / 计费精度差异 / 并发令牌预留等）
+    observed_provider: Mutex<HashMap<String, ObservedProviderQuota>>,
+}
+
+/// provider 响应头里的实时配额快照（每个 plan_key 一份；面板展示窗口维度）
+#[derive(Debug, Clone, Default)]
+pub struct ObservedProviderQuota {
+    /// ("5h" / "7d" / "tokens" / ...) → 剩余 + 限额（令牌/请求，原始单位由 provider 决定）
+    pub windows: HashMap<String, ObservedWindow>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ObservedWindow {
+    pub remaining: Option<u64>,
+    pub limit: Option<u64>,
+    pub reset_epoch_ms: Option<u64>,
+    pub updated_epoch_ms: u64,
 }
 
 pub fn now_ms() -> u64 {
@@ -42,7 +61,35 @@ impl QuotaLedger {
         Self {
             inner: Mutex::new(HashMap::new()),
             plan_usage: Mutex::new(HashMap::new()),
+            observed_provider: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// 记录 provider 实时配额（每次响应 parse_headers 后调用）。plan_key 由
+    /// 调用方根据当前路由的 plan_key_for(base_url) 解析——本结构不做归属。
+    pub fn observe_provider(&self, plan_key: &str, windows: &[WindowState]) {
+        if windows.is_empty() || plan_key.is_empty() { return; }
+        let Ok(mut m) = self.observed_provider.lock() else { return };
+        let slot = m.entry(plan_key.to_string()).or_default();
+        for w in windows {
+            if w.remaining.is_none() && w.limit.is_none() { continue; }
+            slot.windows.insert(w.scope.clone(), ObservedWindow {
+                remaining: w.remaining,
+                limit: w.limit,
+                reset_epoch_ms: w.reset_epoch_ms,
+                updated_epoch_ms: w.updated_epoch_ms,
+            });
+        }
+    }
+
+    /// 取某 plan_key 某窗口的最新观察值与年龄。max_age_ms 默认 10 分钟（Provider
+    /// 测的时效性窗口——超过则退化到本地估算）
+    pub fn observed_window(&self, plan_key: &str, scope: &str, now_ms: u64, max_age_ms: u64) -> Option<ObservedWindow> {
+        let m = self.observed_provider.lock().ok()?;
+        let slot = m.get(plan_key)?;
+        let w = slot.windows.get(scope)?.clone();
+        if now_ms.saturating_sub(w.updated_epoch_ms) > max_age_ms { return None; }
+        Some(w)
     }
 
     /// 记录一次订阅方案请求的 token 用量（24h 滚动保留）

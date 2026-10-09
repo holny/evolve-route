@@ -876,6 +876,7 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
             },
             "model_rates": pd.model_rates,
             "fetched_models": pd.fetched_models,
+            "observed": observed_for_plan(&st.quota, &pd.base_url, now_ms),
             "has_key": pd.api_key.is_some(),
             "key_fp": pd.api_key.as_deref().map(key_fp).unwrap_or_default(),
             "used_5h": if used > 0.0 { (used * 100.0).round() / 100.0 } else { 0.0 },
@@ -949,6 +950,7 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
                 "monthly": allowance_monthly,
             },
             "model_rates": profile.map(|p| p.model_rates).unwrap_or(""),
+            "observed": observed_for_plan(&st.quota, &m.base_url, now_ms),
             "model_count": model_ids.len(),
             "models": model_ids,
             "has_key": m.has_credential(),
@@ -981,6 +983,22 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
         ka.cmp(kb)
     });
     (axum::Json(json!({"providers": out}))).into_response()
+}
+
+/// Provider 测实时配额（每次响应头到达即更新）——面板 quota bars 的权威源
+fn observed_for_plan(quota: &std::sync::Arc<mr_memory::quota::QuotaLedger>, base_url: &str, now_ms: u64) -> Value {
+    let Some(pk) = mr_core::plans::plan_key_for(base_url) else { return json!({}) };
+    // 5 分钟内有效（panel 5s 轮询，足够新鲜）
+    let mut out = serde_json::Map::new();
+    for scope in ["5h", "7d", "tokens", "requests", "monthly"] {
+        if let Some(w) = quota.observed_window(pk, scope, now_ms, 5 * 60 * 1000) {
+            out.insert(scope.into(), json!({
+                "remaining": w.remaining, "limit": w.limit,
+                "reset_epoch_ms": w.reset_epoch_ms, "updated_epoch_ms": w.updated_epoch_ms,
+            }));
+        }
+    }
+    json!(out)
 }
 
 /// 新增/修改 provider（手动定义）：baseUrl 变更触发 /models 重拉
@@ -1059,6 +1077,56 @@ pub async fn api_providers_set(
         }
     }
     (axum::Json(json!({"status": "ok", "key": key, "fetched_models": fetched}))).into_response()
+}
+
+/// 手动对账（用户裁决：以 Provider 测为准）：对一个 provider 的目录首模型发一个
+/// 极小 completion 请求捕获响应头，把 provider 的真实配额/限额写入 observed
+pub async fn api_providers_reconcile(
+    State(st): State<AppState>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Response {
+    let Some(key) = body.get("key").and_then(|k| k.as_str()).map(|s| s.to_string()) else {
+        return (StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": "key is required"}}))).into_response();
+    };
+    let ov = crate::state::load_overrides(&st.config.data.dir);
+    let (base_url, api_key) = if let Some(pd) = ov.providers.get(&key) {
+        (pd.base_url.clone(), pd.api_key.clone())
+    } else {
+        // discovered：按 provider 名从目录找一个 base_url + 第一个 key
+        let snap = st.engine.catalog_snapshot();
+        let pick = snap.iter().find(|m| m.provider == key);
+        match pick {
+            Some(m) => (m.base_url.clone(), m.key_values().first().cloned()),
+            None => return (StatusCode::NOT_FOUND, axum::Json(json!({"error": {"message": "provider not found"}}))).into_response(),
+        }
+    };
+    let probe_body = json!({
+        "model": key,
+        "messages": [{"role":"user","content":"hi"}],
+        "max_tokens": 1,
+        "stream": false,
+    });
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let mut req = st.http.post(&url)
+        .header("content-type", "application/json")
+        .timeout(std::time::Duration::from_secs(8));
+    if let Some(k) = &api_key { req = req.bearer_auth(k); }
+    let resp = match req.json(&probe_body).send().await {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::BAD_GATEWAY,
+            axum::Json(json!({"error": {"message": format!("transport: {e}")}}))).into_response(),
+    };
+    if let Some(pk) = mr_core::plans::plan_key_for(&base_url) {
+        let windows = mr_memory::QuotaLedger::parse_headers(resp.headers());
+        st.quota.observe_provider(pk, &windows);
+        let snapshot: serde_json::Map<String, Value> = windows.iter().map(|w| {
+            (w.scope.clone(), json!({
+                "remaining": w.remaining, "limit": w.limit, "reset_epoch_ms": w.reset_epoch_ms,
+            }))
+        }).collect();
+        return (axum::Json(json!({"status":"ok","plan_key":pk,"windows":snapshot}))).into_response();
+    }
+    (axum::Json(json!({"status":"ok","plan_key":Value::Null}))).into_response()
 }
 
 /// 删除 provider（软删除——disabled=true，面板可恢复）
