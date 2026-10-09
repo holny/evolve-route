@@ -72,7 +72,16 @@ pub fn build_state(config: FileConfig) -> AppState {
     let catalog = Catalog::build_with_discovered(&config, discovered);
     let policy = config.policy.clone();
     let backend = DecisionBackend::build(&config.decision.backend);
-    let engine = Engine::new(catalog, policy, backend);
+    let mut engine = Engine::new(catalog, policy, backend);
+
+    // Jev cookbook intent-routing：TypeSafe 后端时接通 route_advisor——
+    // TypesafeBackend 实现了 RouteAdvisor trait（推荐方法签名匹配 ev-core trait）
+    if std::env::var("TYPESAFE_API_KEY").ok().filter(|k| !k.is_empty()).is_some() {
+        if let Some(backend) = ev_decision::typesafe::TypesafeBackend::from_env() {
+            engine.set_route_advisor(std::sync::Arc::new(backend));
+            tracing::info!("route_advisor: typesafe jev (intent-routing pipeline connected)");
+        }
+    }
 
     // 面板调控覆盖（overrides.json，重启重放）：模型权重 + 公式权重
     for (id, w) in &ov.models {

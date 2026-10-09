@@ -205,7 +205,7 @@ impl Engine {
         }
 
         let judge_started = now_epoch_ms();
-        let j = self.judge.judge(&input.features, input.digest);
+        let mut j = self.judge.judge(&input.features, input.digest);
         let judge_ms = now_epoch_ms().saturating_sub(judge_started);
         let relevance = j.session_relevance;
         let difficulty_eff = (j.difficulty + relevance * (j.session_depth * 0.5).max(0.0)).clamp(0.0, 3.0);
@@ -416,12 +416,31 @@ impl Engine {
         }
         scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Jev cookbook intent-routing 模式：决策模型的 route_recommendation
-        // 作为加分信号——高置信度时对推荐模型加分（最高 +15%）并重排
+        // Jev cookbook intent-routing：接通 route_advisor 管道——
+        // 决策模型看到候选全画像后直接推荐模型（此前 advisor 从未被调用）
+        if let Some(advisor) = &self.route_advisor {
+            let task_summary: String = input.digest.last_user_text.chars().take(600).collect();
+            let candidates_json = serde_json::to_string(&candidates.iter().map(|c| serde_json::json!({
+                "id": c.id,
+                "tier_coding": c.tiers.coding,
+                "tier_reasoning": c.tiers.reasoning,
+                "tier_agentic": c.tiers.agentic,
+                "context_window": c.context_window.unwrap_or(0),
+                "plan": crate::plans::plan_key_for(&c.base_url).unwrap_or("api"),
+            })).collect::<Vec<_>>()).unwrap_or_default();
+            if let Some((rec_id, rec_conf)) = advisor.recommend(&task_summary, &candidates_json, "") {
+                j.route_recommendation = Some(rec_id);
+                j.route_recommendation_confidence = rec_conf.clamp(0.0, 1.0);
+            }
+        }
+
+        // Jev cookbook intent-routing 加分：route_recommendation 高置信度时
+        // 对推荐模型加分（最高 +15%）并重排。model_id 归一化（trim + 大小写）
         if let Some(ref rec) = j.route_recommendation {
             if j.route_recommendation_confidence > 0.3 {
-                if let Some(rec_score) = scores.iter_mut().find(|s| s.model_id == *rec) {
-                    rec_score.score *= 1.0 + j.route_recommendation_confidence * 0.15;
+                let rec_norm = rec.trim().to_lowercase();
+                if let Some(rec_score) = scores.iter_mut().find(|s| s.model_id.to_lowercase() == rec_norm) {
+                    rec_score.score *= 1.0 + j.route_recommendation_confidence.clamp(0.0, 1.0) * 0.15;
                     scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
                 }
             }
