@@ -18,9 +18,9 @@
 
 It is **local-first** (no cloud dependency for routing), **economics-aware** (subscription quotas, credit multipliers, per-model dollar limits), and **self-evolving** (a flywheel learns from every outcome and rewrites its own scoring biases).
 
-![EvolveRoute architecture](docs/assets/architecture.png)
+![EvolveRoute architecture](docs/assets/architecture.svg)
 
-*Agents point at one endpoint with `model = "auto"`. The dual judge (TypeSafe Jev + heuristic) scores every request; the flywheel feeds every outcome back into ranking; every provider plan is priced and budgeted its own way. [Open the interactive diagram](docs/assets/architecture.html).*
+*Agents point at one endpoint with `model = "auto"`. The dual judge (TypeSafe Jev + heuristic) scores every request; the flywheel feeds every outcome back into ranking; every provider plan is priced and budgeted its own way. [Edit the source](docs/assets/architecture.excalidraw).*
 
 ## Three pillars
 
@@ -159,6 +159,27 @@ request → estimate tokens → hard constraints (window / vision / credentials)
 ```
 
 Deep dives: [Architecture](docs/ARCHITECTURE.md) · [Decision flow](docs/DECISION-FLOW.md) · [Scoring factors](docs/FACTORS.md) · [Modules](docs/MODULES.md) *(Chinese, English translation welcome)*
+
+## The routing formula
+
+Every candidate model is scored **per request** — every factor below is computed live from the plan registry, the vendor's official rates, and the flywheel:
+
+$$\text{score}(m) = w_q Q + w_s S + w_c C + w_r R + w_h H \;\times\; \sqrt{\,u_m \cdot b_m\,}$$
+
+| Factor | How it's computed |
+|---|---|
+| Quality `Q` | $1 - \rho\,(1 - \tau^{\,1+2\rho})$ — tier requirement steepens exponentially with difficulty; high-stakes tasks multiply in reasoning tier |
+| Quality floor | $1 - 0.45\,\rho$ — below the floor a model is **filtered out** before scoring (difficulty 3 → only quality ≥ 0.55 qualifies) |
+| Speed `S` | $0.7\,\text{prior} + 0.3\,\text{observed tok/s}$ |
+| Cost `C` | plan models: cheapest-in-plan credit rate ÷ own rate (official multipliers) · pay-as-you-go: min price ÷ own price |
+| Reliability `R` | $0.5 R_\infty + 0.3 R_{30} + 0.2 R_{10}$ — long-term baseline + last 30 + last 10 (missing layers re-merge) |
+| Headroom `H` | $(W - n_{in} - n_{out}) / W$ — remaining context after the estimate |
+
+And the weights themselves **move with difficulty** ($\hat d = $ difficulty $/ 3$):
+
+$$w_c \times (2 - 1.6\hat d) \qquad w_q \times (0.75 + 0.25\hat d) \qquad \text{(then renormalized)}$$
+
+Easy task ($\hat d \to 0$): the cost weight **doubles** — cheap models win. Hard task ($\hat d \to 1$): cost weight drops to 40% — quality dominates. The result is multiplied by $\sqrt{\text{user weight} \times \text{learned bias}}$ (clamped 0.4–1.8): the flywheel can nudge, never decide. Then ε-greedy exploration samples the runner-up 10% of the time, stable sessions reuse the chosen model, and any plan above 95% quota burn is filtered out entirely.
 
 ## Development
 
