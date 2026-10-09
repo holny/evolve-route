@@ -138,11 +138,11 @@ table.mx tr.win td { color:var(--green); }
       <span data-i18n="provider_card">Provider 管理</span>
       <span style="display:flex;gap:6px">
         <button class="lang-btn" id="pv-add-btn" data-i18n="pv_add">+ 新增 Provider</button>
-        <button class="lang-btn" id="pv-refresh-all-btn" data-i18n="pv_refresh_all">🔄 全部重拉</button>
         <button class="lang-btn" id="pv-scan-btn" data-i18n="pv_scan">🔍 全局扫描</button>
       </span>
     </h2>
     <div class="sub" style="margin-bottom:8px" data-i18n="provider_sub">手动维护 provider 凭据 / 档位 / 窗口额度 · 扫描发现自动展示</div>
+    <div id="pv-scan-progress" style="display:none;margin-bottom:8px;padding:8px 10px;background:#0d1117;border:1px solid var(--border);border-radius:6px;font-size:11px;font-family:monospace;white-space:pre-wrap;max-height:200px;overflow:auto;color:var(--dim)"></div>
     <div id="providers-list"></div>
   </section>
 
@@ -314,7 +314,8 @@ const T = {
   provider_card: {zh:'Provider 管理', en:'Provider management', ko:'Provider 관리', ja:'Provider 관리', es:'Gestión de providers', fr:'Gestion des providers'},
   provider_sub: {zh:'手动维护 provider 凭据 / 档位 / 窗口额度 · 扫描发现自动展示', en:'maintain credentials / tier / window allowance · scanned providers auto-listed', ko:'provider 자격 증명 / 등급 / 윈도우 한도 수동 관리 · 스캔 발견 자동 표시', ja:'provider 認証 / ティア / ウィンドウ枠を手動管理 · スキャン検出は自動表示', es:'mantén credenciales / nivel / ventana de cuota · escaneo detectado auto-listado', fr:'maintenir credentials / tier / quota · scannés auto-listés'},
   pv_add: {zh:'+ 新增 Provider', en:'+ Add provider', ko:'+ Provider 추가', ja:'+ Provider 追加', es:'+ Añadir provider', fr:'+ Ajouter provider'},
-  pv_refresh_all: {zh:'🔄 全部重拉', en:'🔄 Refresh all', ko:'🔄 모두 새로고침', ja:'🔄 全て再取得', es:'🔄 Refrescar todo', fr:'🔄 Tout actualiser'},
+  pv_scan_running: {zh:'⏳ 扫描中…', en:'⏳ scanning…', ko:'⏳ 스캔 중…', ja:'⏳ スキャン中…', es:'⏳ escaneando…', fr:'⏳ scan en cours…'},
+  pv_dup_of: {zh:'⚠ 与 {x} 重复（同 baseURL+apiKey）', en:'⚠ duplicate of {x} (same baseURL+apiKey)', ko:'⚠ {x}와 중복(동일 baseURL+apiKey)', ja:'⚠ {x} と重複(同一 baseURL+apiKey)', es:'⚠ duplicado de {x} (mismo baseURL+apiKey)', fr:'⚠ doublon de {x} (même baseURL+apiKey)'},
   pv_edit: {zh:'编辑 Provider', en:'Edit provider', ko:'Provider 편집', ja:'Provider 編集', es:'Editar provider', fr:'Modifier provider'},
   pv_cancel: {zh:'取消', en:'Cancel', ko:'취소', ja:'キャンセル', es:'Cancelar', fr:'Annuler'},
   pv_save: {zh:'保存', en:'Save', ko:'저장', ja:'保存', es:'Guardar', fr:'Enregistrer'},
@@ -334,7 +335,7 @@ const T = {
   pv_field_disabled: {zh:'已禁用', en:'Disabled', ko:'비활성', ja:'無効', es:'Deshabilitado', fr:'Désactivé'},
   pv_available: {zh:'可用', en:'available', ko:'사용 가능', ja:'利用可能', es:'disponible', fr:'disponible'},
   pv_scan: {zh:'🔍 全局扫描', en:'🔍 Scan all', ko:'🔍 전체 스캔', ja:'🔍 全スキャン', es:'🔍 Escanear todo', fr:'🔍 Tout scanner'},
-  pv_dup_warn: {zh:'⚠ 与现有 provider 重复（baseURL+apiKey 相同）', en:'⚠ duplicate of existing provider (same baseURL+apiKey)', ko:'⚠ 기존 provider와 중복(baseURL+apiKey 동일)', ja:'⚠ 既存 providerと重複(baseURL+apiKey 同一)', es:'⚠ duplicado de provider existente (mismo baseURL+apiKey)', fr:'⚠ doublon d\'un provider existant (même baseURL+apiKey)'},
+  pv_confirm_delete_disc: {zh:'删除该扫描发现的 Provider？其全部模型将移出目录（重启/扫描不会自动加回，可重新扫描恢复）。', en:"Delete this scanned provider? All its models leave the catalog (won't come back on restart/scan; re-add via scan after restore).", ko:'이 스캔된 Provider를 삭제하시겠습니까? 모든 모델이 목록에서 제거됩니다(재스캔으로 복원 가능).', ja:'このスキャン検出 Provider を削除しますか？全モデルがカタログから削除されます（再スキャンで復元可能）。', es:'¿Eliminar este provider escaneado? Todos sus modelos salen del catálogo (restaurable re-escaneando).', fr:'Supprimer ce provider scanné ? Tous ses modèles quittent le catalogue (restaurable en re-scan).'},
   pv_5h: {zh:'5小时', en:'5 hours', ko:'5시간', ja:'5時間', es:'5 horas', fr:'5 heures'},
   pv_week: {zh:'一周', en:'weekly', ko:'주간', ja:'週', es:'semana', fr:'semaine'},
   pv_month: {zh:'一月', en:'monthly', ko:'월간', ja:'月', es:'mes', fr:'mois'},
@@ -887,9 +888,10 @@ function renderProviders(){
     // 三窗口配额（5h/周/月）+ 重复标记
     const wkAllow = p.windows && p.windows['weekly'];
     const moAllow = p.windows && p.windows['monthly'];
-    const isDup = (state.providers||[]).filter(x =>
-      x.base_url === p.base_url && (x.has_key === p.has_key) && x.key !== p.key).length > 0;
-    const dupBadge = isDup ? '<span class="la f" style="margin-left:4px">'+esc(t('pv_dup_warn'))+'</span>' : '';
+    // 重复标记（后端按 baseURL+apiKey 指纹判定，指明跟谁重复）
+    const dupBadge = p.duplicate_of
+      ? '<span class="la f" style="margin-left:4px">'+esc(t('pv_dup_of').replace('{x}', p.duplicate_of))+'</span>'
+      : '';
     let budgetHtml = '';
     const bar = (a, u, label) => {
       if (a == null || a <= 0) return '';
@@ -934,7 +936,7 @@ function renderProviders(){
       +   (p.source === 'manual'
             ? (p.disabled ? '<button class="lang-btn" data-pv-restore="'+esc(p.key)+'">'+esc(t('pv_restore'))+'</button>'
                               : '<button class="lang-btn" data-pv-del="'+esc(p.key)+'" style="border-color:var(--red);color:var(--red)">'+esc(t('pv_delete'))+'</button>')
-            : '')
+            : '<button class="lang-btn" data-pv-del-disc="'+esc(p.key)+'" data-pv-url="'+esc(p.base_url||'')+'" style="border-color:var(--red);color:var(--red)">'+esc(t('pv_delete'))+'</button>')
       + '</div>'
       + '<div class="dim2" style="margin-top:4px;font-size:11px">'
       +   esc(p.base_url || '') + ' · ' + esc(p.protocol || 'openai') + ' · ' + fetch + ' models'
@@ -944,6 +946,7 @@ function renderProviders(){
   }).join('');
   cont.querySelectorAll('[data-pv-edit]').forEach(b => b.addEventListener('click', () => openProviderDrawer(b.dataset.pvEdit, b.dataset.pvSource === 'manual')));
   cont.querySelectorAll('[data-pv-del]').forEach(b => b.addEventListener('click', () => confirmDeleteProvider(b.dataset.pvDel)));
+  cont.querySelectorAll('[data-pv-del-disc]').forEach(b => b.addEventListener('click', () => confirmDeleteDiscovered(b.dataset.pvDelDisc, b.dataset.pvUrl)));
   cont.querySelectorAll('[data-pv-restore]').forEach(b => b.addEventListener('click', () => restoreProvider(b.dataset.pvRestore)));
 }
 function confirmDeleteProvider(key){
@@ -951,19 +954,17 @@ function confirmDeleteProvider(key){
   fetch('/api/providers/delete', {method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify({key})}).then(refresh);
 }
+function confirmDeleteDiscovered(key, baseUrl){
+  if (!confirm(t('pv_confirm_delete_disc'))) return;
+  fetch('/api/providers/delete', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({key, base_url: baseUrl})}).then(refresh);
+}
 function restoreProvider(key){
   // 恢复：取该 key 的现有设置 + disabled=false 存回
   const p = (state.providers||[]).find(x => x.key === key);
   if (!p) return;
   fetch('/api/providers', {method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify({...p, key, disabled: false})}).then(refresh);
-}
-function refreshAllProviders(){
-  const ps = (state.providers||[]).filter(p => p.source === 'manual' && !p.disabled);
-  Promise.all(ps.map(p =>
-    fetch('/api/providers/refresh', {method:'POST', headers:{'content-type':'application/json'},
-      body: JSON.stringify({key: p.key})})
-  )).then(() => refresh());
 }
 function openProviderDrawer(key, isManual){
   const isNew = !key;
@@ -1037,13 +1038,8 @@ function collectProviderForm(){
 function saveProvider(isNew, isManual){
   const body = collectProviderForm();
   if (!body.base_url) { alert('base_url required'); return; }
-  // baseURL+apiKey 重复检测（编辑自身除外）
-  const dup = (state.providers||[]).find(x =>
-    x.base_url === body.base_url && x.key !== body.key &&
-    (isManual ? true : x.source === 'manual'));
-  if (dup) {
-    if (!confirm(t('pv_dup_warn')+'\n\n'+dup.key+' — still save?')) return;
-  }
+  // 判重由服务端按 baseURL+apiKey 指纹权威判定（duplicate_of 徽章），此处不再做
+  // base_url 近似检查——同端点不同 key 是两个 provider（如 opencode-go 与 -github）
   // 扫描发现的 provider 也可编辑 overlay 字段（tier/plan_kind/windows/rates/docs_url）——
   // 这些写入 overrides 不影响 agent 原始配置；baseUrl/apiKey 来自 agent 配置不建议在此改
   fetch('/api/providers', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)})
@@ -1063,15 +1059,38 @@ function refreshProvider(){
     }));
 }
 document.getElementById('pv-add-btn').addEventListener('click', () => openProviderDrawer('', true));
-document.getElementById('pv-refresh-all-btn').addEventListener('click', refreshAllProviders);
+let pvScanTimer = null;
+function pollScanProgress(){
+  fetch('/api/providers/scan-progress').then(r => r.json()).then(j => {
+    const box = document.getElementById('pv-scan-progress');
+    if (!j.running && !j.done) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    box.textContent = j.log.join('\n');
+    box.scrollTop = box.scrollHeight;
+    const btn = document.getElementById('pv-scan-btn');
+    if (j.running) {
+      btn.textContent = t('pv_scan_running');
+      btn.disabled = true;
+      pvScanTimer = setTimeout(pollScanProgress, 500);
+    } else {
+      btn.textContent = t('pv_scan');
+      btn.disabled = false;
+      refresh();
+    }
+  }).catch(() => { pvScanTimer = setTimeout(pollScanProgress, 1000); });
+}
 document.getElementById('pv-scan-btn').addEventListener('click', () => {
+  const btn = document.getElementById('pv-scan-btn');
+  if (btn.disabled) return;
+  btn.textContent = t('pv_scan_running');
+  btn.disabled = true;
+  const box = document.getElementById('pv-scan-progress');
+  box.style.display = 'block';
+  box.textContent = '';
   fetch('/api/providers/scan', {method:'POST'}).then(r => r.json()).then(j => {
-    const provs = (j.providers_scanned || []).map(p =>
-      '  '+p.name+' ('+p.models+' models)').join('\n');
-    const newM = j.new_models ? '\n\n'+t('pv_scan_new')+': '+j.new_models : '';
-    alert(t('pv_scan')+'\n'+provs+newM+'\n\ntotal: '+j.catalog_size+' models');
-    refresh();
-  });
+    if (j.status === 'already_running') { pollScanProgress(); return; }
+    pollScanProgress();
+  }).catch(() => { btn.textContent = t('pv_scan'); btn.disabled = false; });
 });
 function renderPlans(){ renderProviders(); }
 const TREND_COLORS = ['#58a6ff','#3fb950','#d29922','#f85149','#8957e5','#39d2c0'];

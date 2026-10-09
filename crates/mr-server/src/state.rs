@@ -21,14 +21,28 @@ pub struct Inner {
     pub http: reqwest::Client,
     /// 订阅方案预算（plan_key → 5h 积分额度），面板档位驱动
     pub plan_budgets: Mutex<HashMap<String, f64>>,
-    /// 可变目录快照（定期扫描/面板增删 provider 的写入口）
-    pub catalog_models: Mutex<Vec<mr_core::types::ModelRecord>>,
+    /// 全局扫描进度（面板轮询展示：逐 provider 拉取日志）
+    pub scan_progress: Mutex<ScanProgress>,
+}
+
+/// 全局扫描进度快照（/api/providers/scan-progress 响应体）
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct ScanProgress {
+    pub running: bool,
+    pub done: bool,
+    pub log: Vec<String>,
 }
 
 pub type AppState = Arc<Inner>;
 
 pub fn build_state(config: FileConfig) -> AppState {
+    // overrides 提前加载：removed_base_urls 过滤初始发现（重启不复活已删 provider）
+    let ov = load_overrides(&config.data.dir);
+    let removed: std::collections::HashSet<String> =
+        ov.removed_base_urls.iter().cloned().collect();
+
     let mut discovered = mr_discovery::discover(&config.discovery.agents);
+    discovered.retain(|m| !removed.contains(&m.base_url));
 
     // remote /models discovery FIRST (provider union), THEN models.dev
     // enrichment can fill unknown windows for remote entries too
@@ -52,6 +66,7 @@ pub fn build_state(config: FileConfig) -> AppState {
 
     // remote entries without a usable window are dead weight — drop them
     discovered.retain(|m| m.source != mr_core::types::Source::Remote || m.context_window.is_some());
+    discovered.retain(|m| !removed.contains(&m.base_url));
 
     let catalog = Catalog::build_with_discovered(&config, discovered);
     let policy = config.policy.clone();
@@ -59,7 +74,6 @@ pub fn build_state(config: FileConfig) -> AppState {
     let engine = Engine::new(catalog, policy, backend);
 
     // 面板调控覆盖（overrides.json，重启重放）：模型权重 + 公式权重
-    let ov = load_overrides(&config.data.dir);
     for (id, w) in &ov.models {
         engine.set_weight_override(id, Some(*w));
     }
@@ -88,7 +102,6 @@ pub fn build_state(config: FileConfig) -> AppState {
         .build()
         .expect("http client");
 
-    let catalog_snapshot = engine.catalog.models.clone();
     Arc::new(Inner {
         config,
         key_cursor: Mutex::new(HashMap::new()),
@@ -101,11 +114,16 @@ pub fn build_state(config: FileConfig) -> AppState {
         bus,
         http,
         plan_budgets: Mutex::new(plan_budgets),
-        catalog_models: Mutex::new(catalog_snapshot),
+        scan_progress: Mutex::new(ScanProgress::default()),
     })
 }
 
 impl Inner {
+    /// 按 id 查模型（读锁短临界区，克隆返回）
+    pub fn catalog_get(&self, id: &str) -> Option<mr_core::types::ModelRecord> {
+        self.engine.catalog.read().ok().and_then(|c| c.get(id).cloned())
+    }
+
     /// 订阅方案预算压力（plan_key → 消耗占比）：额度内积分消耗 / 档位额度。
     /// 无额度配置（未声明档位）的方案无压力。
     pub fn plan_pressure_map(&self) -> HashMap<String, f32> {
@@ -117,7 +135,7 @@ impl Inner {
         let now = mr_memory::quota::now_ms();
         let sums = self.quota.plan_usage_sums(now, 5 * 3600 * 1000);
         // 模型 → plan_key 映射（按 catalog base_url 匹配注册表）
-        for m in &self.engine.catalog.models {
+        for m in self.engine.catalog_snapshot() {
             if let Some(key) = mr_core::plans::plan_key_for(&m.base_url)
                 && let Some(&allowance) = budgets.get(key)
                 && allowance > 0.0
@@ -178,51 +196,54 @@ impl Inner {
         });
     }
 
-    fn models_lock(&self) -> Result<std::sync::MutexGuard<'_, Vec<mr_core::types::ModelRecord>>, ()> {
-        self.catalog_models.lock().map_err(|_| ())
-    }
-
     /// 重新扫描 agent 配置：新增模型合入 catalog，删除的保留（用户面板手动删）
     pub fn rescan_discovery(&self) {
         let discovered = mr_discovery::discover(&self.config.discovery.agents);
+        let removed: std::collections::HashSet<String> =
+            load_overrides(&self.config.data.dir).removed_base_urls.into_iter().collect();
+        let mut models = self.engine.catalog_snapshot();
         let mut added = 0usize;
-        if let Ok(mut models) = self.models_lock() {
-            for d in discovered {
-                if !models.iter().any(|m| m.id == d.id) {
-                    tracing::info!(model = %d.id, "discovery rescan: new model added");
-                    models.push(d);
-                    added += 1;
-                }
+        for d in discovered {
+            if removed.contains(&d.base_url) {
+                continue;
             }
-            if added > 0 {
-                drop(models);
-                tracing::info!(added, "discovery rescan complete");
+            if !models.iter().any(|m| m.id == d.id) {
+                tracing::info!(model = %d.id, "discovery rescan: new model added");
+                models.push(d);
+                added += 1;
             }
+        }
+        if added > 0 {
+            self.engine.replace_catalog(models);
+            tracing::info!(added, "discovery rescan complete");
         }
     }
 
     /// 重拉远程 /models：新模型合入，已删的不动
     pub fn refresh_remote_models(&self) {
-        let base_records: Vec<mr_core::types::ModelRecord> =
-            self.engine.catalog.models.clone();
+        let base_records: Vec<mr_core::types::ModelRecord> = self.engine.catalog_snapshot();
         let self_origin = format!("http://127.0.0.1:{}", self.config.server.port);
         let fresh = mr_discovery::remote::discover_remote_blocking(
             &base_records,
             &self.config.data.dir,
             Some(&self_origin),
         );
+        let removed: std::collections::HashSet<String> =
+            load_overrides(&self.config.data.dir).removed_base_urls.into_iter().collect();
+        let mut models = base_records;
         let mut added = 0usize;
-        if let Ok(mut models) = self.models_lock() {
-            for r in fresh {
-                if !models.iter().any(|m| m.id == r.id) {
-                    models.push(r);
-                    added += 1;
-                }
+        for r in fresh {
+            if removed.contains(&r.base_url) {
+                continue;
             }
-            if added > 0 {
-                drop(models);
-                tracing::info!(added, "remote models refresh: new models added");
+            if !models.iter().any(|m| m.id == r.id) {
+                models.push(r);
+                added += 1;
             }
+        }
+        if added > 0 {
+            self.engine.replace_catalog(models);
+            tracing::info!(added, "remote models refresh: new models added");
         }
     }
 }
@@ -243,6 +264,8 @@ pub fn build_router(state: AppState) -> axum::Router {
         .route("/api/providers/refresh", axum::routing::post(crate::meta::api_providers_refresh))
         .route("/api/providers/status", axum::routing::get(crate::meta::api_providers_status))
         .route("/api/providers/scan", axum::routing::post(crate::meta::api_providers_scan))
+        .route("/api/providers/scan-progress", axum::routing::get(crate::meta::api_providers_scan_progress))
+        .route("/api/providers/restore", axum::routing::post(crate::meta::api_providers_restore))
         .route(
             "/api/plans",
             axum::routing::get(crate::meta::api_plans).post(crate::meta::api_plans_set),
@@ -281,6 +304,9 @@ pub struct Overrides {
     /// 用户在面板主动删除的模型 id（定期扫描不再自动加回）
     #[serde(default)]
     pub deleted_models: Vec<String>,
+    /// 用户在面板删除的发现 provider（按 base_url 记忆，重扫不加回；恢复即移出此表）
+    #[serde(default)]
+    pub removed_base_urls: Vec<String>,
 }
 
 /// 手动 provider 定义——用户在面板新增/修改，与扫描发现并存

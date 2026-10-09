@@ -406,7 +406,7 @@ pub fn apply_to_engine(
 ) -> usize {
     let blended = blend_tiers(sources);
     let records: Vec<mr_core::types::ModelRecord> =
-        engine.catalog.models.to_vec();
+        engine.catalog_snapshot();
     let updates = tier_updates_for_catalog(&blended, &records);
     let n = updates.len();
     let map: HashMap<String, (mr_core::types::Tiers, f32)> =

@@ -154,7 +154,7 @@ pub async fn messages(State(st): State<AppState>, headers: HeaderMap, body: Byte
     // 网络级熔断（与 relay 同规则）：transport 错误按 baseUrl 熔断
     let mut dead_routes: std::collections::HashSet<String> = std::collections::HashSet::new();
     for cand in &attempts {
-        let Some(record) = st.engine.catalog.get(cand).cloned() else { continue };
+        let Some(record) = st.catalog_get(cand) else { continue };
         if dead_providers.contains(&record.provider) {
             skipped.push(format!("{cand}(provider {} account-level failure)", record.provider));
             continue;
@@ -522,7 +522,7 @@ fn resolve_target(st: &AppState, model_field: &str) -> Result<Target, Response> 
     if model_field == "auto" {
         return Ok(Target::Auto(None));
     }
-    if let Some(m) = st.engine.catalog.get(model_field) {
+    if let Some(m) = st.catalog_get(model_field) {
         let dec = Decision {
             id: format!("direct-{}", mr_memory::now_millis().unwrap_or(0)),
             chosen: m.id.clone(),

@@ -38,7 +38,8 @@ pub fn now_epoch_ms() -> u64 {
 }
 
 pub struct Engine {
-    pub catalog: Catalog,
+    /// 目录（可热更新：定期扫描合入 / 面板删除后整体替换，见 replace_catalog）
+    pub catalog: std::sync::RwLock<Catalog>,
     pub policy: PolicyCfg,
     judge: Box<dyn Judge>,
     route_advisor: Option<std::sync::Arc<dyn RouteAdvisor>>,
@@ -54,7 +55,7 @@ pub struct Engine {
 impl Engine {
     pub fn new(catalog: Catalog, policy: PolicyCfg, judge: Box<dyn Judge>) -> Self {
         Self {
-            catalog,
+            catalog: std::sync::RwLock::new(catalog),
             policy,
             judge,
             route_advisor: None,
@@ -63,6 +64,23 @@ impl Engine {
             weight_overlay: std::sync::RwLock::new(HashMap::new()),
             counter: std::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    /// 目录热更新：整体替换模型列表（重建索引）。扫描合入 / 面板删除后调用。
+    pub fn replace_catalog(&self, models: Vec<crate::types::ModelRecord>) {
+        if let Ok(mut c) = self.catalog.write() {
+            *c = Catalog::from_records(models);
+        }
+    }
+
+    /// 当前目录快照（读锁克隆，模型量级 ~200，开销可忽略）
+    pub fn catalog_snapshot(&self) -> Vec<crate::types::ModelRecord> {
+        self.catalog.read().map(|c| c.models.clone()).unwrap_or_default()
+    }
+
+    /// 按 id 查单个模型（读锁短临界区）
+    fn catalog_read_model(&self, id: &str) -> Option<crate::types::ModelRecord> {
+        self.catalog.read().ok().and_then(|c| c.get(id).cloned())
     }
 
     pub fn set_weights_override(&self, w: Option<PolicyWeights>) {
@@ -128,9 +146,7 @@ impl Engine {
             let now = now_epoch_ms();
             // 预算压力保护：所选方案消耗超过软阈值时粘性立即断开，
             // 把宝贵配额留给硬任务（用户裁决）
-            let plan_key = self
-                .catalog
-                .get(&sticky.chosen)
+            let plan_key = self.catalog_read_model(&sticky.chosen)
                 .and_then(|m| crate::plans::plan_key_for(&m.base_url))
                 .map(|k| k.to_string());
             let pressure_ok = plan_key
@@ -138,9 +154,8 @@ impl Engine {
                 .map(|p| *p <= self.policy.plan_soft_pct.clamp(10.0, 95.0) / 100.0 + 0.25)
                 .unwrap_or(true);
             let still_fits = !sticky_escape && self
-                .catalog
-                .get(&sticky.chosen)
-                .map(|m| {
+                .catalog_read_model(&sticky.chosen)
+                .map(|ref m| {
                     scoring::context_fits(m, est, max_output).is_ok()
                         && model_available(input.health, &sticky.chosen, now)
                         && input.quota.get(&sticky.chosen).map(|r| *r >= est).unwrap_or(true)
@@ -205,7 +220,8 @@ impl Engine {
         let mut filtered: Vec<FilteredOut> = Vec::new();
         let mut candidates: Vec<ModelRecord> = Vec::new();
         let now = now_epoch_ms();
-        for m in &self.catalog.models {
+        let catalog_models = self.catalog.read().map(|c| c.models.clone()).unwrap_or_default();
+        for m in &catalog_models {
             let calib = input
                 .telemetry
                 .get(&m.id)
@@ -297,16 +313,15 @@ impl Engine {
             // upstreams (quota-exhausted etc.); if everything is cooling
             // down, fail fast so the caller backs off.
             let now_be = now_epoch_ms();
-            let best = self
-                .catalog
-                .models
+            let cat = self.catalog.read().map(|c| c.models.clone()).unwrap_or_default();
+            let best = cat
                 .iter()
                 .filter(|m| m.context_window.is_some())
                 .filter(|m| {
                     model_available(input.health, &m.id, now_be)
                 })
                 .max_by_key(|m| m.context_window.unwrap())
-                .or_else(|| self.catalog.models.first());
+                .or_else(|| cat.first());
             let Some(best) = best else {
                 return self.finish(
                     "none".into(),
@@ -341,7 +356,7 @@ impl Engine {
                 difficulty_eff,
                 input.session_key,
                 None,
-                [self.catalog.models.len() as u32, filtered_count, 0, 0],
+                [catalog_models.len() as u32, filtered_count, 0, 0],
             );
         }
 
@@ -476,7 +491,7 @@ impl Engine {
         );
 
         let funnel = [
-            self.catalog.models.len() as u32,
+            catalog_models.len() as u32,
             candidates.len() as u32,
             eligible.len() as u32,
             scores.len() as u32,
@@ -529,8 +544,7 @@ impl Engine {
             .unwrap_or(0);
         let id = format!("d{:x}{:x}", ts as u64, n);
         let upstream = self
-            .catalog
-            .get(&chosen)
+            .catalog_read_model(&chosen)
             .map(|m| m.upstream_model.clone())
             .unwrap_or_else(|| chosen.clone());
         Decision {

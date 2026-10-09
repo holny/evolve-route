@@ -182,7 +182,7 @@ pub async fn chat_completions(
     // 不依赖用户给网关条目起什么名字（命名约定不可靠）
     let self_addr = format!("{}:{}", st.config.server.host, st.config.server.port);
     for cand in &attempts {
-        let Some(record) = st.engine.catalog.get(cand).cloned() else { continue };
+        let Some(record) = st.catalog_get(cand) else { continue };
         if record.base_url.contains(&self_addr) || record.base_url.contains("127.0.0.1:8787") {
             skipped.push(format!("{cand}(self-loop: points back at this gateway)"));
             continue;
@@ -655,7 +655,7 @@ fn resolve_target(st: &AppState, model_field: &str) -> Result<Target, Response> 
     if model_field == "auto" {
         return Ok(Target::Auto(None));
     }
-    if let Some(m) = st.engine.catalog.get(model_field) {
+    if let Some(m) = st.catalog_get(model_field) {
         let dec = Decision {
             id: format!("direct-{}", mr_memory::now_millis().unwrap_or(0)),
             chosen: m.id.clone(),

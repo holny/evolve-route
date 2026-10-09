@@ -24,8 +24,7 @@ pub async fn list_models(State(st): State<AppState>) -> Response {
     // dynamic-catalog agents (hermes/openrouter-style) read this directly
     let max_window = st
         .engine
-        .catalog
-        .models
+        .catalog_snapshot()
         .iter()
         .filter_map(|m| m.context_window)
         .max()
@@ -41,7 +40,7 @@ pub async fn list_models(State(st): State<AppState>) -> Response {
                "description": "intelligent routing, quality-optimized policy",
                "context_length": max_window}),
     ];
-    for m in &st.engine.catalog.models {
+    for m in &st.engine.catalog_snapshot() {
         data.push(json!({
             "id": m.id,
             "object": "model",
@@ -214,7 +213,7 @@ async fn api_stats_inner(st: &AppState, window: &str) -> Response {
     // iterate the CATALOG (not just traffic stats) so every known model
     // shows up, ranked by dynamic priority; top 50 returned
     let mut ranked: Vec<(String, serde_json::Value)> = Vec::new();
-    for m in &st.engine.catalog.models {
+    for m in &st.engine.catalog_snapshot() {
         let id = &m.id;
         let empty = Default::default();
         let s = stats.get(id).unwrap_or(&empty);
@@ -256,8 +255,7 @@ async fn api_stats_inner(st: &AppState, window: &str) -> Response {
                     let typical = (4_000.0 / 1e6) * c.input as f64 + (500.0 / 1e6) * c.output as f64;
                     let cheapest = st
                         .engine
-                        .catalog
-                        .models
+                        .catalog_snapshot()
                         .iter()
                         .filter_map(|x| {
                             x.cost.map(|cc| {
@@ -284,20 +282,21 @@ async fn api_stats_inner(st: &AppState, window: &str) -> Response {
         let success_rate = (s.requests > 0).then(|| s.success as f32 / s.requests as f32);
         let cache_hit_rate = (s.prompt_tokens > 0)
             .then(|| s.cached_tokens as f32 / s.prompt_tokens as f32);
-        let cat_model = st.engine.catalog.get(id);
+        let cat_model = st.catalog_get(id);
         let plan_kind = cat_model
+            .as_ref()
             .and_then(|m| mr_core::plans::plan_for(&m.base_url))
             .map(|p| p.plan_kind.to_string());
-        let currency = cat_model.map(|m| m.currency.clone()).unwrap_or_default();
-        let tiers = cat_model.map(|m| {
+        let currency = cat_model.as_ref().map(|m| m.currency.clone()).unwrap_or_default();
+        let tiers = cat_model.as_ref().map(|m| {
             json!({
                 "coding": ((m.tiers.coding as f64) * 100.0).round() / 100.0,
                 "reasoning": ((m.tiers.reasoning as f64) * 100.0).round() / 100.0,
                 "agentic": ((m.tiers.agentic as f64) * 100.0).round() / 100.0,
             })
         });
-        let source = cat_model.map(|m| m.source.label());
-        let est_cost: Option<f32> = match cat_model.map(|m| (m.plan, m.cost)) {
+        let source = cat_model.as_ref().map(|m| m.source.label());
+        let est_cost: Option<f32> = match cat_model.as_ref().map(|m| (m.plan, m.cost)) {
             Some((true, _)) | Some((false, None)) => Some(0.0),
             Some((false, Some(c))) => Some(
                 (s.prompt_tokens as f32 / 1e6) * c.input
@@ -622,27 +621,97 @@ pub async fn api_trends(
     (axum::Json(json!({"window_ms": window_ms, "series": series}))).into_response()
 }
 
-/// 全局扫描：手动触发 agent 配置 + 远程 /models 全量重扫
+/// 全局扫描：后台任务执行（agent 配置发现 + 逐 provider 远程 /models 重拉），
+/// 进度写 st.scan_progress，面板轮询 /api/providers/scan-progress 展示。
 pub async fn api_providers_scan(State(st): State<AppState>) -> Response {
-    let before = st.engine.catalog.models.len();
-    st.rescan_discovery();
-    st.refresh_remote_models();
-    let after = st.engine.catalog.models.len();
-    // 按 provider 统计扫描结果
-    let mut providers: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
-    for m in &st.engine.catalog.models {
-        *providers.entry(m.provider.clone()).or_insert(0) += 1;
+    {
+        let Ok(mut p) = st.scan_progress.lock() else {
+            return (StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": {"message": "lock poisoned"}}))).into_response();
+        };
+        if p.running {
+            return (axum::Json(json!({"status": "already_running"}))).into_response();
+        }
+        *p = crate::state::ScanProgress { running: true, done: false, log: Vec::new() };
     }
-    let providers_scanned: Vec<Value> = providers.iter()
-        .map(|(name, count)| json!({"name": name, "models": count}))
-        .collect();
-    let new_models = after.saturating_sub(before);
-    (axum::Json(json!({
-        "status": "ok",
-        "catalog_size": after,
-        "new_models": new_models,
-        "providers_scanned": providers_scanned,
-    }))).into_response()
+    let st2 = st.clone();
+    tokio::spawn(async move {
+        let push = |s: String| {
+            if let Ok(mut p) = st2.scan_progress.lock() {
+                p.log.push(s);
+            }
+        };
+        let finish = |st: &AppState, tail: String| {
+            if let Ok(mut p) = st.scan_progress.lock() {
+                p.log.push(tail);
+                p.running = false;
+                p.done = true;
+            }
+        };
+
+        // ① agent 配置发现（opencode 等）
+        push("\u{2460} 扫描 agent 配置 …".into());
+        st2.rescan_discovery();
+
+        // ② 逐 provider 强制重拉（删缓存文件绕过 1h TTL）
+        let cache = mr_discovery::remote::cache_path(&st2.config.data.dir);
+        let _ = std::fs::remove_file(&cache);
+        let records: Vec<mr_core::types::ModelRecord> = st2.engine.catalog_snapshot();
+        let self_origin = format!("http://127.0.0.1:{}", st2.config.server.port);
+        let removed: std::collections::HashSet<String> =
+            crate::state::load_overrides(&st2.config.data.dir).removed_base_urls.into_iter().collect();
+        let groups: Vec<_> = mr_discovery::remote::provider_groups_ex(&records, Some(&self_origin))
+            .into_iter().filter(|g| !removed.contains(&g.base_url)).collect();
+        let total = groups.len();
+        push(format!("\u{2461} 远程重拉 {} 个 provider …", total));
+        let mut ok_cnt = 0usize;
+        let mut err_cnt = 0usize;
+        for (i, g) in groups.iter().enumerate() {
+            let hint = g.provider_hint.clone();
+            let host = g.base_url.split("://").nth(1).unwrap_or(&g.base_url).split('/').next().unwrap_or("").to_string();
+            push(format!("  [{}/{}] {}（{}）…", i + 1, total, hint, host));
+            match mr_discovery::remote::fetch_provider_models(&st2.http, &g.base_url, g.key.as_deref()).await {
+                Ok(mut models) => {
+                    let fetched = models.len();
+                    for m in &mut models {
+                        // id 用 hint 前缀（与已发现条目同族，同 discover_remote_blocking）
+                        m.id = format!("{hint}/{}", m.upstream_model);
+                        m.provider = hint.clone();
+                    }
+                    let mut added = 0usize;
+                    let mut cur = st2.engine.catalog_snapshot();
+                    for r in models {
+                        if !cur.iter().any(|x| x.id == r.id) {
+                            cur.push(r);
+                            added += 1;
+                        }
+                    }
+                    if added > 0 {
+                        st2.engine.replace_catalog(cur);
+                    }
+                    ok_cnt += 1;
+                    push(format!("  \u{2713} {}：拉到 {} models，新增 {}", hint, fetched, added));
+                }
+                Err(e) => {
+                    err_cnt += 1;
+                    push(format!("  \u{2717} {}：{}", hint, e));
+                }
+            }
+        }
+        let catalog_size = st2.engine.catalog_snapshot().len();
+        finish(&st2, format!("完成：成功 {} / 失败 {}，catalog 共 {} models", ok_cnt, err_cnt, catalog_size));
+    });
+    (axum::Json(json!({"status": "started"}))).into_response()
+}
+
+/// 扫描进度轮询（面板 500ms 一次，done=true 停止）
+pub async fn api_providers_scan_progress(State(st): State<AppState>) -> Response {
+    match st.scan_progress.lock() {
+        Ok(p) => axum::Json(json!({
+            "running": p.running, "done": p.done, "log": p.log,
+        })).into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(json!({"error": {"message": "lock poisoned"}}))).into_response(),
+    }
 }
 
 /// Provider 实时状态（每 5s 轮询）：health、最后成功时间、当前使用率
@@ -655,7 +724,7 @@ pub async fn api_providers_status(State(st): State<AppState>) -> Response {
     let mut out: Vec<Value> = Vec::new();
     let manual_bases: std::collections::HashSet<String> = ov.providers.values().map(|p| p.base_url.clone()).collect();
     let mut used_by_url: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-    for m in &st.engine.catalog.models {
+    for m in &st.engine.catalog_snapshot() {
         if !m.plan { continue; }
         if let Some((i, c, o)) = sums.get(&m.id) {
             let credits = mr_core::plans::plan_credits_used(&m.base_url, &m.id, *i, *c, *o);
@@ -668,7 +737,7 @@ pub async fn api_providers_status(State(st): State<AppState>) -> Response {
         let allowance = pd.window_5h;
         let pressure = allowance.filter(|a| *a > 0.0).map(|a| used / a);
         let cool = health_snap.iter()
-            .filter(|(k, h)| k.split('\u{1f}').next().map(|m| st.engine.catalog.models.iter().any(|mm| mm.id == m && mm.base_url == pd.base_url)).unwrap_or(false))
+            .filter(|(k, h)| k.split('\u{1f}').next().map(|m| st.engine.catalog_snapshot().iter().any(|mm| mm.id == m && mm.base_url == pd.base_url)).unwrap_or(false))
             .map(|(_, h)| h.cooldown_remaining_ms(now_ms))
             .max();
         out.push(json!({
@@ -685,7 +754,7 @@ pub async fn api_providers_status(State(st): State<AppState>) -> Response {
     }
     use std::collections::HashMap;
     let mut grouped: HashMap<String, Value> = HashMap::new();
-    for m in &st.engine.catalog.models {
+    for m in &st.engine.catalog_snapshot() {
         if manual_bases.contains(&m.base_url) { continue; }
         let profile = mr_core::plans::plan_for(&m.base_url);
         let plan_key = profile.map(|p| p.key.to_string()).unwrap_or_default();
@@ -707,16 +776,17 @@ pub async fn api_providers_status(State(st): State<AppState>) -> Response {
         }
     }
     for (provider, mut e) in grouped {
+        let snap = st.engine.catalog_snapshot();
         let used: f64 = e.get("models").and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|id| id.as_str()).filter_map(|id| {
-                let mm = st.engine.catalog.models.iter().find(|m| m.id == id)?;
+                let mm = snap.iter().find(|m| m.id == id)?;
                 sums.get(id).map(|(i, c, o)| mr_core::plans::plan_credits_used(&mm.base_url, &mm.id, *i, *c, *o))
             }).sum())
             .unwrap_or(0.0);
         let allowance = e.get("allowance_5h").and_then(|v| v.as_f64());
         let pressure = allowance.filter(|a| *a > 0.0).map(|a| used / a);
         let cool = health_snap.iter()
-            .filter(|(k, _)| k.split('\u{1f}').next().map(|m| st.engine.catalog.models.iter().any(|mm| mm.id == m && mm.provider == provider)).unwrap_or(false))
+            .filter(|(k, _)| k.split('\u{1f}').next().map(|m| snap.iter().any(|mm| mm.id == m && mm.provider == provider)).unwrap_or(false))
             .map(|(_, h)| h.cooldown_remaining_ms(now_ms))
             .max();
         e.as_object_mut().map(|o| {
@@ -739,11 +809,18 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
     let health_snap = st.health.snapshot();
     let now_ms = mr_memory::health::now();
     let mut out: Vec<Value> = Vec::new();
+    // 判重指纹（用户裁决）：apiKey+baseUrl 唯一标识 provider。指纹哈希进响应仅用于判重。
+    use std::hash::{Hash, Hasher};
+    let key_fp = |k: &str| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        k.hash(&mut h);
+        format!("{:016x}", h.finish())
+    };
     // 1. 手动定义的（最优先——用户自己加的）
     for (key, pd) in &ov.providers {
         if pd.disabled { continue; }
         // 手动也查用量（base_url 匹配的模型消耗合计）
-        let used = st.engine.catalog.models.iter()
+        let used = st.engine.catalog_snapshot().iter()
             .filter(|m| m.base_url == pd.base_url)
             .filter_map(|m| sums.get(&m.id))
             .map(|(i, c, o)| mr_core::plans::plan_credits_used(&pd.base_url, "", *i, *c, *o))
@@ -757,6 +834,7 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
             "model_rates": pd.model_rates,
             "fetched_models": pd.fetched_models,
             "has_key": pd.api_key.is_some(),
+            "key_fp": pd.api_key.as_deref().map(key_fp).unwrap_or_default(),
             "used_5h": (used * 100.0).round() / 100.0,
             "soft_pct": soft_pct,
         }));
@@ -764,7 +842,7 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
     // 2. 目录里实际存在的（扫描+内置合并，去重手动已有的 base_url）
     let manual_urls: Vec<&str> = ov.providers.values().map(|p| p.base_url.as_str()).collect();
     let mut seen_providers = std::collections::HashSet::new();
-    for m in &st.engine.catalog.models {
+    for m in &st.engine.catalog_snapshot() {
         if manual_urls.iter().any(|u| *u == m.base_url) { continue; }
         // 按 provider 名去重（不同 provider 同 base_url 各自展示，如 opencode-go 与 opencode-go-github）
         if !seen_providers.insert(m.provider.clone()) { continue; }
@@ -778,7 +856,8 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
         let allowance_weekly = mr_core::plans::tier_allowance_by_key(&plan_key, &tier_str, 1);
         let allowance_monthly = mr_core::plans::tier_allowance_by_key(&plan_key, &tier_str, 2);
         // 用量：该 base_url 下所有模型的 5h 积分合计（逐模型按各自系数折算）
-        let models_at_url: Vec<&mr_core::types::ModelRecord> = st.engine.catalog.models.iter()
+        let snap = st.engine.catalog_snapshot();
+        let models_at_url: Vec<&mr_core::types::ModelRecord> = snap.iter()
             .filter(|x| x.base_url == m.base_url)
             .collect();
         let used: f64 = models_at_url.iter()
@@ -813,10 +892,28 @@ pub async fn api_providers(State(st): State<AppState>) -> Response {
             "model_count": model_ids.len(),
             "models": model_ids,
             "has_key": m.has_credential(),
+            "key_fp": m.key_values().first().map(|k| key_fp(k)).unwrap_or_default(),
             "used_5h": if used > 0.0 { (used * 100.0).round() / 100.0 } else { 0.0 },
             "soft_pct": soft_pct,
             "next_reset_epoch_ms": next_reset,
         }));
+    }
+    // 判重标记：同 (base_url, key指纹) 的第二处 → duplicate_of=先出现的 provider 名。
+    // 同 base_url 不同 key 是两个 provider（如 opencode-go 与 opencode-go-github），不算重复。
+    {
+        let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for e in out.iter_mut() {
+            let b = e.get("base_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let fp = e.get("key_fp").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let ident = format!("{}\u{1f}{}", b, fp);
+            let name = e.get("key").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if let Some(first) = seen.get(&ident) {
+                e.as_object_mut().map(|o| o.insert("duplicate_of".into(), json!(first)));
+            } else {
+                seen.insert(ident, name);
+            }
+            e.as_object_mut().map(|o| o.remove("key_fp"));
+        }
     }
     out.sort_by(|a, b| {
         let ka = a.get("key").and_then(|v| v.as_str()).unwrap_or("");
@@ -898,26 +995,42 @@ pub async fn api_providers_delete(
     };
     let dir = &st.config.data.dir;
     let mut ov = crate::state::load_overrides(dir);
-    let remove_models = body.get("remove_models").and_then(|v| v.as_bool()).unwrap_or(false);
-    let base_url = body.get("base_url").and_then(|v| v.as_str()).unwrap_or("");
-    // 手动 provider：软删除（disabled）
+    // 手动 provider：软删除（disabled，面板可恢复）
     if let Some(e) = ov.providers.get_mut(&key) {
         e.disabled = true;
         crate::state::save_overrides(dir, &ov);
         (axum::Json(json!({"status": "ok", "key": key, "disabled": true}))).into_response()
-    } else if remove_models && !base_url.is_empty() {
-        // 发现 provider：从 catalog_models 移除该 base_url 下的全部模型
-        let removed = st.catalog_models.lock()
-            .map(|mut m| {
-                let before = m.len();
-                m.retain(|x| x.base_url != base_url);
-                before - m.len()
-            })
-            .unwrap_or(0);
+    } else if let Some(base_url) = body.get("base_url").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        // 发现 provider：按 base_url 持久化删除（定期扫描/重启不再加回）+ 热更新目录
+        let base_url = base_url.to_string();
+        if !ov.removed_base_urls.contains(&base_url) {
+            ov.removed_base_urls.push(base_url.clone());
+            crate::state::save_overrides(dir, &ov);
+        }
+        let models = st.engine.catalog_snapshot();
+        let removed = models.iter().filter(|m| m.base_url == base_url).count();
+        st.engine.replace_catalog(models.into_iter().filter(|m| m.base_url != base_url).collect());
+        tracing::info!(key = %key, base_url = %base_url, removed, "discovered provider removed");
         (axum::Json(json!({"status": "ok", "key": key, "removed_models": removed}))).into_response()
     } else {
         (StatusCode::NOT_FOUND, axum::Json(json!({"error": {"message": "provider not found"}}))).into_response()
     }
+}
+
+/// 恢复被删除的发现 provider（从 removed_base_urls 移出 + 重新扫描拉回）
+pub async fn api_providers_restore(
+    State(st): State<AppState>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Response {
+    let Some(base_url) = body.get("base_url").and_then(|v| v.as_str()).map(|s| s.to_string()) else {
+        return (StatusCode::BAD_REQUEST, axum::Json(json!({"error": {"message": "base_url is required"}}))).into_response();
+    };
+    let dir = &st.config.data.dir;
+    let mut ov = crate::state::load_overrides(dir);
+    ov.removed_base_urls.retain(|u| u != &base_url);
+    crate::state::save_overrides(dir, &ov);
+    st.rescan_discovery();
+    (axum::Json(json!({"status": "ok", "base_url": base_url}))).into_response()
 }
 
 /// 手动重拉 provider 的 /models
@@ -974,7 +1087,7 @@ pub async fn api_plans(State(st): State<AppState>) -> Response {
     let soft_pct = st.config.policy.plan_soft_pct;
     let sums = st.quota.plan_usage_sums(now_ms, 5 * 3600 * 1000);
     let mut groups: std::collections::BTreeMap<String, serde_json::Value> = std::collections::BTreeMap::new();
-    for m in &st.engine.catalog.models {
+    for m in &st.engine.catalog_snapshot() {
         let profile = mr_core::plans::plan_for(&m.base_url);
         let key = profile.map(|p| p.key.to_string()).unwrap_or_else(|| format!("payg:{}", m.provider));
         let e = groups.entry(key.clone()).or_insert_with(|| {
