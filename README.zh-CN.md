@@ -18,22 +18,29 @@
 
 它**本地优先**（路由不依赖云服务）、**懂经济账**（订阅配额、积分系数、每模型美元限额）、**自进化**（飞轮从每次结果中学习，自动改写自己的评分偏置）。
 
-```text
-┌──────────┐  ┌─────────┐  ┌──────────┐  ┌────────┐
-│ opencode │  │ claude  │  │  codex   │  │  ...   │     任意 Agent，
-└────┬─────┘  └────┬────┘  └────┬─────┘  └───┬────┘     OpenAI 或 Anthropic 协议
-     │  OpenAI     │ Anthropic  │  OpenAI    │
-     └─────────────┴─────┬──────┴────────────┘
-                         ▼
-              ┌─────────────────────┐
-              │     EvolveRoute     │  判定 → 评分 → 路由
-              │     （决策模型）      │  学习 → 进化 → 循环
-              └──────────┬──────────┘
-        ┌────────┬───────┼────────┬──────────┐
-        ▼        ▼       ▼        ▼          ▼
-    智谱      opencode  火山      MiniMax    deepseek …   任意 OpenAI/Anthropic
-    coding    zen go    coding   coding    API          Provider
-```
+![EvolveRoute 架构](docs/assets/architecture.png)
+
+*各 Agent 指向单一端点 `model = "auto"`。双判官（TypeSafe Jev + 启发式）逐请求评分；飞轮把每次结果喂回排名；每个 Provider 方案按各自货币计价与预算。[打开交互式架构图](docs/assets/architecture.html)。*
+
+## 三大支柱
+
+1. **智能决策，而非前缀规则。** 每个请求都由决策模型——**[TypeSafe Jev](https://github.com/typesafe-ai)**——判定 8 维信号（领域、难度、视觉、trivial、工具密度、高风险、会话深度、体量）。内置多语言启发式判官作为独立第二意见（取严融合，补 Jev 的中文短板）；Jev 不可达时启发式接管，**路由永不阻塞**。可选 `laya` 后端插入同一接口。
+2. **资金感知路由。** 每个候选先用其方案自己的货币计价——积分（智谱 / Z.ai / MiniMax）、美元（opencode zen Go）、AFP（火山）——再进入评分。配额预算三层保护：额度消耗 **>60%** 降权、**>85%** 断开会话粘性、**>95%** 直接出局——把余量留给真正需要的任务。
+3. **大模型方案，一个面板管控。** 厂商订阅方案是一等公民：档位、额度、积分系数、每模型美元限额全部内置；面板按窗口展示 Provider 实测配额，一键对账。
+
+## 内置方案
+
+| 方案 | 厂商 | 类型 | 计价模型 | 档位 | 窗口 |
+|---|---|---|---|---|---|
+| `zhipu-coding` | 智谱 (bigmodel.cn) | Coding Plan | 积分，闲时 5 折 | lite / pro / max | 5h · 周 · 月 |
+| `zai-devpack` | Z.ai | Coding Plan | 积分 | lite / pro / max | 5h · 周 · 月 |
+| `opencode-go` | opencode zen | Go Plan | 每模型 $/1M + 每模型月度美元限额 | go / go-plus | 月（5h = 20%） |
+| `volces-coding` | 火山方舟 | Coding Plan | AFP 积分 | lite / pro | 5h · 周 · 月 |
+| `volces-agent` | 火山方舟 | Agent Plan | AFP 积分 | — | 5h · 周 · 月 |
+| `minimax-coding` | MiniMax | Coding Plan | 积分 | lite / pro / max | 5h · 周 · 月 |
+| 按量计费 | 任意 OpenAI / Anthropic | API | $ / token | — | — |
+
+方案按 base URL 自动识别；每个窗口（5h / 周 / 月）均有跟踪，厂商下发配额头时以 Provider 实测为准。
 
 ## 为什么是 EvolveRoute
 
@@ -131,6 +138,8 @@ evolveroute service install   # 另有：start / stop / restart / status
 ## 面板
 
 打开 `http://127.0.0.1:8787/`：
+
+![EvolveRoute 面板](docs/assets/dashboard.png)
 
 - **实时决策流**——每个请求的 8 维判定、所选模型、大白话归因
 - **评分矩阵**——头部候选的分因子得分（质量/速度/成本/可靠/余量）

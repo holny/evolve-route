@@ -18,22 +18,29 @@
 
 It is **local-first** (no cloud dependency for routing), **economics-aware** (subscription quotas, credit multipliers, per-model dollar limits), and **self-evolving** (a flywheel learns from every outcome and rewrites its own scoring biases).
 
-```text
-┌──────────┐  ┌─────────┐  ┌──────────┐  ┌────────┐
-│ opencode │  │ claude  │  │  codex   │  │  ...   │     any agent,
-└────┬─────┘  └────┬────┘  └────┬─────┘  └───┬────┘     OpenAI or Anthropic protocol
-     │  OpenAI     │ Anthropic  │  OpenAI    │
-     └─────────────┴─────┬──────┴────────────┘
-                         ▼
-              ┌─────────────────────┐
-              │     EvolveRoute     │  judge → score → route
-              │  (decision model)   │  learn → evolve → repeat
-              └──────────┬──────────┘
-        ┌────────┬───────┼────────┬──────────┐
-        ▼        ▼       ▼        ▼          ▼
-    zhipu     opencode  volces   minimax   deepseek …   any OpenAI/Anthropic
-    coding    zen go    coding   coding    API          provider
-```
+![EvolveRoute architecture](docs/assets/architecture.png)
+
+*Agents point at one endpoint with `model = "auto"`. The dual judge (TypeSafe Jev + heuristic) scores every request; the flywheel feeds every outcome back into ranking; every provider plan is priced and budgeted its own way. [Open the interactive diagram](docs/assets/architecture.html).*
+
+## Three pillars
+
+1. **Intelligent decisions, not prefix rules.** Every request is judged by a decision model — **[TypeSafe Jev](https://github.com/typesafe-ai)** — on 8 signals (domain, difficulty, needs-vision, triviality, tool-density, high-stakes, session depth, size). A built-in multilingual heuristic judge runs as an independent second opinion (take-conservative fusion, covering Jev's CJK blind spots); if Jev is unreachable, the heuristic takes over and **routing never blocks**. Optional `laya` backend slots into the same interface.
+2. **Budget-aware routing.** Every candidate is priced in its plan's own currency — credits (zhipu / Z.ai / MiniMax), dollars (opencode zen Go), AFP (volces) — before it is scored. Quota budget protection runs at three levels: **>60%** of your allowance deprioritizes the plan, **>85%** breaks session stickiness, **>95%** filters it out entirely — preserving headroom for the tasks that actually need it.
+3. **Managed plans in one dashboard.** Vendor subscription plans are first-class citizens: tiers, allowances, credit multipliers and per-model dollar limits are built in; the dashboard shows live provider-reported quotas per window with one-click reconciliation.
+
+## Managed plans
+
+| Plan | Vendor | Kind | Pricing model | Tiers | Windows |
+|---|---|---|---|---|---|
+| `zhipu-coding` | zhipu (bigmodel.cn) | Coding Plan | credits, off-peak 50% | lite / pro / max | 5h · week · month |
+| `zai-devpack` | Z.ai | Coding Plan | credits | lite / pro / max | 5h · week · month |
+| `opencode-go` | opencode zen | Go Plan | $/1M per model + per-model monthly $ cap | go / go-plus | month (5h = 20%) |
+| `volces-coding` | volces | Coding Plan | AFP credits | lite / pro | 5h · week · month |
+| `volces-agent` | volces | Agent Plan | AFP credits | — | 5h · week · month |
+| `minimax-coding` | MiniMax | Coding Plan | credits | lite / pro / max | 5h · week · month |
+| pay-as-you-go | any OpenAI / Anthropic | API | $ per token | — | — |
+
+Plans are auto-detected from base URLs, and every window (5h / weekly / monthly) is tracked with provider-truth quota headers where the vendor reports them.
 
 ## Why EvolveRoute
 
@@ -131,6 +138,8 @@ evolveroute service install   # also: start / stop / restart / status
 ## The dashboard
 
 Open `http://127.0.0.1:8787/`:
+
+![EvolveRoute dashboard](docs/assets/dashboard.png)
 
 - **Live decision stream** — every request with its 8-signal judgment, chosen model, and a plain-language reason
 - **Scoring matrix** — top candidates with per-factor scores (quality / speed / cost / reliability / headroom)

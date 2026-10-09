@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "EvolveRoute — decision-model routing gateway",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1160,
+      620
+    ]
+  },
+  "components": [
+    {
+      "id": "agents",
+      "type": "external",
+      "label": "Coding agents",
+      "sublabel": "opencode · Claude Code · codex · pi",
+      "pos": [
+        40,
+        100
+      ],
+      "size": [
+        190,
+        72
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "EvolveRoute gateway",
+      "sublabel": "one endpoint · model = auto",
+      "pos": [
+        320,
+        100
+      ],
+      "size": [
+        210,
+        80
+      ]
+    },
+    {
+      "id": "dashboard",
+      "type": "frontend",
+      "label": "Dashboard",
+      "sublabel": "live decisions · quota · trends",
+      "pos": [
+        660,
+        100
+      ],
+      "size": [
+        190,
+        72
+      ]
+    },
+    {
+      "id": "plans",
+      "type": "database",
+      "label": "Plan registry",
+      "sublabel": "tiers · allowances · multipliers",
+      "pos": [
+        40,
+        280
+      ],
+      "size": [
+        190,
+        72
+      ]
+    },
+    {
+      "id": "judge",
+      "type": "backend",
+      "label": "Dual judge",
+      "sublabel": "TypeSafe Jev + heuristic · 8 signals",
+      "pos": [
+        320,
+        300
+      ],
+      "size": [
+        210,
+        72
+      ]
+    },
+    {
+      "id": "providers",
+      "type": "external",
+      "label": "Provider plans",
+      "sublabel": "zhipu · Z.ai · opencode zen · volces · MiniMax · APIs",
+      "pos": [
+        900,
+        180
+      ],
+      "size": [
+        250,
+        84
+      ]
+    },
+    {
+      "id": "flywheel",
+      "type": "database",
+      "label": "Flywheel",
+      "sublabel": "learned bias · reliability · calibration",
+      "pos": [
+        660,
+        300
+      ],
+      "size": [
+        190,
+        72
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "agents-to-gateway",
+      "from": "agents",
+      "to": "gateway",
+      "label": "model = auto"
+    },
+    {
+      "id": "gateway-to-dashboard",
+      "from": "gateway",
+      "to": "dashboard",
+      "label": "live decision stream",
+      "labelDy": -18
+    },
+    {
+      "id": "plans-to-gateway",
+      "from": "plans",
+      "to": "gateway",
+      "label": "allowances · budget",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDy": -12,
+      "labelDx": -90
+    },
+    {
+      "id": "gateway-to-judge",
+      "from": "gateway",
+      "to": "judge",
+      "label": "judge every request",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24,
+      "labelDx": 60
+    },
+    {
+      "id": "gateway-to-providers",
+      "from": "gateway",
+      "to": "providers",
+      "label": "route · OpenAI / Anthropic",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [
+        [
+          580,
+          140
+        ],
+        [
+          580,
+          222
+        ]
+      ],
+      "labelAt": [
+        660,
+        238
+      ]
+    },
+    {
+      "id": "gateway-to-flywheel",
+      "from": "gateway",
+      "to": "flywheel",
+      "label": "observe outcomes",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDx": -55,
+      "via": [
+        [
+          425,
+          250
+        ],
+        [
+          755,
+          250
+        ]
+      ],
+      "labelAt": [
+        540,
+        243
+      ]
+    },
+    {
+      "id": "flywheel-to-judge",
+      "from": "flywheel",
+      "to": "judge",
+      "label": "learning",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelDy": -22
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Judge in the loop",
+      "items": [
+        "TypeSafe Jev scores 8 signals per request",
+        "Heuristic second opinion keeps routing alive on failure"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Plan-aware economics",
+      "items": [
+        "Credits, dollars, AFP — each plan priced its own way",
+        "Provider-truth quota headers steer traffic before burn"
+      ]
+    }
+  ]
+}
