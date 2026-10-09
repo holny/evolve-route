@@ -181,7 +181,7 @@ pub struct DigestSignals {
     pub session_tools_seen: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct JudgmentSet {
     pub domain: Domain,
     pub domain_confidence: f32,
@@ -193,6 +193,10 @@ pub struct JudgmentSet {
     pub high_stakes: f32,
     pub session_relevance: f32,
     pub session_depth: f32,
+    /// Jev 的模型推荐（cookbook intent-routing 模式）——哪个候选模型 Jev 认为最合适
+    pub route_recommendation: Option<String>,
+    /// route_recommendation 的置信度（0-1）——高置信度时 engine 加分该模型
+    pub route_recommendation_confidence: f32,
     /// 谁做的判定：decision_model / decision_model+rules / heuristic /
     /// sticky / explicit——进事件供面板展示判定来源
     pub judge_source: &'static str,
@@ -506,6 +510,8 @@ pub fn fuse_judgments(jev: &JudgmentSet, heur: &JudgmentSet) -> JudgmentSet {
         session_relevance: jev.session_relevance.min(heur.session_relevance),
         session_depth: take_max(jev.session_depth, heur.session_depth),
         judge_source: "decision_model+rules",
+    route_recommendation: jev.route_recommendation.clone(),
+    route_recommendation_confidence: jev.route_recommendation_confidence,
     }
 }
 

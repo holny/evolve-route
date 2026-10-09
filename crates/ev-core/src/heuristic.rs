@@ -130,6 +130,8 @@ impl HeuristicJudge {
             session_relevance,
             session_depth,
             judge_source: "heuristic",
+        route_recommendation: None,
+        route_recommendation_confidence: 0.0,
         }
     }
 }

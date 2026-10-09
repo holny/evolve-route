@@ -88,6 +88,14 @@ pub fn parse_judgment_response(v: &Value) -> Option<JudgmentSet> {
         high_stakes: noul("high_stakes"),
         session_relevance: noul("session_relevance"),
         session_depth: score("session_depth").clamp(0.0, 3.0),
+        route_recommendation: a.get("route_recommendation")
+            .and_then(|x| x.get("choice"))
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string()),
+        route_recommendation_confidence: a.get("route_recommendation")
+            .and_then(|x| x.get("confidence"))
+            .and_then(|x| x.as_f64())
+            .unwrap_or(0.0) as f32,
         judge_source: "decision_model",
     })
 }

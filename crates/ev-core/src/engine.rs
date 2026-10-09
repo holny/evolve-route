@@ -183,6 +183,8 @@ impl Engine {
                     session_relevance: 1.0,
                     session_depth: 0.0,
                     judge_source: "sticky",
+                route_recommendation: None,
+                route_recommendation_confidence: 0.0,
                 };
                 return self.finish(
                     sticky.chosen.clone(),
@@ -414,6 +416,17 @@ impl Engine {
         }
         scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
+        // Jev cookbook intent-routing 模式：决策模型的 route_recommendation
+        // 作为加分信号——高置信度时对推荐模型加分（最高 +15%）并重排
+        if let Some(ref rec) = j.route_recommendation {
+            if j.route_recommendation_confidence > 0.3 {
+                if let Some(rec_score) = scores.iter_mut().find(|s| s.model_id == *rec) {
+                    rec_score.score *= 1.0 + j.route_recommendation_confidence * 0.15;
+                    scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+                }
+            }
+        }
+
         let mut chosen = scores[0].clone();
         let sticky_model = input.sticky.as_ref().map(|s| s.chosen.as_str());
         if let Some(prev) = sticky_model {
@@ -430,12 +443,15 @@ impl Engine {
         // ε-greedy exploration (decision record #24): occasionally route to
         // the runner-up so the flywheel gathers comparative samples. Skipped
         // for high-stakes/hard requests and single candidates.
+        // Jev cookbook confidence-routing 模式：低置信度时不探索——
+        // 不知道任务是什么就探索=盲试
         let mut explored = false;
         let explore = self.policy.explore_ratio.clamp(0.0, 1.0);
         if explore > 0.0
             && scores.len() > 1
             && j.high_stakes < 0.6
             && difficulty_eff < 2.0
+            && j.domain_confidence >= self.policy.confidence_gate
         {
             let nanos = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

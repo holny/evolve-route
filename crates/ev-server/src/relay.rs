@@ -723,6 +723,8 @@ fn resolve_target(st: &AppState, model_field: &str) -> Result<Target, Response> 
                 session_relevance: 0.0,
                 session_depth: 0.0,
                 judge_source: "explicit",
+            route_recommendation: None,
+            route_recommendation_confidence: 0.0,
             },
             filtered: vec![],
             funnel: [0, 0, 0, 0],

@@ -422,10 +422,11 @@ mod tests {
         ]);
         let w = QuotaLedger::parse_headers(&h);
         assert_eq!(w.len(), 2);
-        assert_eq!(w[0].scope, "5h");
-        assert_eq!(w[0].remaining, Some(45_000));
-        assert!(w[0].reset_epoch_ms.is_some());
-        assert_eq!(w[1].scope, "7d");
+        let w5h = w.iter().find(|x| x.scope == "5h").expect("5h window");
+        let w7d = w.iter().find(|x| x.scope == "7d").expect("7d window");
+        assert_eq!(w5h.remaining, Some(45_000));
+        assert!(w5h.reset_epoch_ms.is_some());
+        assert_eq!(w7d.remaining, Some(900_000));
     }
 
     #[test]

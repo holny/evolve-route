@@ -200,6 +200,8 @@ mod difficulty_cost_tests {
             session_relevance: 0.0,
             session_depth: 0.0,
             judge_source: "test",
+        route_recommendation: None,
+        route_recommendation_confidence: 0.0,
         }
     }
 
