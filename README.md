@@ -50,7 +50,7 @@ Context window too small for the estimate → out. Task needs vision, model can'
 
 ### Step 2 — Dynamic weights *(difficulty-linked × quota-aware — [BaRP](https://arxiv.org/abs/2510.07429) Eq.1)*
 
-$$\mathbf{W} = \text{norm}\big(\mathbf{w}^{\mathrm{diff}}(d_{\mathrm{eff}}) \odot \mathbf{w}^{\mathrm{quota}}(t)\big), \quad t = \frac{\#\{\text{candidates with quota} < 8 \times \text{est}\}}{\#\{\text{candidates with quota data}\}}$$
+$$\mathbf{W} = \text{norm}\big(\mathbf{w}^{\mathrm{diff}}(d_{\mathrm{eff}}) \odot \mathbf{w}^{\mathrm{quota}}(t)\big), \quad t = \frac{\text{candidates with remaining quota} < 8 \times \text{est}}{\text{candidates with quota data}}$$
 
 *What happens:* a hard task (d_eff high) tilts weights toward quality; a simple task tilts toward cost. Independently, when many eligible candidates are quota-tight (t → 1), the cost weight rises ×(1+1.5t) and quality yields ×(1−0.25t). No quota data → t undefined → weights untouched.
 

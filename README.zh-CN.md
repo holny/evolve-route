@@ -50,7 +50,7 @@
 
 ### 第 2 步 — 动态权重 *（难度联动 × 配额感知——[BaRP](https://arxiv.org/abs/2510.07429) Eq.1）*
 
-$$\mathbf{W} = \text{norm}\big(\mathbf{w}^{\mathrm{diff}}(d_{\mathrm{eff}}) \odot \mathbf{w}^{\mathrm{quota}}(t)\big), \quad t = \frac{\#\{\text{配额不足 } 8 \times \text{预估的候选}\}}{\#\{\text{有配额数据的候选}\}}$$
+$$\mathbf{W} = \text{norm}\big(\mathbf{w}^{\mathrm{diff}}(d_{\mathrm{eff}}) \odot \mathbf{w}^{\mathrm{quota}}(t)\big), \quad t = \frac{\text{配额不足 8×预估 token 的候选数}}{\text{有配额数据的候选数}}$$
 
 *发生了什么*：难任务（d_eff 高）权重倒向质量；简单任务倒向成本。独立地，当候选中配额紧张的比例升高（t → 1）时，成本权重 ×(1+1.5t)、质量让位 ×(1−0.25t)。无配额数据 → 不干预。
 
