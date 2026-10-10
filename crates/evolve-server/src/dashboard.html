@@ -64,6 +64,46 @@ body { background:var(--bg); color:var(--fg); font:13.5px/1.55 -apple-system,"Pi
 
 .grid { display:grid; grid-template-columns: 1.2fr 1fr; gap:14px; align-items:start; }
 @media (max-width:1100px){ .grid { grid-template-columns:1fr; } }
+
+/* A-decision：决策流 + 解剖面板主从布局 */
+.duo { display:grid; grid-template-columns: 1.25fr 1fr; gap:14px; align-items:start; margin-bottom:14px; }
+@media (max-width:1280px){ .duo { grid-template-columns:1fr; } }
+.autopsy { position:sticky; top:14px; max-height:calc(100vh - 32px); overflow-y:auto; }
+.au-hint { margin-bottom:8px; }
+.au-sec { margin:12px 0 4px; }
+.au-sec-t { font-size:11px; color:var(--dim); letter-spacing:.4px; margin-bottom:6px;
+            border-bottom:1px solid var(--row-line); padding-bottom:3px; }
+.au-badge { display:inline-block; padding:2px 9px; border-radius:6px; border:1px solid var(--border); margin:2px 4px 2px 0; font-size:11px; background:var(--card2); }
+.au-badge.hl { border-color:var(--blue); color:var(--blue); }
+.au-kv { display:flex; justify-content:space-between; gap:8px; font-size:11.5px; padding:2px 0; }
+.au-kv .k { color:var(--dim); }
+.au-bar { height:7px; border-radius:4px; background:var(--row-line); overflow:hidden; flex:1; align-self:center; }
+.au-bar i { display:block; height:100%; border-radius:4px; }
+.au-bar i.b { background:var(--blue); } .au-bar i.g { background:var(--green); }
+.au-bar i.a { background:var(--amber); } .au-bar i.r { background:var(--red); }
+.au-funnel { display:flex; flex-direction:column; gap:5px; }
+.au-funnel .fr { display:grid; grid-template-columns:88px 1fr 46px; gap:8px; align-items:center; font-size:11px; }
+.au-funnel .fr .lb { color:var(--dim); }
+.au-funnel .fr .num { text-align:right; font-variant-numeric:tabular-nums; color:var(--fg); }
+.au-funnel .au-bar i { transition:width .4s ease; }
+.au-cand { border:1px solid var(--row-line); border-radius:8px; padding:6px 9px; margin:5px 0; }
+.au-cand.win { border-color:var(--green); background:color-mix(in srgb, var(--green) 7%, transparent); }
+.au-cand .top { display:flex; align-items:baseline; gap:6px; }
+.au-cand .top .nm { color:var(--blue); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.au-cand .top .win-tag { color:var(--green); font-size:10px; }
+.au-cand .top .sc { margin-left:auto; font-variant-numeric:tabular-nums; font-weight:600; }
+.au-factors { display:grid; grid-template-columns:repeat(5, 1fr); gap:5px; margin-top:5px; }
+.au-fac { text-align:center; }
+.au-fac .au-bar { height:4px; flex:none; margin-bottom:2px; }
+.au-fac .fv { font-size:9.5px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.au-fac .fk { font-size:9px; color:var(--dim); opacity:.8; }
+.au-mult { display:flex; gap:5px; margin-top:4px; flex-wrap:wrap; }
+.au-mult .m { font-size:10px; padding:0 6px; border-radius:4px; background:var(--card2); color:var(--dim); font-variant-numeric:tabular-nums; }
+.au-mult .m.hot { color:var(--amber); background:color-mix(in srgb, var(--amber) 12%, transparent); }
+.au-mult .m.damp { color:var(--red); background:color-mix(in srgb, var(--red) 10%, transparent); }
+.au-turn { border-left:2px solid var(--amber); padding:2px 0 2px 9px; margin:5px 0; font-size:11.5px; }
+.au-turn.neu { border-left-color:var(--border); }
+.au-evo-note { font-size:11.5px; padding:7px 10px; border-radius:8px; background:var(--card2); margin-top:5px; line-height:1.6; }
 .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:14px;
         box-shadow:var(--shadow); transition:border-color .15s; }
 .card:hover { border-color:var(--border-hover); }
@@ -162,10 +202,17 @@ table.mx tr.win td { color:var(--green); }
   <select class="lang-sel" id="lang-sel"></select>
 </header>
 <main>
-  <section class="card">
-    <h2 data-i18n="feed">实时决策流</h2>
-    <div id="feed"></div>
-  </section>
+  <div class="duo">
+    <section class="card">
+      <h2 data-i18n="feed">实时决策流</h2>
+      <div id="feed"></div>
+    </section>
+    <aside class="card autopsy" id="autopsy">
+      <h2 data-i18n="au_title">决策解剖</h2>
+      <div class="au-hint dim2" data-i18n="au_hint">点击左侧任一请求，还原它的完整决策过程</div>
+      <div id="au-body"></div>
+    </aside>
+  </div>
   <div class="grid">
     <section class="card">
       <h2><span data-i18n="dyn">模型动态</span><span class="note" data-i18n="dyn_note">有流量在前按流量排序，无流量按优先度</span></h2>
@@ -484,6 +531,36 @@ const T = {
   s_out:  {zh:'出', en:' out', ko:'출', ja:'出', es:' sal', fr:' sor'},
   s_read: {zh:'读', en:'r', ko:'읽', ja:'読', es:'lee', fr:'lect'},
   s_write:{zh:'写', en:'w', ko:'쓰', ja:'書', es:'esc', fr:'éc'},
+  // A-decision：决策解剖面板（点击决策流事件 → 右侧完整还原公式过程）
+  au_title:   {zh:'决策解剖', en:'Decision Autopsy', ko:'결정 해부', ja:'判定解剖', es:'Autopsia de decisión', fr:'Autopsie de décision'},
+  au_hint:    {zh:'点击左侧任一请求，还原它的完整决策过程', en:'Click any request to replay its full decision', ko:'요청을 클릭하면 전체 결정 과정이 재생됩니다', ja:'リクエストをクリックして判定过程を再生', es:'Clic en una solicitud para reproducir su decisión', fr:'Cliquez sur une requête pour rejouer sa décision'},
+  au_empty:   {zh:'尚未选择请求', en:'No request selected', ko:'요청 미선택', ja:'未選択', es:'Ninguna solicitud', fr:'Aucune requête'},
+  au_req:     {zh:'① 任务画像', en:'① Task profile', ko:'① 작업 프로필', ja:'① タスク画像', es:'① Perfil de tarea', fr:'① Profil de tâche'},
+  au_judge:   {zh:'② 双判官判定', en:'② Dual judge', ko:'② 이중 판정', ja:'② 二重判定', es:'② Doble juez', fr:'② Double juge'},
+  judge_src:  {zh:'判定来源', en:'judge source', ko:'판정 소스', ja:'判定ソース', es:'fuente del juicio', fr:'source du jugement'},
+  au_funnel:  {zh:'③ 候选漏斗', en:'③ Candidate funnel', ko:'③ 후보 퍼널', ja:'③ 候選ファネル', es:'③ Embudo', fr:'③ Entonnoir'},
+  au_weights: {zh:'④ 动态权重', en:'④ Dynamic weights', ko:'④ 동적 가중치', ja:'④ 動的加重', es:'④ Pesos dinámicos', fr:'④ Poids dynamiques'},
+  au_matrix:  {zh:'⑤ 候选评分榜', en:'⑤ Scoreboard', ko:'⑤ 스코어보드', ja:'⑤ スコアボード', es:'⑤ Tabla de puntuación', fr:'⑤ Tableau des scores'},
+  au_turn:    {zh:'⑥ 决策转折点', en:'⑥ Turning points', ko:'⑥ 전환점', ja:'⑥ 転換点', es:'⑥ Puntos de giro', fr:'⑥ Points de giro'},
+  au_evo:     {zh:'⑦ 自进化反馈', en:'⑦ Self-evolution feedback', ko:'⑦ 자기 진화 피드백', ja:'⑦ 自己進化フィードバック', es:'⑦ Retroalimentación evolutiva', fr:'⑦ Rétroaction évolutive'},
+  au_conf:    {zh:'置信度', en:'confidence', ko:'신뢰도', ja:'信頼度', es:'confianza', fr:'confiance'},
+  au_stage_cat:  {zh:'模型目录', en:'catalog', ko:'카탈로그', ja:'カタログ', es:'catálogo', fr:'catalogue'},
+  au_stage_hard: {zh:'硬过滤后', en:'after hard filters', ko:'필터 후', ja:'フィルタ後', es:'tras filtros', fr:'après filtres'},
+  au_stage_floor:{zh:'质量及格线', en:'after quality floor', ko:'품질 기준 후', ja:'品質基準後', es:'tras suelo de calidad', fr:'après seuil'},
+  au_stage_scored:{zh:'进入评分', en:'scored', ko:'채점', ja:'スコア化', es:'puntuados', fr:'notés'},
+  au_explore: {zh:'Thompson 探索触发——采样扰动改写了排名，这次选了非常规候选', en:'Thompson exploration fired — posterior sampling rewrote the ranking', ko:'Thompson 탐색 발동—샘플링이 순위를 재작성', ja:'Thompson 探索が発火—サンプリングが順位を書き換え', es:'Exploración Thompson activada', fr:'Exploration Thompson déclenchée'},
+  au_advisor: {zh:'advisor 举荐 +加分（置信度 {c}）', en:'advisor endorsement boosted (+, confidence {c})', ko:'advisor 추천 가산(신뢰도 {c})', ja:'advisor 推奨ボーナス（信頼度 {c}）', es:'advisor impulsó (confianza {c})', fr:'recommandation advisor (confiance {c})'},
+  au_regret:  {zh:'本次路由代价 regret = {r}（最优可得分 − 实选分，0 = 无悔）', en:'routing regret = {r} (best-available − chosen; 0 = no regret)', ko:'라우팅 regret = {r}', ja:'ルーティング regret = {r}', es:'regret = {r}', fr:'regret = {r}'},
+  au_bias_up: {zh:'飞轮在奖励它：bias {b} 高于中位——下次同类请求它更受青睐', en:'flywheel rewarding it: bias {b} above median — future similar requests favor it', ko:'플라이휠 보상: bias {b}', ja:'フライホイールが報酬: bias {b}', es:'el flywheel lo premia: bias {b}', fr:'le flywheel le récompense : biais {b}'},
+  au_bias_dn: {zh:'飞轮在惩罚它：bias {b} 低于中位——近期表现不佳', en:'flywheel penalizing it: bias {b} below median — recent results were poor', ko:'플라이휠 페널티: bias {b}', ja:'フライホイールがペナルティ: bias {b}', es:'el flywheel lo penaliza: bias {b}', fr:'le flywheel le pénalise : biais {b}'},
+  au_bias_neu:{zh:'bias {b} ≈ 中位：表现与群体一致', en:'bias {b} ≈ median: performance in line with peers', ko:'bias {b} ≈ 중앙값', ja:'bias {b} ≈ 中央値', es:'bias {b} ≈ mediana', fr:'biais {b} ≈ médiane'},
+  au_factor_q:{zh:'质量', en:'quality', ko:'품질', ja:'品質', es:'calidad', fr:'qualité'},
+  au_factor_s:{zh:'速度', en:'speed', ko:'속도', ja:'速度', es:'velocidad', fr:'vitesse'},
+  au_factor_c:{zh:'成本', en:'cost', ko:'비용', ja:'コスト', es:'coste', fr:'coût'},
+  au_factor_r:{zh:'可靠', en:'reliability', ko:'신뢰성', ja:'信頼性', es:'fiabilidad', fr:'fiabilité'},
+  au_factor_h:{zh:'余量', en:'headroom', ko:'여유', ja:'余裕', es:'margen', fr:'marge'},
+  au_win:     {zh:'胜出', en:'winner', ko:'승자', ja:'勝者', es:'ganador', fr:'gagnant'},
+  au_qp:      {zh:'预算压制 ×{q}', en:'budget damp ×{q}', ko:'예산 감쇠 ×{q}', ja:'予算減衰 ×{q}', es:'amortiguación ×{q}', fr:'amortissement ×{q}'},
 };
 const t = k => (T[k] && (T[k][lang] ?? T[k].zh)) ?? k;
 
@@ -718,6 +795,7 @@ function addRow(e){
     '<div class="feed-path">'+decisionPath(e)+'</div>' +
     '<div class="feed-detail" style="display:none">'+decisionDetail(e)+'</div>';
   row.querySelector('.feed-row').addEventListener('click', () => {
+    renderAutopsy(e);          // A-decision：点击即还原完整决策过程（右侧解剖面板）
     const d = row.querySelector('.feed-detail');
     if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
   });
@@ -733,6 +811,160 @@ function addRow(e){
     if (last.dataset && last.dataset.key) groups.delete(last.dataset.key);
     feed.removeChild(last);
   }
+}
+
+// ═══ A-decision 决策解剖：把一次路由的公式全过程钉在七段可视化里 ═══
+// ① 任务画像 ② 双判官 ③ 候选漏斗 ④ 动态权重 ⑤ 候选评分榜（因子微条+bias 乘数）
+// ⑥ 决策转折点（探索/advisor/regret）⑦ 自进化反馈（bias 相对中位的方向）
+// 全部数据来自事件 JSON——纯前端重组，零后端改动。
+function autopsyBar(pct, cls){
+  return '<span class="au-bar"><i class="'+(cls||'b')+'" style="width:'+Math.max(1, Math.min(100, pct))+'%"></i></span>';
+}
+function renderAutopsy(e){
+  const B = document.getElementById('au-body');
+  if (!B) return;
+  const L = [];
+  const chosen = e.chosen || '-';
+  // ── 头部 ──
+  const badge = (200<=e.status && e.status<300) ? 'ok' : 'dead';
+  L.push('<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:2px">' +
+    '<span class="pill badge '+badge+'" style="font-size:12px">'+e.status+'</span>' +
+    '<b style="font-size:14px;color:var(--blue)">'+esc(chosen)+'</b>' +
+    '<span class="dim2">'+fmtMs(e.total_ms)+(e.ttft_ms?' · TTFT '+fmtMs(e.ttft_ms):'')+'</span></div>');
+
+  // ① 任务画像
+  const jg = e.judgment || {};
+  L.push('<div class="au-sec au-sec-t">'+esc(t('au_req'))+'</div>');
+  const dk = T['dom_'+(jg.domain||'Other')];
+  L.push('<div>' +
+    '<span class="au-badge hl">'+esc(dk ? (dk[lang] ?? dk.zh) : (jg.domain||'-'))+'</span>' +
+    '<span class="au-badge">'+esc(t('p_diff'))+' '+(+(e.difficulty_eff||0)).toFixed(1)+'/3 · '+esc(diffLevel(+e.difficulty_eff||0))+'</span>' +
+    (e.est_tokens ? '<span class="au-badge">'+esc(t('p_est'))+' '+fmtK(e.est_tokens)+' tok</span>' : '') +
+    (jg.is_trivial >= 0.5 ? '<span class="au-badge">'+esc(t('p_sticky'))+'</span>' : '') +
+    '</div>');
+
+  // ② 双判官
+  L.push('<div class="au-sec au-sec-t">'+esc(t('au_judge'))+'</div>');
+  const jl = {'decision_model':'bj_model','decision_model+rules':'bj_hybrid','heuristic':'bj_heur','explicit':'bj_explicit','sticky':'p_sticky'}[jg.judge_source];
+  L.push('<div class="au-kv"><span class="k">'+esc(t('judge_src'))+'</span><span>'+(jl ? esc(t(jl)) : esc(jg.judge_source||'-'))+'</span></div>');
+  const conf = Math.round((+jg.domain_confidence||0)*100);
+  L.push('<div class="au-kv"><span class="k">'+esc(t('au_conf'))+'</span><span style="display:flex;gap:8px;align-items:center;width:60%">'+autopsyBar(conf,'g')+conf+'%</span></div>');
+
+  // ③ 候选漏斗（阶梯）
+  const f = e.funnel || [];
+  if (f.length === 4 && f[0] > 0) {
+    L.push('<div class="au-sec au-sec-t">'+esc(t('au_funnel'))+'</div><div class="au-funnel">');
+    const stages = [
+      {lb:t('au_stage_cat'),    n:f[0]},
+      {lb:t('au_stage_hard'),   n:f[1]},
+      {lb:t('au_stage_floor'),  n:f[2]},
+      {lb:t('au_stage_scored'), n:f[3]},
+    ];
+    const mx = Math.max(f[0], 1);
+    stages.forEach((st, i) => {
+      const cls = i === 3 ? 'g' : (i === 0 ? 'a' : 'b');
+      L.push('<div class="fr"><span class="lb">'+esc(st.lb)+'</span>' +
+        autopsyBar(100*st.n/mx, cls) +
+        '<span class="num">'+st.n+'</span></div>');
+    });
+    L.push('</div>');
+  }
+
+  // ④ 动态权重（难度联动 × 配额感知后的实际值）
+  const w = e.weights || [];
+  if (w.length === 5) {
+    L.push('<div class="au-sec au-sec-t">'+esc(t('au_weights'))+'</div>');
+    const wnames = [t('au_factor_q'), t('au_factor_s'), t('au_factor_c'), t('au_factor_r'), t('au_factor_h')];
+    const wcls = ['b','a','g','b','g'];
+    wnames.forEach((nm, i) => {
+      const pct = Math.round(w[i]*100);
+      L.push('<div class="au-kv"><span class="k">'+esc(nm)+'</span><span style="display:flex;gap:8px;align-items:center;width:62%">'+autopsyBar(pct, wcls[i])+pct+'%</span></div>');
+    });
+  }
+
+  // ⑤ 候选评分榜（因子微条 + 乘数徽章 + 最终分）
+  const sb = e.scoreboard || [];
+  if (sb.length) {
+    L.push('<div class="au-sec au-sec-t">'+esc(t('au_matrix'))+'</div>');
+    let rowsSB = sb.slice(0, 5);
+    if (!rowsSB.some(r => r.model_id === e.chosen)) {
+      const ci = sb.findIndex(r => r.model_id === e.chosen);
+      if (ci > 0) rowsSB.push(sb[ci]);
+    }
+    rowsSB.forEach(r => {
+      const win = r.model_id === e.chosen;
+      const fac = [['q','b'],['s','a'],['c','g'],['r','b'],['h','g']].map(([k, cls]) => {
+        const v = Math.round((+r[k]||0)*100);
+        return '<div class="au-fac"><span class="au-bar"><i class="'+cls+'" style="width:'+v+'%"></i></span><span class="fv">'+v+'</span><div class="fk">'+esc(t('au_factor_'+k))+'</div></div>';
+      }).join('');
+      const mults = [];
+      const bv = +(r.bias||1);
+      if (Math.abs(bv-1) > 0.001) mults.push('<span class="m'+(bv>1?' hot':' damp')+'">bias ×'+bv.toFixed(3)+'</span>');
+      if (r.uw && +r.uw !== 1) mults.push('<span class="m">user ×'+(+r.uw).toFixed(2)+'</span>');
+      const qp = +(r.qp||1);
+      if (qp < 0.99) mults.push('<span class="m damp">'+esc(t('au_qp').replace('{q}', qp.toFixed(2)))+'</span>');
+      L.push('<div class="au-cand'+(win?' win':'')+'">' +
+        '<div class="top"><span class="nm" title="'+esc(r.model_id)+'">'+esc(shortId(r.model_id))+'</span>' +
+        (win ? '<span class="win-tag">★ '+esc(t('au_win'))+'</span>' : '') +
+        '<span class="sc">'+Math.round((+r.score||0)*100)+'</span></div>' +
+        '<div class="au-factors">'+fac+'</div>' +
+        (mults.length ? '<div class="au-mult">'+mults.join('')+'</div>' : '') +
+        '</div>');
+    });
+  }
+
+  // ⑥ 决策转折点
+  L.push('<div class="au-sec au-sec-t">'+esc(t('au_turn'))+'</div>');
+  let turned = false;
+  if (e.sticky) {
+    L.push('<div class="au-turn neu">'+esc(t('st_sticky_1'))+'</div>');
+    turned = true;
+  }
+  if ((e.reason||'').includes('[exploring]')) {
+    L.push('<div class="au-turn">'+esc(t('au_explore'))+'</div>');
+    turned = true;
+  }
+  const adv = e.judgment && e.judgment.route_recommendation;
+  if (adv && (e.judgment.route_recommendation_confidence||0) > 0.3) {
+    L.push('<div class="au-turn">'+esc(t('au_advisor').replace('{c}', (e.judgment.route_recommendation_confidence).toFixed(2)))+' · '+esc(shortId(adv))+'</div>');
+    turned = true;
+  }
+  if (e.regret != null) {
+    L.push('<div class="au-turn neu">'+esc(t('au_regret').replace('{r}', (+e.regret).toFixed(3)))+'</div>');
+    turned = true;
+  }
+  if ((e.skipped||[]).length) {
+    L.push('<div class="au-turn" style="border-left-color:var(--red)">'+esc(t('skipped'))+'：'+e.skipped.map(s => esc(s)).join(' → ')+'</div>');
+    turned = true;
+  }
+  if (!turned) L.push('<div class="au-turn neu">'+esc(t('au_bias_neu').replace('{b}', '—'))+'</div>');
+
+  // ⑦ 自进化反馈（胜者 bias 相对 1.0 的方向 = 飞轮的奖惩信号）
+  const mine = sb.find(r => r.model_id === e.chosen);
+  if (mine) {
+    const bv = +(mine.bias||1);
+    const evo = bv > 1.001 ? t('au_bias_up').replace('{b}', bv.toFixed(4))
+      : bv < 0.999 ? t('au_bias_dn').replace('{b}', bv.toFixed(4))
+      : t('au_bias_neu').replace('{b}', bv.toFixed(4));
+    L.push('<div class="au-sec au-sec-t">'+esc(t('au_evo'))+'</div>');
+    L.push('<div class="au-evo-note">'+ (bv > 1.001 ? '↑ ' : bv < 0.999 ? '↓ ' : '→ ') + esc(evo) + '</div>');
+    if (e.quality) {
+      L.push('<div class="dim2" style="margin-top:4px">'+esc(t('m_quality'))+': '+esc(JSON.stringify(e.quality.flags||[]))+'</div>');
+    }
+  }
+
+  // 时序瀑布 + 过滤明细（折叠）
+  L.push('<div class="au-sec au-sec-t">'+esc(t('w_total'))+'</div>');
+  L.push(waterfallBar(e) || '<div class="dim2">—</div>');
+  if (e.filtered && e.filtered.length) {
+    L.push('<details style="margin-top:8px"><summary class="dim2" style="cursor:pointer">'+esc(t('st_filtered_head'))+'（'+e.filtered.length+'）</summary>' +
+      '<div class="dim2" style="margin-top:4px;line-height:1.7">' +
+      e.filtered.map(fl => '<span title="'+esc(fl.model)+'">'+esc(shortId(fl.model))+'</span>（'+esc(causeLocal(fl.cause))+'）').join('、 ') + '</div></details>');
+  }
+
+  B.innerHTML = L.join('');
+  const hint = document.querySelector('#autopsy .au-hint');
+  if (hint) hint.style.display = 'none';
 }
 
 const state = { stats:{}, bench:{}, health:{}, quota:{}, policyw:null, plans:[], trends:[], win:'overview', twin:'24h', providers:[], providersStatus:null, statusTs:0 };
