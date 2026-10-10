@@ -224,3 +224,161 @@
 | 2026-10-09 | 初始创建，记录 EvoRoute 全文阅读笔记 |
 | 2026-10-09 | 补充 LLMRouter 全文阅读 + 全部摘要级论文 |
 | 2026-10-10 | 补充阅读状态图例、实施优先级、README 引用建议 |
+
+
+---
+
+## 九、全论文综合：EvolveRouter 飞轮升级路线图
+
+> 以下基于 12+ 篇论文全文/摘要的深度阅读综合。按影响力 × 实现难度排序。
+> 核心原则：所有机制只从被选模型的结果中学习（bandit feedback），永不假设反事实；Jev 的判定是底线——学习层只能微调，不能推翻。
+
+### 9.1 两阶段奖励归一化（BayesianRouter App.B + BaRP Eq.6）
+
+**问题**：飞轮 4 层反馈的信号量纲不同（布尔成功 vs 秒数 vs 布尔），直接加权融合会因尺度漂移产生偏差。
+
+**方案**：
+1. 滚动基线中心化：`r_i = rolling_mean - outcome_i`（BaRP Eq.6——学的是"优势"不是"绝对值"）
+2. 20/80 分位数钳制到 [0,1]：低于 P20 → 0，高于 P80 → 1，中间线性映射（BayesianRouter App.B）
+3. 需要：环形缓冲区存最近 N 条 outcome（`~/.evolve/ring-buffer.json`）
+
+**来源**: BaRP (2510.07429) Eq.6 + BayesianRouter Appendix B
+
+### 9.2 Bayesian 后验替代 ε-greedy（BayesianRouter Eq.4-6）
+
+**问题**：当前 ε-greedy 探索率固定 10%，不随不确定性变化——样本充足的模型仍被 10% 探索，样本为零的模型探索不足。
+
+**方案**：
+- 每个模型维护 8 维信号空间中的 Beta-Binomial 后验（成功/失败计数）
+- 路由时从后验采样（不是 argmax）——不确定性大的模型自动被更多探索
+- **Jev 先验注入**：新模型的后验均值 μ₀ = Jev 的 5 因子评分（BayesianRouter "prior injection" 模式——离线知识作为在线学习的先验）
+- 消融证明：先验注入优于分数融合（α 加权平均）——63.23 vs 61.12 AlpacaEval-2
+
+**来源**: BayesianRouter (2510.02850) Eqs.4-6
+**实现**: Rust 中 ~50 行（per-model Beta(α,β) 更新 + Beta 采样），无需 ML 运行时
+
+### 9.3 置信度级联（FrugalGPT + RouteNLP conformal prediction）
+
+**问题**：当前降级链只由错误触发——没有质量触发的升级。
+
+**方案**：
+- 便宜模型先答（已有 ✓）
+- **新增**：quality.rs 分析返回后，如果质量信号差（截断/退化/空响应），升级到更强模型重试
+- 升级阈值用 conformal prediction 从飞轮历史 outcome 的分位数初始化（RouteNLP §3.2 conformal threshold initialization）
+- 每周用最近 outcome 重新校准阈值
+
+**来源**: FrugalGPT + RouteNLP (2604.23577) §3.2
+
+### 9.4 聚类排名的定向飞轮学习（RouteNLP §3.3）
+
+**问题**：飞轮目前均匀地从所有失败中学习——但不同失败模式的影响差异巨大。
+
+**方案**：
+- 在 8 信号特征空间中聚类失败/升级请求
+- 按"频率 × 质量差距"排名聚类
+- 只对 top-k 聚类采取行动（prompt 调整 / 模型偏好 / Provider 配置修正）
+- 实验：定向学习比随机学习效果 2.3×（RouteNLP 实证）
+
+**来源**: RouteNLP (2604.23577) §3.3
+
+### 9.5 累计会话成本作为决策信号（HierRouter §3.1）
+
+**问题**：会话中途没有成本感知——连续多轮后配额烧完才被动触发保护。
+
+**方案**：
+- 会话状态中追踪 `C_t`（本会话累计配额消耗，归一化单位）
+- 作为第 9 个信号传入 Jev：`session_quota_pressure: 0.0-1.0`
+- Jev 判定时考虑会话预算——后端模型选择偏向配额充裕的方案
+
+**来源**: HierRouter (2511.09873) §3.1 State 定义
+
+### 9.6 配额货币归一化（三篇论文独立确认）
+
+**问题**：智谱积分 / Go 美元 / volces AFP 量纲不同，无法直接比较。
+
+**方案**：统一归一化为"方案内相对成本"：
+- 智谱：rate_hint / min_rate_in_plan → [0,1]（最便宜 = 1.0，最贵 = 接近 0）
+- opencode Go：$ price / min_$_price_in_plan → [0,1]
+- volces AFP：AFP_rate / min_AFP_rate_in_plan → [0,1]
+- 已经在 scoring.rs `credit_multipliers` 中部分实现 ✓，需确保三种货币都用同一归一化
+
+**来源**: RouteNLP + HierRouter + BayesianRouter 三篇独立确认
+
+### 9.7 探索预算 = 不确定性函数（FlyRoute）
+
+**问题**：out-of-chain sweep 目前均匀分布——应该偏向不确定的模型。
+
+**方案**：
+- 每个模型维护 `evidence_count`（gated 成功次数）
+- 探索值 `U(aᵢ) = 1/(1 + evidence_count^α)` ——证据越多，探索越少
+- 结合 BM25 相关性门控：只对"看似相关"的请求做探索
+- **已有 out-of-chain sweep 机制 ✓，改评分公式即可**
+
+**来源**: FlyRoute (2605.22057) §3.2 探索值公式
+
+### 9.8 策略回放验证（MERA）
+
+**问题**：飞轮修改 learned bias / 可靠性权重时没有安全网——新策略可能比旧策略差。
+
+**方案**：
+- 策略版本化：每次飞轮状态变更创建新版本
+- 回放验证：新版本在存储的历史请求窗口上回放（shadow mode），确认反馈层 outcome 不退化
+- 不通过的策略版本留在 experimental，不进 serving registry
+- **版本化回滚**：策略退化时一键回滚到上一个通过验证的版本
+
+**来源**: MERA (2608.10333) §4 Replay Admission Gate
+**实现**: 需要 replay 框架 + 策略版本存储——v0.2 考虑
+
+### 9.9 能力卡定期蒸馏（FlyRoute）
+
+**问题**：模型描述静态化——Provider 悄悄更新模型（同名不同版本）时，我们的画像过期。
+
+**方案**：
+- 每个上游模型维护"能力卡"（learned capability description）
+- 每积累 M 个 gated 成功后，用 LLM 重写能力卡（输入：种子描述 + 近期成功样本）
+- 能力卡注入 Jev 判定 prompt——Jev 看到的是实时更新的模型画像，不是静态厂商描述
+
+**来源**: FlyRoute (2605.22057) §3.1 Capability Distillation
+
+### 9.10 推理模式作为路由维度（vLLM Semantic Router）
+
+**问题**：简单请求不需要 reasoning/thinking mode——但当前没有区分。
+
+**方案**：
+- Jev 判定增加第 9 信号：`reasoning_mode: none/low/high`
+- 路由时传递给上游：`thinking: {type: enabled/disabled}`
+- 简单请求关闭 thinking → 省 ~48% token（vLLM-SR 实证）
+
+**来源**: vLLM Semantic Router (2510.08731) §3.1
+
+---
+
+## 十、实施优先级（综合全部论文后修正）
+
+| 优先级 | 改进 | 来源 | 预估改动 | 影响 |
+|---|---|---|---|---|
+| P0 | 两阶段奖励归一化 | BayesianRouter | ~30 行（ring buffer） | 高——飞轮学习的前提 |
+| P0 | 基线相对更新 | BaRP | ~10 行（同一 ring buffer） | 高——消除漂移 |
+| P1 | Bayesian 后验 + Thompson 采样 | BayesianRouter | ~50 行（Beta-Binomial） | 高——替代 ε-greedy |
+| P1 | 配额货币归一化（完善） | 三篇独立确认 | ~20 行 | 中——统一量纲 |
+| P1 | 置信度级联 | FrugalGPT | ~40 行（quality.rs 触发升级） | 高——省 50% 成本 |
+| P2 | 探索预算 = 不确定性函数 | FlyRoute | ~15 行（改 sweep 评分） | 中 |
+| P2 | 累计会话成本信号 | HierRouter | ~20 行 | 中——配额感知路由 |
+| P2 | 推理模式路由 | vLLM-SR | ~30 行 | 中——省 48% token |
+| P3 | 聚类排名定向学习 | RouteNLP | ~60 行 | 中——2.3× 效率 |
+| P3 | 策略回放验证 | MERA | ~100 行 | 高（安全网） |
+| P3 | 能力卡蒸馏 | FlyRoute | ~80 行 | 中——模型画像保鲜 |
+| P3 | 本地 ModernBERT 分类器 | vLLM-SR | 新依赖（Candle） | 中——消除 Jev API 延迟 |
+| P3 | 语义相似检索 | EvoRoute | 新依赖（MiniLM） | 高——"路由记忆" |
+
+## 十一、README Related Work 模板
+
+在 `## Why not another proxy` 后加：
+
+> ### Related work
+>
+> EvolveRouter builds on ideas from the growing LLM routing literature. Unlike [EvoRoute](https://arxiv.org/abs/2601.02695) (agent sub-step routing in Python research frameworks) and [EvolveRouter](https://arxiv.org/abs/2604.05149) (prompt co-evolution for multi-agent QA), EvolveRouter focuses on **local gateway-level auditable routing** in Rust — every routing decision is logged with plain-language attribution, scored by a transparent formula, and reversible.
+>
+> Our quality-floor + difficulty-linked weight modulation draws on the cascade pattern from [FrugalGPT](https://arxiv.org/abs/2305.05176). Our exploration strategy is informed by [BayesianRouter](https://arxiv.org/abs/2510.02850)'s Thompson sampling approach. Our five-factor composite scoring follows the [composite scoring pattern](https://arxiv.org/abs/2608.06867) from the LLMRouter unified formulation. Where [LLMRouterBench](https://arxiv.org/abs/2608.06867) shows the bottleneck is in decision mechanism (not query representation), EvolveRouter addresses it by putting a decision model in the loop — not embedding-based classification.
+
+引用合规性：引用的是 arXiv 论文的**思想范式**（Pareto 过滤、Thompson 采样、置信度级联），不是复制实现代码。每处引用使用 `Inspired by [Author (Year)](arxiv_link)` 格式。
