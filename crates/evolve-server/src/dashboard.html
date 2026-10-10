@@ -853,6 +853,7 @@ function addRow(e){
     '<span class="ms">'+fmtMs(e.total_ms)+'</span></div>' +
     '<div class="feed-path">'+decisionPath(e)+'</div>';
   row.querySelector('.feed-row').addEventListener('click', () => {
+    selectedEvent = e;         // 记住选中事件——语言切换时解剖面板重渲染
     renderAutopsy(e);          // A-decision：点击即还原完整决策过程（右侧解剖面板，
                                // 行内详情已合并进解剖——不再重复展开）
     row.classList.add('sel');
@@ -1732,6 +1733,9 @@ function applyLang(){
   sel.value = lang;
   updateSse();
   renderChips(); renderDyn(); renderHealthQuota(); renderWheel();
+  // review：feed 与解剖面板内容含 t() 文案——语言切换需重建/重渲染
+  loadFeed();
+  if (selectedEvent) renderAutopsy(selectedEvent);
 }
 sel.addEventListener('change', () => {
   lang = sel.value;
@@ -1739,12 +1743,16 @@ sel.addEventListener('change', () => {
   applyLang();
 });
 
-(async () => {
+let selectedEvent = null;  // 当前在解剖面板中展示的事件
+async function loadFeed(){
+  feed.innerHTML = '';
+  groups.clear();
   try {
     const evs = await (await fetch('/api/events?limit=30')).json();
     if (Array.isArray(evs)) evs.forEach(addRow);
   } catch(_){}
-})();
+}
+(async () => { await loadFeed(); })();
 applyLang();
 refresh();
 setInterval(refresh, 3000);
