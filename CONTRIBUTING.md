@@ -1,8 +1,8 @@
-# Contributing to EvolveRoute
+# Contributing to EvolveRouter
 
 [English](CONTRIBUTING.md) | [中文](CONTRIBUTING.zh-CN.md)
 
-Thanks for your interest in improving EvolveRoute! This document covers everything you need to get productive.
+Thanks for your interest in improving EvolveRouter! This document covers everything you need to get productive.
 
 ## Development setup
 
@@ -12,8 +12,8 @@ Thanks for your interest in improving EvolveRoute! This document covers everythi
 - No database, no Docker, no Python. Everything is `cargo`.
 
 ```bash
-git clone https://github.com/your-org/evolve-route.git
-cd evolve-route
+git clone https://github.com/holny/evolve-router.git
+cd evolve-router
 cargo build            # debug build, fast iteration
 cargo test             # full suite (94 tests)
 cargo clippy           # CI gate: zero warnings
@@ -74,9 +74,9 @@ Rust `f32` serialization produces precision artifacts (e.g. `1.4000000000000001`
 
 When filing a bug, include:
 
-- EvolveRoute version (`evolveroute --version` or commit hash)
+- EvolveRouter version (`evo-router --version` or commit hash)
 - Your OS and how you run the gateway (binary / LaunchAgent / systemd)
-- The relevant `~/.evolveroute/gateway.log` tail and `x-ev-*` response headers if you have them
+- The relevant `~/.evolve/gateway.log` tail and `x-ev-*` response headers if you have them
 - Config snippet — **redact API keys and request content before pasting**
 
 Feature requests: describe the routing problem you're hitting, not just the solution. "My subscription quota burns too fast on easy tasks" is more actionable than "add rate limiting".

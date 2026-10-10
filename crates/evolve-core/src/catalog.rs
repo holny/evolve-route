@@ -23,7 +23,7 @@ impl Catalog {
         Self::build_with_discovered(file, Vec::new())
     }
 
-    /// Merge priority per id: user (evo-router.toml) > discovered (agent
+    /// Merge priority per id: user (evolve.toml) > discovered (agent
     /// configs) > builtin priors. Connection facts always come from the
     /// user config layer.
     pub fn build_with_discovered(file: &FileConfig, discovered: Vec<ModelRecord>) -> Self {

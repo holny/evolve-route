@@ -1,4 +1,4 @@
-# EvolveRoute 架构总览
+# EvolveRouter 架构总览
 
 > 完整源码（5 个 crate / 11,081 行 Rust / 200 个公开函数 / 93 个测试 / 单二进制 ~6.5MB）。
 > 本目录是设计文档：架构 / 决策 / 因子 / 模块。
@@ -22,7 +22,7 @@
 │  ├─ stream.rs      流式遥测：TTFT/速率/工具捕获/质量分析              │
 │  └─ finalize       事件落盘 + 飞轮学习 + 预算记账 + SSE 广播         │
 │  meta.rs           /api/stats /api/plans /api/trends /api/providers  │
-│  service.rs        evolveroute service start/stop/restart              │
+│  service.rs        evo-router service start/stop/restart              │
 └─────┬──────────────────┬──────────────────┬─────────────────────────┘
       ▼                  ▼                  ▼
 ┌───────────┐   ┌───────────────┐   ┌──────────────────┐
@@ -72,12 +72,12 @@
 | `crates/ev-memory/src/quota.rs` | 限额头 + 套餐用量双账本 |
 | `crates/ev-memory/src/health.rs` | 健康冷却账本（含重置时间） |
 | `crates/ev-decision/src/backend.rs` | HybridBackend（双判官融合） |
-| `crates/ev-decision/src/typesafe.rs` | Jev LLM 判定（typesafe API） |
+| `crates/evolve-decision/src/decision_backend.rs` | 决策模型判定（System One 协议，可指向云端或本地服务） |
 | `crates/ev-decision/src/heuristic.rs` | 本地启发式词表引擎 |
 | `crates/ev-discovery/src/opencode.rs` | opencode 配置扫描 |
 | `crates/ev-discovery/src/remote.rs` | 远端 /models 拉取 |
 | `crates/ev-discovery/src/codex.rs` | Codex CLI 配置发现 |
 | `crates/ev-discovery/src/agents_rest.rs` | agents REST 探测 |
 | `crates/ev-discovery/src/modelsdev.rs` | models.dev 参考数据 |
-| `adapters/opencode/dropin/evolveroute.ts` | opencode 插件（已不必要：opencode 原生 x-opencode-session） |
+| `adapters/opencode/dropin/evo-router.ts` | opencode 插件（已不必要：opencode 原生 x-opencode-session） |
 </content>

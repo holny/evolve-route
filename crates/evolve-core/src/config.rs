@@ -1,6 +1,6 @@
 use crate::types::*;
 use crate::types::infer_currency as mr_infer_currency;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -169,11 +169,20 @@ pub struct TelemetryCfg {
     pub session_header: String,
     /// agent 提取的自定义请求头（优先级最高）
     pub agent_header: String,
+    /// A3 响应摘要落盘（opt-in）：非流式成功响应的前 N 字符写入事件
+    /// `resp_digest`，供 `backtest --judge-samples` 的 LLM-as-a-Judge 评分。
+    /// 仅 decision.redact=false 时生效（redact 模式正文永不落盘）；默认关闭。
+    #[serde(default)]
+    pub response_digest: bool,
 }
 
 impl Default for TelemetryCfg {
     fn default() -> Self {
-        Self { session_header: "x-ev-session".into(), agent_header: "x-ev-client".into() }
+        Self {
+            session_header: "x-ev-session".into(),
+            agent_header: "x-ev-client".into(),
+            response_digest: false,
+        }
     }
 }
 
@@ -189,7 +198,38 @@ pub struct FileConfig {
     pub discovery: DiscoveryCfg,
     pub benchmarks: BenchmarksCfg,
     pub telemetry: TelemetryCfg,
+    /// ⑦ 飞轮策略参数（backtest 裁决后写入；缺省 = 编译默认，删除段即回滚）
+    #[serde(default)]
+    pub strategy: StrategyCfg,
     pub models: Vec<ModelEntry>,
+}
+
+/// ⑦ 飞轮策略参数的配置形态。Default = 编译默认（v2）。
+/// 与 evolve-memory::strategy::StrategyParams 字段一一对应——
+/// config 层不能反向依赖 memory 层，故此处独立定义。
+/// review#10 修复：字段级 serde default——只写部分字段不再整份解析失败
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyCfg {
+    #[serde(default)]
+    pub version: u32,
+    #[serde(default = "strategy_default_ok_weight")]
+    pub ok_weight: f32,
+    #[serde(default = "strategy_default_bias_gain")]
+    pub bias_gain: f32,
+}
+
+fn strategy_default_ok_weight() -> f32 {
+    0.7
+}
+
+fn strategy_default_bias_gain() -> f32 {
+    0.6
+}
+
+impl Default for StrategyCfg {
+    fn default() -> Self {
+        Self { version: 2, ok_weight: 0.7, bias_gain: 0.6 }
+    }
 }
 
 impl FileConfig {
@@ -273,9 +313,13 @@ impl FileConfig {
 }
 
 pub fn default_config_paths() -> Vec<std::path::PathBuf> {
-    let mut paths = vec![Path::new("evo-router.toml").to_path_buf()];
+    let mut paths = vec![Path::new("evolve.toml").to_path_buf()];
     if let Ok(home) = std::env::var("HOME") {
-        paths.push(Path::new(&home).join(".evolve").join("evo-router.toml"));
+        // review#7 修复：改名前用户配置在 ~/.evolve/evo-router.toml——
+        // 候选链保留旧名（新名优先），升级用户配置不静默丢失
+        let evolve_dir = Path::new(&home).join(".evolve");
+        paths.push(evolve_dir.join("evolve.toml"));
+        paths.push(evolve_dir.join("evo-router.toml"));
     }
     paths
 }

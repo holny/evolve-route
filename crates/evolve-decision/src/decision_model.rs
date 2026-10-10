@@ -24,9 +24,9 @@ pub struct GenericHttpModel {
 
 #[async_trait]
 impl Judge for GenericHttpModel {
-    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals) -> JudgmentSet {
+    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals, _candidates_hint: &str) -> JudgmentSet {
         // 兜底值：任何解析失败都落到 heuristic 同构结果，永不阻塞
-        let fallback = evolve_core::heuristic::HeuristicJudge.judge(features, digest);
+        let fallback = evolve_core::heuristic::HeuristicJudge.judge(features, digest, _candidates_hint);
         let payload = serde_json::json!({
             "state": {
                 "task": {

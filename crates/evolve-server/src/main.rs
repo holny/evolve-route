@@ -35,6 +35,24 @@ enum Cmd {
         #[arg(long)]
         config: Option<PathBuf>,
     },
+    /// ⑦ Replay historical traffic to A/B test flywheel strategy params
+    Backtest {
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Candidate strategy B: success-rate signal weight (latency takes the rest)
+        #[arg(long, default_value_t = 0.7)]
+        ok_weight_b: f32,
+        /// Candidate strategy B: bias gain applied to (reward − cross-model median)
+        #[arg(long, default_value_t = 0.6)]
+        gain_b: f32,
+        /// Replay the most recent N routing events
+        #[arg(long, default_value_t = 5000)]
+        limit: usize,
+        /// A3b LLM-as-a-Judge: point-wise score up to N events carrying
+        /// resp_digest (requires telemetry.response_digest=true upstream)
+        #[arg(long, default_value_t = 0)]
+        judge_samples: usize,
+    },
     /// Manage the LaunchAgent service (start/stop/restart/status/install)
     Service {
         #[command(subcommand)]
@@ -83,6 +101,9 @@ fn main() -> anyhow::Result<()> {
         Cmd::Doctor { config } => doctor(config),
         Cmd::MockUpstream { port } => mock_upstream(port),
         Cmd::Stats { config } => stats(config),
+        Cmd::Backtest { config, ok_weight_b, gain_b, limit, judge_samples } => {
+            backtest(config, ok_weight_b, gain_b, limit, judge_samples)
+        }
         Cmd::Service { action, port } => {
             let p = service::resolve_port(port);
             match action {
@@ -96,8 +117,51 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-fn stats(config_path: Option<PathBuf>) -> anyhow::Result<()> {
-    let (cfg, path) = config::load_config(config_path.as_deref())?;
+/// ⑦ 策略回放验证：在 events.jsonl 上 A/B 对比当前参数与候选参数，
+/// 报告裁决（采纳/保持）。采纳动作 = 编辑 evolve.toml [strategy] 段；
+/// 回滚 = 删除该段（回到编译默认）。
+fn backtest(
+    config_path: Option<PathBuf>,
+    ok_weight_b: f32,
+    gain_b: f32,
+    limit: usize,
+    judge_samples: usize,
+) -> anyhow::Result<()> {
+    let (cfg, _) = config::load_config(config_path.as_deref())?;
+    let expanded = evolve_memory::events::shellexpand_home_pub(&cfg.data.dir);
+    let events = expanded.join("events.jsonl");
+    // review#3 修复：A 组 = 用户当前生效参数（config [strategy] 段，缺省回落
+    // 编译默认）——否则用户采纳过自定义参数后，backtest 会拿编译默认当
+    // "当前"，裁决结论失实
+    let a = evolve_memory::strategy::StrategyParams {
+        version: cfg.strategy.version,
+        ok_weight: cfg.strategy.ok_weight,
+        bias_gain: cfg.strategy.bias_gain,
+    };
+    let b = evolve_memory::strategy::StrategyParams {
+        version: u32::MAX, // 候选未定版
+        ok_weight: ok_weight_b,
+        bias_gain: gain_b,
+    };
+
+    // A3b：judge_samples > 0 时构建 LLM-as-a-Judge asker（System One Noul——
+    // "该响应是否充分回答了查询"）。无 DECISION_MODEL_API_KEY（或旧名 TYPESAFE_API_KEY）或 samples=0 时跳过。
+    let report = if judge_samples > 0 {
+        let backend = evolve_decision::decision_backend::DecisionModelBackend::from_env()
+            .ok_or_else(|| anyhow::anyhow!("--judge-samples 需要 DECISION_MODEL_API_KEY（兼容旧名 TYPESAFE_API_KEY）"))?;
+        let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+        let asker = move |query: &str, response: &str| -> Option<f32> {
+            runtime.block_on(backend.judge_response_quality(query, response))
+        };
+        evolve_memory::backtest::replay_with_judge(&events, &a, &b, limit, &asker, judge_samples)?
+    } else {
+        evolve_memory::backtest::replay(&events, &a, &b, limit)?
+    };
+    evolve_memory::backtest::print_report(&report);
+    Ok(())
+}
+
+fn stats(config_path: Option<PathBuf>) -> anyhow::Result<()> {    let (cfg, path) = config::load_config(config_path.as_deref())?;
     println!("config: {}", path.as_deref().map(|p| p.display().to_string()).unwrap_or("<embedded default>".into()));
     let flywheel = evolve_memory::Flywheel::open(&cfg.data.dir);
     let telemetry = flywheel.telemetry_snapshot();

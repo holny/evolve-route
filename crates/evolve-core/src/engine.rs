@@ -205,7 +205,41 @@ impl Engine {
         }
 
         let judge_started = now_epoch_ms();
-        let mut j = self.judge.judge(&input.features, input.digest);
+        // A2 Speculative Fan-Out：判定与路由推荐合并为一次 Jev 往返——
+        // judge 前按静态画像（tiers 均值 + plan 标记）粗排 top-12，占位符化后
+        // 塞进 state.candidates；Jev 在回答 8 维判定的同时直接举荐路由候选。
+        // 静态序与评分序高度重合（动态因子只微调），推荐限定在粗排头部已足够。
+        let catalog_models = self.catalog.read().map(|c| c.models.clone()).unwrap_or_default();
+        let (candidates_hint, hint_map): (String, std::collections::HashMap<String, String>) = {
+            let mut ranked: Vec<&ModelRecord> = catalog_models.iter().collect();
+            ranked.sort_by(|a, b| {
+                let sa = (a.tiers.coding + a.tiers.reasoning + a.tiers.agentic) / 3.0
+                    + if a.plan { 0.1 } else { 0.0 };
+                let sb = (b.tiers.coding + b.tiers.reasoning + b.tiers.agentic) / 3.0
+                    + if b.plan { 0.1 } else { 0.0 };
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let mut map: std::collections::HashMap<String, String> = Default::default();
+            let items: Vec<serde_json::Value> = ranked
+                .iter()
+                .take(12)
+                .enumerate()
+                .map(|(i, m)| {
+                    let ph = format!("candidate_{}", i + 1);
+                    map.insert(ph.clone(), m.id.clone());
+                    serde_json::json!({
+                        "id": ph,
+                        "tier_coding": m.tiers.coding,
+                        "tier_reasoning": m.tiers.reasoning,
+                        "tier_agentic": m.tiers.agentic,
+                        "context_window": m.context_window.unwrap_or(0),
+                        "plan": crate::plans::plan_key_for(&m.base_url).unwrap_or("api"),
+                    })
+                })
+                .collect();
+            (serde_json::to_string(&items).unwrap_or_default(), map)
+        };
+        let mut j = self.judge.judge(&input.features, input.digest, &candidates_hint);
         let judge_ms = now_epoch_ms().saturating_sub(judge_started);
         let relevance = j.session_relevance;
         let difficulty_eff = (j.difficulty + relevance * (j.session_depth * 0.5).max(0.0)).clamp(0.0, 3.0);
@@ -222,7 +256,6 @@ impl Engine {
         let mut filtered: Vec<FilteredOut> = Vec::new();
         let mut candidates: Vec<ModelRecord> = Vec::new();
         let now = now_epoch_ms();
-        let catalog_models = self.catalog.read().map(|c| c.models.clone()).unwrap_or_default();
         for m in &catalog_models {
             let calib = input
                 .telemetry
@@ -385,7 +418,24 @@ impl Engine {
         }
         // 难度-费用联动（用户裁决）：简单任务成本权重加倍省钱优先，
         // 复杂任务质量权重主导；调整后的权重随事件透出（链路视图②公式）
-        let eff_weights = scoring::difficulty_weights(&weights, difficulty_eff);
+        let mut eff_weights = scoring::difficulty_weights(&weights, difficulty_eff);
+        // ④ 配额感知权重（BaRP Eq.1）：候选中配额紧张（剩余 < est×8 会话余量）
+        // 的比例 → 成本权重平滑上调；无配额数据则不干预
+        {
+            let mut tight_n = 0usize;
+            let mut known = 0usize;
+            for m in &eligible {
+                if let Some(remaining) = input.quota.get(&m.id) {
+                    known += 1;
+                    if (*remaining as f64) < (est as f64) * 8.0 {
+                        tight_n += 1;
+                    }
+                }
+            }
+            if known > 0 {
+                eff_weights = scoring::quota_aware_weights(&eff_weights, tight_n as f32 / known as f32);
+            }
+        }
         let eff_policy = PolicyWeights {
             quality: eff_weights[0],
             speed: eff_weights[1],
@@ -416,22 +466,56 @@ impl Engine {
         }
         scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Jev cookbook intent-routing：接通 route_advisor 管道——
-        // 决策模型看到候选全画像后直接推荐模型（此前 advisor 从未被调用）
+        // A2 Fan-Out：优先消费 judge 合并返回的推荐（占位符 candidate_N →
+        // hint_map 还原真实 id）；仅当 judge 未产出（heuristic 兜底 / API 失败 /
+        // 无 hint）时，才退回独立的 route_advisor 调用（老路径，两次往返）。
+        if let Some(rec_raw) = j.route_recommendation.clone() {
+            let rec_key = rec_raw.trim().to_lowercase();
+            if rec_key.starts_with("candidate_") {
+                match hint_map.get(&rec_key) {
+                    Some(mid) => {
+                        j.route_recommendation = Some(mid.clone());
+                    }
+                    None => {
+                        j.route_recommendation = None;
+                        j.route_recommendation_confidence = 0.0;
+                    }
+                }
+            }
+            // 非占位符（历史协议直接给 id）：保持原值走下方加分匹配
+        }
+        if j.route_recommendation.is_none() {
         if let Some(advisor) = &self.route_advisor {
             let task_summary: String = input.digest.last_user_text.chars().take(600).collect();
-            let candidates_json = serde_json::to_string(&candidates.iter().map(|c| serde_json::json!({
-                "id": c.id,
-                "tier_coding": c.tiers.coding,
-                "tier_reasoning": c.tiers.reasoning,
-                "tier_agentic": c.tiers.agentic,
-                "context_window": c.context_window.unwrap_or(0),
-                "plan": crate::plans::plan_key_for(&c.base_url).unwrap_or("api"),
-            })).collect::<Vec<_>>()).unwrap_or_default();
+            // 只送 top-8 候选，且 id 用本地占位符 candidate_N：
+            // ①上游边缘 WAF 对真实 model id 的 token 模式间歇触发 451 地域拦截
+            //  （judge 不带 candidates 的小 payload 不受影响）；
+            // ②真实模型名不出本地，advisor 只见匿名画像（redact 精神）
+            let top8: Vec<_> = scores.iter().take(8).collect();
+            let mut id_map: std::collections::HashMap<String, String> = Default::default();
+            let candidates_json = serde_json::to_string(&top8.iter().enumerate().map(|(i, s)| {
+                let placeholder = format!("candidate_{}", i + 1);
+                id_map.insert(placeholder.clone(), s.model_id.clone());
+                let c = candidates.iter().find(|c| c.id == s.model_id);
+                serde_json::json!({
+                    "id": placeholder,
+                    "tier_coding": c.map(|c| c.tiers.coding).unwrap_or(0.0),
+                    "tier_reasoning": c.map(|c| c.tiers.reasoning).unwrap_or(0.0),
+                    "tier_agentic": c.map(|c| c.tiers.agentic).unwrap_or(0.0),
+                    "context_window": c.and_then(|c| c.context_window).unwrap_or(0),
+                    "plan": c.map(|c| crate::plans::plan_key_for(&c.base_url).unwrap_or("api")).unwrap_or("api"),
+                })
+            }).collect::<Vec<_>>()).unwrap_or_default();
             if let Some((rec_id, rec_conf)) = advisor.recommend(&task_summary, &candidates_json, "") {
-                j.route_recommendation = Some(rec_id);
-                j.route_recommendation_confidence = rec_conf.clamp(0.0, 1.0);
+                let rec_key = rec_id.trim().to_lowercase();
+                if let Some(mid) = id_map.get(&rec_key) {
+                    j.route_recommendation = Some(mid.clone());
+                    j.route_recommendation_confidence = rec_conf.clamp(0.0, 1.0);
+                } else {
+                    tracing::warn!(choice = %rec_id, "route_advisor: choice not in candidate map");
+                }
             }
+        }
         }
 
         // Jev cookbook intent-routing 加分：route_recommendation 高置信度时
@@ -459,11 +543,11 @@ impl Engine {
                 }
         }
 
-        // Thompson Sampling 探索（EvoRoute paper §4.3）：
-        // 每个候选的 score 加上不确定性比例的噪声（∝ 1/√samples），取 max。
-        // 样本少→噪声大→自动多探索；样本多→噪声小→自动收敛。
-        // 比 ε-greedy 聪明：不确定性本身就是探索信号，不需要固定探索率。
-        // 仍保留 confidence 门控和 hard/stakes 保护。
+        // Thompson Sampling（BayesianRouter Eqs.4–6）：真 Beta 后验采样。
+        // 先验：Jev 质量因子 q 作先验均值 μ₀（伪计数 ν₀=8）——评分即信念；
+        // 似然：遥测近窗成功/失败计数。样本少→后验宽→采样偏移大→自动多探索；
+        // 样本多→后验窄→自动收敛。采样值相对后验均值的偏移做乘性扰动
+        // （幅度上限 = explore_ratio），不推翻公式序，仍保留 confidence/stakes 门控。
         let mut explored = false;
         {
             let should_explore = scores.len() > 1
@@ -475,23 +559,57 @@ impl Engine {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.subsec_nanos())
                     .unwrap_or(0);
-                // 用 nanos 做轻量伪随机（避免引入 rand crate）
-                let mut seed = nanos as u64 ^ 0x5EED;
+                // 用 nanos + 进程计数器做轻量伪随机（避免引入 rand crate）。
+                // 纯 nanos 做种子时，连续决策的高位几乎相同，LCG 首轮输出
+                // 高度相关（Box-Muller 只吃前几个随机数）→ 采样退化
+                static EXPLORE_SEQ: std::sync::atomic::AtomicU64 =
+                    std::sync::atomic::AtomicU64::new(0);
+                let mut seed = (nanos as u64)
+                    ^ ((std::process::id() as u64) << 32)
+                    ^ EXPLORE_SEQ
+                        .fetch_add(0x9E3779B97F4A7C15, std::sync::atomic::Ordering::Relaxed)
+                    ^ 0x5EED;
                 let mut next_rand = || {
                     seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
                     ((seed >> 33) as f64) / (u32::MAX as f64)
                 };
-                // Thompson-simplified：score + noise ∝ 1/√(1+samples)
-                // 噪声幅度 = explore_ratio × max_score × uncertainty
-                let max_score = scores[0].score.max(0.01);
-                let noise_scale = self.policy.explore_ratio * max_score;
+                let nu0 = 8.0f32;
+                // 先验均值 μ₀ 用 q 的候选集内相对位次（min-max → [0.15,0.85]）：
+                // 绝对 q 普遍贴顶（0.95+，clamp 后全变 0.98），所有后验挤在 1 附近、
+                // draw≡1、探索系统性死亡；相对位次才承载"Jev 更信谁"，
+                // 两端保底避免过度自信。span≈0（并列）时取中性 0.5。
+                let q_min = scores.iter().map(|s| s.q).fold(f32::MAX, f32::min);
+                let q_max = scores.iter().map(|s| s.q).fold(f32::MIN, f32::max);
+                let q_span = (q_max - q_min).max(1e-3);
                 let mut best_idx = 0usize;
                 let mut best_score = f32::MIN;
                 for (i, s) in scores.iter().enumerate() {
-                    let samples = input.telemetry.get(&s.model_id)
-                        .and_then(|t| t.samples).unwrap_or(0);
-                    let uncertainty = 1.0 / (1.0 + samples as f32).sqrt();
-                    let noisy = s.score + (next_rand() as f32 - 0.5) * 2.0 * noise_scale * uncertainty;
+                    let (ok_n, fail_n) = input
+                        .telemetry
+                        .get(&s.model_id)
+                        .and_then(|t| t.recent.as_ref())
+                        .map(|r| {
+                            (
+                                r.iter().filter(|x| x.ok).count() as f32,
+                                r.iter().filter(|x| !x.ok).count() as f32,
+                            )
+                        })
+                        .unwrap_or((0.0, 0.0));
+                    let rel = if q_max - q_min < 1e-3 {
+                        0.5
+                    } else {
+                        ((s.q - q_min) / q_span).clamp(0.0, 1.0)
+                    };
+                    let mu0 = 0.15 + 0.70 * rel;
+                    let alpha = mu0 * nu0 + ok_n;
+                    let beta = (1.0 - mu0) * nu0 + fail_n;
+                    let draw = sample_beta(alpha, beta, &mut next_rand);
+                    // 绝对偏移（draw − 后验均值）：宽后验（样本少）偏移大自然多探索，
+                    // 窄后验（样本多）偏移趋零自动收敛——Thompson 收敛性所在，
+                    // 不可做 z 标准化（会抹掉该性质）。×3 放大使 explore_ratio=1
+                    // 时足以翻越候选间公式分差；生产默认 0.1 → ±3% 温和扰动。
+                    let post_mean = alpha / (alpha + beta);
+                    let noisy = s.score * (1.0 + self.policy.explore_ratio * 3.0 * (draw - post_mean));
                     if noisy > best_score {
                         best_score = noisy;
                         best_idx = i;
@@ -965,9 +1083,71 @@ mod tests {
         assert!(dec.filtered.iter().any(|f| f.model == "mini" && f.cause.contains("vision")));
         assert!(dec.filtered.iter().any(|f| f.model == "frontier" && f.cause.contains("vision")));
     }
+
+    #[test]
+    fn sample_beta_mean_converges_to_posterior_mean() {
+        let mut seed = 42u64;
+        let mut rand = move || {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((seed >> 33) as f64) / (u32::MAX as f64)
+        };
+        // Beta(2.6, 7.4) 期望 0.26：2000 样本均值应落在 ±0.03
+        let n = 2000;
+        let mean = (0..n).map(|_| sample_beta(2.6, 7.4, &mut rand)).sum::<f32>() / n as f32;
+        assert!((mean - 0.26).abs() < 0.03, "beta mean {mean} vs expected 0.26");
+        // 不确定性驱动探索：样本少（后验宽）采样跨度 > 样本多（后验窄）
+        let (mut wmin, mut wmax) = (1.0f32, 0.0f32);
+        for _ in 0..500 {
+            let d = sample_beta(1.0, 1.0, &mut rand);
+            wmin = wmin.min(d);
+            wmax = wmax.max(d);
+        }
+        let (mut nmin, mut nmax) = (1.0f32, 0.0f32);
+        for _ in 0..500 {
+            let d = sample_beta(80.0, 20.0, &mut rand);
+            nmin = nmin.min(d);
+            nmax = nmax.max(d);
+        }
+        assert!(
+            wmax - wmin > nmax - nmin,
+            "wide posterior must sample with more spread: {wmin}..{wmax} vs {nmin}..{nmax}"
+        );
+    }
 }
 
 #[cfg(test)]
 pub(crate) fn det_policy() -> crate::config::PolicyCfg {
     crate::config::PolicyCfg { explore_ratio: 0.0, ..Default::default() }
+}
+
+/// Beta(α,β) 采样（两 Gamma 之比）。无 rand crate——复用调用方注入的 LCG。
+fn sample_beta(alpha: f32, beta: f32, rand: &mut impl FnMut() -> f64) -> f32 {
+    let x = sample_gamma(alpha.max(1e-3), rand);
+    let y = sample_gamma(beta.max(1e-3), rand);
+    x / (x + y)
+}
+
+/// Marsaglia-Tsang Gamma(shape) 采样；shape < 1 用 boost 变换 G(x)=G(x+1)·U^(1/x)。
+fn sample_gamma(shape: f32, rand: &mut impl FnMut() -> f64) -> f32 {
+    if shape < 1.0 {
+        let u = rand() as f32;
+        return sample_gamma(shape + 1.0, rand) * u.powf(1.0 / shape);
+    }
+    let d = shape - 1.0 / 3.0;
+    let c = 1.0 / (9.0 * d).sqrt();
+    loop {
+        let u1 = (rand() as f32).max(1e-7);
+        let u2 = rand() as f32;
+        let z = (-2.0 * u1.ln()).sqrt() * (std::f32::consts::TAU * u2).cos();
+        let v = (1.0 + c * z).powi(3);
+        if v <= 0.0 {
+            continue;
+        }
+        let u = rand() as f32;
+        if u < 1.0 - 0.0331 * z.powi(4)
+            || u.ln() < 0.5 * z * z + d - d * v + d * v.ln()
+        {
+            return d * v;
+        }
+    }
 }

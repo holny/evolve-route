@@ -50,6 +50,37 @@ pub async fn chat_completions(
     let tools_sig = tools_signature(&parsed);
     let digest = build_digest(&extracted, features.turn_count);
 
+    // A3 completion cache（FrugalGPT Strategy 2）：逻辑内容相同（去掉 model/
+    // stream 字段后指纹一致）的非流式请求直接返回缓存响应——重复查询零成本
+    // 零延迟。本地内存、TTL/容量受限、x-ev-no-cache 头可绕过。
+    let is_stream_early = parsed.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
+    let cache_key = if is_stream_early
+        || headers.get("x-ev-no-cache").is_some()
+        || std::env::var("EVO_CACHE").map(|v| v == "0").unwrap_or(false)
+    {
+        None
+    } else {
+        cache_fingerprint(&parsed)
+    };
+    if let Some(key) = &cache_key
+        && let Some((model_id, content_type, bytes)) = st.ccache.lock().ok().and_then(|mut c| c.get(*key))
+    {
+        tracing::info!(model = %model_id, "completion cache hit");
+        st.events.record(json!({
+            "kind": "chat", "chosen": model_id, "upstream_model": model_id,
+            "cache": true, "status": 200, "session": session_key,
+            "agent": agent_hdr, "total_ms": started.elapsed().as_millis() as u64,
+        }));
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", content_type)
+            .header("x-ev-cache", "hit")
+            .header("x-ev-model", model_id)
+            .header("x-ev-reason", "completion cache hit (identical logical request)")
+            .body(axum::body::Body::from(bytes))
+            .unwrap();
+    }
+
     let decision_started = std::time::Instant::now();
     let mut decision = match &target {
         Target::Auto(alias_policy) => {
@@ -185,6 +216,8 @@ pub async fn chat_completions(
 
     let mut skipped: Vec<String> = Vec::new();
     let mut last_error: Option<(StatusCode, Bytes)> = None;
+    // ⑤ 质量级联兜底：成功但质量差的响应暂存，链耗尽时返回（降质好过硬报错）
+    let mut quality_fallback: Option<(StatusCode, axum::http::HeaderMap, Bytes)> = None;
     // context overflow on one candidate means the session needs MORE window:
     // later candidates smaller than the est are pointless, skip them
     let mut min_context_needed: Option<u64> = None;
@@ -199,7 +232,7 @@ pub async fn chat_completions(
     // 自递归防护（审查 M-6）：候选 base_url 指向自身监听地址时出局——
     // 不依赖用户给网关条目起什么名字（命名约定不可靠）
     let self_addr = format!("{}:{}", st.config.server.host, st.config.server.port);
-    for (cand_idx, cand) in attempts.iter().enumerate() {
+    'cands: for (cand_idx, cand) in attempts.iter().enumerate() {
         let Some(record) = st.catalog_get(cand) else { continue };
         if record.base_url.contains(&self_addr) || record.base_url.contains("127.0.0.1:8787") {
             skipped.push(format!("{cand}(self-loop: points back at this gateway)"));
@@ -333,7 +366,7 @@ pub async fn chat_completions(
                                 n
                             }
                         })
-                });;
+                });
             let err_body = resp.bytes().await.unwrap_or_default();
             let snippet =
                 String::from_utf8_lossy(&err_body.slice(..err_body.len().min(MAX_ERROR_BODY))).into_owned();
@@ -424,7 +457,7 @@ pub async fn chat_completions(
             usage: None,
             est_cost_usd: None,
             translated: cross.then(|| "anthropic->openai".to_string()),
-            agent: Some(agent_hdr),
+            agent: Some(agent_hdr.clone()),
             plan_key: evolve_core::plans::plan_key_for(&record.base_url).map(|k| k.to_string()),
             preprocess_ms: Some(preprocess_ms),
             decision_ms: Some(decision_ms),
@@ -441,6 +474,13 @@ pub async fn chat_completions(
                     "difficulty_eff": decision.difficulty_eff,
                     "filtered": decision.filtered,
                     "funnel": decision.funnel,
+                    // ⑥ regret proxy（ACRouter regret-style metrics）：
+                    // 公式最优分 − 实际选择分 = 本次路由的代价（0 = 无悔）
+                    "regret": decision.scored.first().and_then(|top| {
+                        decision.scored.iter()
+                            .find(|s| s.model_id == decision.chosen)
+                            .map(|c| (top.score - c.score) as f64)
+                    }).unwrap_or(0.0),
                 });
                 if cross {
                     ex["translated"] = json!("anthropic->openai");
@@ -505,6 +545,11 @@ pub async fn chat_completions(
             return out.body(axum::body::Body::from_stream(stream)).unwrap();
         }
 
+        let resp_ct = resp
+            .headers()
+            .get("content-type")
+            .cloned()
+            .unwrap_or_else(|| "application/json".parse().unwrap());
         let bytes = resp.bytes().await.unwrap_or_default();
         let mut response_value: Option<Value> = serde_json::from_slice::<Value>(&bytes).ok();
         if cross {
@@ -541,10 +586,71 @@ pub async fn chat_completions(
                         Some((pt / 1e6) * cost.input as f64 + (ct / 1e6) * cost.output as f64);
                 }
                 let q = crate::quality::analyze_response(&parsed, v);
+                // A3a 响应摘要落盘（opt-in）：backtest 的 LLM-as-a-Judge 需要
+                // 响应正文评分。redact=true 模式正文永不落盘（隐私红线）；
+                // 截取前 400 字符，足够 judge 判断"是否充分回答"
+                if st.config.telemetry.response_digest
+                    && !st.config.decision.redact
+                    && status.is_success()
+                {
+                    let digest_text: String = v
+                        .get("choices")
+                        .and_then(|c| c.get(0))
+                        .and_then(|c| c.get("message"))
+                        .and_then(|m| m.get("content"))
+                        .and_then(|c| c.as_str())
+                        .map(|s| s.chars().take(400).collect())
+                        .unwrap_or_default();
+                    if !digest_text.is_empty() && let Some(ex) = t.extra.as_mut() {
+                        ex["resp_digest"] = json!(digest_text);
+                    }
+                }
                 if let Some(ex) = t.extra.as_mut() {
                     ex["quality"] = serde_json::to_value(&q).unwrap_or_default();
                 } else {
                     t.extra = Some(json!({"quality": q}));
+                }
+                // ⑤ 质量级联（FrugalGPT/ACRouter）：响应成功但质量差——退化输出/
+                // 空响应/工具调用损坏——留痕后升级到链上下一个候选。
+                // A2 链位置异质严格度（FrugalGPT τ_i 思想：链首阈值 0.96 严、
+                // 链中 0.37 宽）：链首宁枉勿纵，全部质量信号触发级联；链中已
+                // 降级一次，只对最恶劣信号（退化/空响应）升级，工具调用损坏
+                // 容忍——避免无谓耗尽链上名额。
+                // 流式不级联（内容已发出无法重试）；truncated 不触发（max_tokens
+                // 问题换模型无益且双倍计费）；refusal 不触发（可能正当拒绝）。
+                // 链耗尽则回退返回此响应（降质好过硬报错）。
+                let quality_poor = if cand_idx == 0 {
+                    q.degenerate
+                        || q.empty_response
+                        || (q.tool_calls_total > 0 && !q.syntactic_ok())
+                } else {
+                    q.degenerate || q.empty_response
+                };
+                if quality_poor && cand_idx + 1 < attempts.len() {
+                    crate::stream::finalize_event(&st.events, &st.flywheel.clone(), &st.quota, &st.bus, &t);
+                    tracing::warn!(model = %cand, flags = ?q.flags, "quality cascade: escalating to next candidate");
+                    quality_fallback = Some((map_status(status), h.clone(), bytes.clone()));
+                    skipped.push(format!("{cand}(poor quality: {})", q.flags.join(",")));
+                    continue 'cands;
+                }
+                // A3：高质量响应写入缓存（供后续相同逻辑请求命中）。
+                // review#1 修复：cross（OpenAI 入口 → Anthropic 上游）时必须缓存
+                // 翻译后的 openai 形状——否则命中会把 anthropic JSON 返给
+                // OpenAI 客户端（跨协议投毒）。
+                if !quality_poor
+                    && status.is_success()
+                    && let Some(key) = cache_key
+                    && let Ok(mut c) = st.ccache.lock()
+                {
+                    let cache_body: Vec<u8> = if cross {
+                        response_value
+                            .as_ref()
+                            .and_then(|v| serde_json::to_vec(v).ok())
+                            .unwrap_or_else(|| bytes.to_vec())
+                    } else {
+                        bytes.to_vec()
+                    };
+                    c.put(key, cand.clone(), "application/json".to_string(), cache_body.into());
                 }
                 let ids: Vec<String> = v
                     .get("choices")
@@ -580,6 +686,16 @@ pub async fn chat_completions(
 
     // every candidate failed: explicit selections get the raw upstream
     // error back; auto routing gets a summary of what was skipped and why
+    // 链耗尽但持有质量级联兜底：返回它（带标记头），不发全灭事件
+    if let Some((status, headers, body)) = quality_fallback {
+        let mut b = Response::builder()
+            .status(status)
+            .header("x-ev-quality-cascade", "1");
+        for (k, v) in headers.iter() {
+            b = b.header(k, v);
+        }
+        return b.body(axum::body::Body::from(body)).unwrap();
+    }
     // 全灭也落事件（含 x-ev-skipped 明细），否则面板回看不到这次失败
     {
         let status = last_error.as_ref().map(|(s, _)| s.as_u16()).unwrap_or(502);
@@ -823,4 +939,61 @@ fn json_error(status: StatusCode, msg: &str) -> Response {
         })),
     )
         .into_response()
+}
+
+/// A3 completion cache（FrugalGPT Strategy 2 / completion cache）：
+/// 逻辑请求指纹 → 响应的本地内存缓存。只缓存非流式成功响应；
+/// TTL/容量受限（env 可调：EVO_CACHE_TTL_SECS / EVO_CACHE_MAX，EVO_CACHE=0 停用）。
+pub struct CompletionCache {
+    map: std::collections::HashMap<[u8; 32], (std::time::Instant, String, String, Bytes)>,
+    order: std::collections::VecDeque<[u8; 32]>,
+    max: usize,
+    ttl: std::time::Duration,
+}
+
+impl CompletionCache {
+    pub fn new() -> Self {
+        let ttl = std::time::Duration::from_secs(
+            std::env::var("EVO_CACHE_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(3600),
+        );
+        let max = std::env::var("EVO_CACHE_MAX").ok().and_then(|v| v.parse().ok()).unwrap_or(256);
+        Self { map: std::collections::HashMap::new(), order: std::collections::VecDeque::new(), max, ttl }
+    }
+
+    pub fn get(&mut self, key: [u8; 32]) -> Option<(String, String, Bytes)> {
+        let (at, model, ct, body) = self.map.get(&key)?;
+        if at.elapsed() > self.ttl {
+            self.map.remove(&key);
+            return None;
+        }
+        Some((model.clone(), ct.clone(), body.clone()))
+    }
+
+    pub fn put(&mut self, key: [u8; 32], model: String, content_type: String, body: Bytes) {
+        if body.len() > 512 * 1024 {
+            return; // 超大响应不缓存（内存保护）
+        }
+        if !self.order.contains(&key) {
+            self.order.push_back(key);
+        }
+        self.map.insert(key, (std::time::Instant::now(), model, content_type, body));
+        while self.order.len() > self.max {
+            if let Some(old) = self.order.pop_front() {
+                self.map.remove(&old);
+            }
+        }
+    }
+}
+
+/// 逻辑请求指纹：去掉 model（路由可换）与 stream 后的整体 JSON 哈希。
+/// 精确匹配（不引入 embedding 依赖）；messages/tools/参数完全一致才命中。
+fn cache_fingerprint(parsed: &Value) -> Option<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    let mut logic = parsed.clone();
+    if let Some(obj) = logic.as_object_mut() {
+        obj.remove("model");
+        obj.remove("stream");
+    }
+    let canonical = serde_json::to_vec(&logic).ok()?;
+    Some(Sha256::digest(&canonical).into())
 }

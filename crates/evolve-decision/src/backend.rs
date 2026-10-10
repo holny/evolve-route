@@ -8,8 +8,8 @@ pub enum DecisionBackend {
 pub struct HeuristicBackend;
 
 impl Judge for HeuristicBackend {
-    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals) -> JudgmentSet {
-        evolve_core::heuristic::HeuristicJudge.judge(features, digest)
+    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals, _candidates_hint: &str) -> JudgmentSet {
+        evolve_core::heuristic::HeuristicJudge.judge(features, digest, _candidates_hint)
     }
 }
 
@@ -22,23 +22,23 @@ pub struct HybridBackend {
 }
 
 impl Judge for HybridBackend {
-    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals) -> JudgmentSet {
-        let j = self.primary.judge(features, digest);
-        let h = self.secondary.judge(features, digest);
+    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals, _candidates_hint: &str) -> JudgmentSet {
+        let j = self.primary.judge(features, digest, _candidates_hint);
+        let h = self.secondary.judge(features, digest, _candidates_hint);
         evolve_core::types::fuse_judgments(&j, &h)
     }
 }
 
 impl DecisionBackend {
     /// `auto`: upgrade to TypeSafe Jev when TYPESAFE_API_KEY is present,
-    /// otherwise heuristic. Explicit "heuristic"/"typesafe" force a choice;
+    /// otherwise heuristic. Explicit "heuristic"/"decision_model" force a choice;
     /// any backend failure degrades to heuristic inside the judge itself.
     pub fn build(kind: &str) -> Box<dyn Judge> {
         match kind {
             "heuristic" => Box::new(HeuristicBackend),
-            "typesafe" => match crate::typesafe::TypesafeBackend::from_env() {
+            "decision_model" | "typesafe" => match crate::decision_backend::DecisionModelBackend::from_env() {
                 Some(b) => {
-                    tracing::info!("decision backend: typesafe jev");
+                    tracing::info!("decision backend: decision model (hybrid + heuristic rescue)");
                     Box::new(b)
                 }
                 None => {
@@ -53,9 +53,9 @@ impl DecisionBackend {
                 }
                 None => Box::new(HeuristicBackend),
             },
-            "auto" => match crate::typesafe::TypesafeBackend::from_env() {
+            "auto" => match crate::decision_backend::DecisionModelBackend::from_env() {
                 Some(b) => {
-                    tracing::info!("decision backend: hybrid (jev primary + heuristic rescue)");
+                    tracing::info!("decision backend: hybrid (decision model primary + heuristic rescue)");
                     Box::new(HybridBackend { primary: Box::new(b), secondary: evolve_core::heuristic::HeuristicJudge })
                 }
                 None => Box::new(HeuristicBackend),

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}]});"></script>
+<style>
+  body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #fafafa; color: #1a1a2e;
+         width: 940px; padding: 28px 34px; margin: 0; }
+  h1 { font-size: 21px; margin: 0 0 4px; color: #0f3460; }
+  .sub { font-size: 12.5px; color: #666; margin-bottom: 18px; }
+  .card { background: #fff; border: 1px solid #e4e7ec; border-radius: 10px; padding: 14px 22px; margin-bottom: 14px;
+          box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+  .card h2 { font-size: 14.5px; margin: 0 0 8px; color: #0f3460; }
+  .card h2 .tag { font-size: 11px; color: #888; font-weight: normal; margin-left: 8px; }
+  .katex { font-size: 1.02em; }
+  .note { font-size: 11.5px; color: #7a7f8c; margin-top: 6px; }
+  .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: #444; }
+  .step { background: #eef2ff; border: 1px solid #dbe2f0; border-radius: 6px; padding: 3px 10px; }
+  .arrow { color: #94a3b8; }
+</style>
+</head>
+<body>
+<h1>EvolveRouter — The Routing Formula</h1>
+<div class="sub">Every term traces back to a named quantity. Flywheel and exploration can only fine-tune — the decision model's judgment is the ceiling.</div>
+
+<div class="card">
+<h2>1 · Composite score</h2>
+$$\text{score}(m) = \underbrace{\Big[\textstyle\sum_k W_k \cdot f_k(m)\Big]}_{\text{five factors}} \times \underbrace{B(m)}_{\text{flywheel bias}} \times \underbrace{P(m)}_{\text{budget damp}} \times \underbrace{\big(1 + 0.15\,c_r\big)}_{\text{advisor bonus}}$$
+<div class="flow">
+  <span class="step">Q quality</span><span class="arrow">+</span>
+  <span class="step">S speed</span><span class="arrow">+</span>
+  <span class="step">C cost</span><span class="arrow">+</span>
+  <span class="step">R reliability</span><span class="arrow">+</span>
+  <span class="step">H headroom</span>
+</div>
+</div>
+
+<div class="card">
+<h2>2 · Dynamic weights <span class="tag">difficulty-linked × quota-aware (BaRP Eq.1)</span></h2>
+$$\mathbf{W} = \operatorname{norm}\Big(\underbrace{\mathbf{w}^{\,\mathrm{diff}}(d_{\mathrm{eff}})}_{\text{hard tasks}\,\Rightarrow\,\text{quality}\uparrow} \odot \underbrace{\mathbf{w}^{\,\mathrm{quota}}(t)}_{\text{tight quota}\,\Rightarrow\,W_c(1+1.5t),\,W_q(1-0.25t)}\Big), \quad t \in [0,1]$$
+<div class="note">t = fraction of candidates whose remaining quota &lt; 8× estimated tokens. No quota data → no adjustment.</div>
+</div>
+
+<div class="card">
+<h2>3 · Thompson exploration <span class="tag">BayesianRouter Eqs.4–6 — uncertainty-driven, self-converging</span></h2>
+$$\mu_0 = 0.15 + 0.70\,\mathrm{rank}(q), \qquad \alpha = \mu_0\nu_0 + s, \quad \beta = (1-\mu_0)\nu_0 + f, \quad \nu_0 = 8$$
+$$\tilde{\theta} \sim \mathrm{Beta}(\alpha, \beta), \qquad \text{score} \times \Big(1 + \rho\,3\,(\tilde{\theta} - \mathbb{E}[\theta])\Big), \qquad \rho = \texttt{explore\_ratio}$$
+<div class="note">Wide posterior (few samples) → large offset → explore more; narrow posterior → converge. μ₀ uses the relative rank of the Jev quality factor across candidates (absolute q saturates near 1.0 and would kill exploration).</div>
+</div>
+
+<div class="card">
+<h2>4 · Flywheel learned bias <span class="tag">two-stage normalization (BayesianRouter App.B) + baseline-relative update (BaRP Eq.6)</span></h2>
+$$\operatorname{norm}(v) = \operatorname{clamp}\!\left(\frac{v - \bar{x}}{q_{80} - q_{20}},\ 0,\ 1\right) \qquad \mathrm{reward} = w_{\mathrm{ok}}\cdot\operatorname{norm}(\mathrm{ok}) + (1{-}w_{\mathrm{ok}})\cdot\big(1 - \operatorname{norm}(\ln t)\big)$$
+$$B(m) = \operatorname{clamp}\Big(1 + \big(\mathrm{reward}(m) - \operatorname*{median}_{m'}\mathrm{reward}(m')\big)\cdot\gamma,\ 0.7,\ 1.3\Big)$$
+<div class="note">Two-stage: subtract the rolling mean, scale by the 20/80 inter-quantile range. Baseline-relative: the flywheel learns advantage over the cross-model median, not absolute outcomes — workload drift never leaks into bias. Flywheel only fine-tunes: |bias| ≤ 1.3.</div>
+</div>
+
+<div class="card">
+<h2>5 · Decision pipeline</h2>
+<div class="flow">
+  <span class="step">digest signals</span><span class="arrow">→</span>
+  <span class="step">sticky check</span><span class="arrow">→</span>
+  <span class="step">dual judge (Jev + heuristic, take-conservative)</span><span class="arrow">→</span>
+  <span class="step">advisor top-8 (anonymized)</span><span class="arrow">→</span>
+  <span class="step">hard filters</span><span class="arrow">→</span>
+  <span class="step">dynamic weights</span><span class="arrow">→</span>
+  <span class="step">score</span><span class="arrow">→</span>
+  <span class="step">Thompson explore</span><span class="arrow">→</span>
+  <span class="step">route + chain(3) + quality cascade</span><span class="arrow">→</span>
+  <span class="step">outcome → flywheel</span>
+</div>
+<div class="note">Failure anywhere in judge / advisor / distill / cascade never blocks routing. Learning only from bandit feedback on chosen models.</div>
+</div>
+
+</body>
+</html>

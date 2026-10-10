@@ -9,13 +9,13 @@
  *  - event: session.error and gateway-side failures are reported back
  *
  * Configuration via environment variables:
- *  MODELROUTE_URL   gateway base url (default http://127.0.0.1:8787)
- *  MODELROUTE_FEEDBACK  set "0" to disable outcome reporting
+ *  EVOLVE_URL   gateway base url (default http://127.0.0.1:8787)
+ *  EVOLVE_FEEDBACK  set "0" to disable outcome reporting
  */
 import type { Plugin } from "@opencode-ai/plugin"
 
-const GATEWAY = process.env.MODELROUTE_URL ?? "http://127.0.0.1:8787"
-const FEEDBACK_ENABLED = process.env.MODELROUTE_FEEDBACK !== "0"
+const GATEWAY = process.env.EVOLVE_URL ?? "http://127.0.0.1:8787"
+const FEEDBACK_ENABLED = process.env.EVOLVE_FEEDBACK !== "0"
 
 interface ToolOutcome {
   ok: boolean

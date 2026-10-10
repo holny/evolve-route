@@ -1,5 +1,5 @@
-# EvolveRoute default configuration (M1)
-# Copy to evolveroute.toml next to the binary or ~/.evolveroute/evolveroute.toml
+# EvolveRouter default configuration (M1)
+# Copy to evolve.toml next to the binary or ~/.evolve/evolve.toml
 
 [server]
 host = "127.0.0.1"
@@ -12,7 +12,7 @@ sticky_turns = 6
 confidence_gate = 0.35
 
 [decision]
-backend = "auto"            # auto | heuristic | typesafe | laya
+backend = "auto"            # auto | heuristic | decision_model (alias: typesafe) | laya
 redact = true
 
 [catalog]
@@ -22,7 +22,7 @@ remote_fetch = false        # M3
 learn_from_headers = true   # M2
 
 [data]
-dir = "~/.evolveroute"
+dir = "~/.evolve"
 
 # ---------------------------------------------------------------------------
 # Models: declare every upstream model the router may pick.

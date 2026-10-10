@@ -3,6 +3,7 @@ use evolve_core::config::FileConfig;
 use evolve_core::engine::Engine;
 use evolve_decision::DecisionBackend;
 use evolve_memory::{EventLog, Flywheel, HealthRegistry, QuotaLedger, SessionStore};
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -24,6 +25,10 @@ pub struct Inner {
     pub plan_budgets: Mutex<HashMap<String, f64>>,
     /// 全局扫描进度（面板轮询展示：逐 provider 拉取日志）
     pub scan_progress: Mutex<ScanProgress>,
+    /// ⑧ 能力卡蒸馏器（decision_model/auto 后端才有；None = 蒸馏停用）
+    pub distiller: Option<evolve_decision::decision_backend::DecisionModelBackend>,
+    /// A3 completion cache（逻辑请求指纹 → 响应，本地内存 TTL 缓存）
+    pub ccache: Mutex<crate::relay::CompletionCache>,
 }
 
 /// 全局扫描进度快照（/api/providers/scan-progress 响应体）
@@ -74,15 +79,35 @@ pub fn build_state(config: FileConfig) -> AppState {
     let backend = DecisionBackend::build(&config.decision.backend);
     let mut engine = Engine::new(catalog, policy, backend);
 
-    // Jev cookbook intent-routing：仅 typesafe/auto 后端时接通 route_advisor——
-    // heuristic 后端无需 advisor（测试环境设 backend=heuristic 即可跳过）
-    if (config.decision.backend == "typesafe" || config.decision.backend == "auto")
-        && std::env::var("TYPESAFE_API_KEY").ok().filter(|k| !k.is_empty()).is_some()
+    // ⑧ 蒸馏卡叠加：上次蒸馏的 tiers 修正回放进 catalog（重启不丢失）。
+    // 用户显式声明（tiers_explicit）不被覆盖；回滚 = 删 distilled.json
     {
-        if let Some(backend) = evolve_decision::typesafe::TypesafeBackend::from_env() {
-            engine.set_route_advisor(std::sync::Arc::new(backend));
-            tracing::info!("route_advisor: typesafe jev (intent-routing pipeline connected)");
+        let store = evolve_core::distill::load_store(&config.data.dir);
+        if !store.is_empty() {
+            let mut models = engine.catalog_snapshot();
+            let applied = evolve_core::distill::apply_distilled(&mut models, &store);
+            engine.replace_catalog(models);
+            tracing::info!(applied, "distilled capability cards applied to catalog");
         }
+    }
+
+    // decision-model intent-routing：decision_model/auto 后端时接通 route_advisor——
+    // heuristic 后端无需 advisor（测试环境设 backend=heuristic 即可跳过）
+    let distiller = if config.decision.backend == "decision_model" || config.decision.backend == "typesafe" || config.decision.backend == "auto" {
+        evolve_decision::decision_backend::DecisionModelBackend::from_env()
+    } else {
+        None
+    };
+    if let Some(backend) = &distiller {
+        let advisor = evolve_decision::decision_backend::DecisionModelBackend {
+            client: backend.client.clone(),
+            api_key: backend.api_key.clone(),
+            model: backend.model.clone(),
+            endpoint: backend.endpoint.clone(),
+            redact: backend.redact,
+        };
+        engine.set_route_advisor(std::sync::Arc::new(advisor));
+        tracing::info!("route_advisor: decision model (intent-routing pipeline connected)");
     }
 
     // 面板调控覆盖（overrides.json，重启重放）：模型权重 + 公式权重
@@ -109,7 +134,15 @@ pub fn build_state(config: FileConfig) -> AppState {
     }
 
     let events = EventLog::open(&config.data.dir);
-    let flywheel = Flywheel::open(&config.data.dir);
+    // ⑦ 飞轮策略参数从配置注入（[strategy] 段；缺省 = 编译默认）
+    let flywheel = Flywheel::open_with(
+        &config.data.dir,
+        evolve_memory::strategy::StrategyParams {
+            version: config.strategy.version,
+            ok_weight: config.strategy.ok_weight,
+            bias_gain: config.strategy.bias_gain,
+        },
+    );
     let (bus, _) = broadcast::channel(256);
     let http = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(10))
@@ -130,6 +163,8 @@ pub fn build_state(config: FileConfig) -> AppState {
         http,
         plan_budgets: Mutex::new(plan_budgets),
         scan_progress: Mutex::new(ScanProgress::default()),
+        distiller,
+        ccache: Mutex::new(crate::relay::CompletionCache::new()),
     })
 }
 
@@ -205,6 +240,9 @@ impl Inner {
             scan_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let mut remote_tick = tokio::time::interval(Duration::from_secs(3600));
             remote_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let mut distill_tick = tokio::time::interval(Duration::from_secs(600));
+            distill_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            distill_tick.tick().await; // 启动首跳立即消费：等 10 分钟后再首轮检查
             loop {
                 tokio::select! {
                     _ = scan_tick.tick() => {
@@ -213,9 +251,99 @@ impl Inner {
                     _ = remote_tick.tick() => {
                         state.refresh_remote_models();
                     }
+                    _ = distill_tick.tick() => {
+                        // review#9 修复：蒸馏含逐模型 LLM 调用（单次 20s 超时），
+                        // spawn 出去避免阻塞共享循环里的 scan/remote tick
+                        let d_state = state.clone();
+                        tokio::spawn(async move { d_state.maybe_distill().await });
+                    }
                 }
             }
         });
+    }
+
+    /// ⑧ 能力卡蒸馏检查（每小时）：达到里程碑（每 50 成功/模型）的模型
+    /// 交 Jev 重估 tiers，保守收缩后写入 distilled.json 并叠加 catalog。
+    /// Jev 失败静默跳过——蒸馏失败永不影响路由主链路。
+    async fn maybe_distill(&self) {
+        let Some(d) = &self.distiller else { return };
+        let stats = self.flywheel.stats();
+        let mut store = evolve_core::distill::load_store(&self.config.data.dir);
+        let mut changed = 0usize;
+        for (id, s) in &stats {
+            if !evolve_core::distill::due_for_distill(s.success, store.get(id)) {
+                continue;
+            }
+            let success_rate = if s.requests > 0 {
+                s.success as f64 / s.requests as f64
+            } else {
+                0.0
+            };
+            let avg_total_ms =
+                if s.total_ms_n > 0 { s.total_ms_sum as f64 / s.total_ms_n as f64 } else { 0.0 };
+            let summary = json!({
+                "requests": s.requests,
+                "success": s.success,
+                "failures": s.failures,
+                "success_rate": success_rate,
+                "avg_total_ms": avg_total_ms,
+                "tool_calls": {"total": s.tc_total, "valid_json": s.tc_valid_json, "schema_ok": s.tc_schema_ok},
+                "truncations": s.truncations,
+                "degenerate": s.degenerate,
+                "empty_responses": s.empty_responses,
+            });
+            let Some(suggested) = d.distill_tiers(id, &summary).await else {
+                tracing::debug!(model = %id, "distill: jev call failed, will retry next cycle");
+                continue;
+            };
+            let suggested = evolve_core::types::Tiers {
+                reasoning: suggested[0],
+                coding: suggested[1],
+                vision: suggested[2],
+                agentic: suggested[3],
+            };
+            let declared = self
+                .engine
+                .catalog_snapshot()
+                .into_iter()
+                .find(|m| m.id == *id)
+                .map(|m| m.tiers)
+                .unwrap_or(suggested.clone());
+            let merged = evolve_core::distill::conservative_merge(&declared, &suggested);
+            let note = evolve_core::distill::stats_note(
+                s.success,
+                success_rate as f32,
+                avg_total_ms,
+                s.degenerate,
+                s.empty_responses,
+            );
+            tracing::info!(model = %id, note = %note, ?merged, "distill: capability card updated");
+            // review#5 修复：declared 基准固化为首次蒸馏时的声明值——
+            // 后续轮次永远对原始声明收缩，多轮累计偏移有上界
+            let declared_base = store
+                .get(id)
+                .map(|c| c.declared.clone())
+                .unwrap_or(declared);
+            store.insert(
+                id.clone(),
+                evolve_core::distill::DistilledCard {
+                    tiers: merged,
+                    declared: declared_base,
+                    note,
+                    at: evolve_core::distill::now_ms(),
+                    basis_success: s.success,
+                    version: 1,
+                },
+            );
+            changed += 1;
+        }
+        if changed > 0 {
+            evolve_core::distill::save_store(&self.config.data.dir, &store);
+            let mut models = self.engine.catalog_snapshot();
+            evolve_core::distill::apply_distilled(&mut models, &store);
+            self.engine.replace_catalog(models);
+            tracing::info!(distilled = changed, "distill cycle complete, catalog updated");
+        }
     }
 
     /// 重新扫描 agent 配置：新增模型合入 catalog，删除的保留（用户面板手动删）

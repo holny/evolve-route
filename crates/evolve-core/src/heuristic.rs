@@ -45,7 +45,7 @@ fn kw_score(text: &str, kws: &[&str]) -> f32 {
 }
 
 impl crate::types::Judge for HeuristicJudge {
-    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals) -> JudgmentSet {
+    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals, _candidates_hint: &str) -> JudgmentSet {
         Self::judge(features, digest)
     }
 }

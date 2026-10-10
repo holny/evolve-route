@@ -1,18 +1,18 @@
 /**
  * EvolveRouter adapter for opencode — zero-dependency drop-in.
  *
- * Install: copy this file to  <project>/.opencode/plugins/evolveroute.ts
+ * Install: copy this file to  <project>/.opencode/plugins/evo-router.ts
  * (or ~/.config/opencode/plugins/ for global). opencode loads it at startup.
  *
- * Env: MODELROUTE_URL (default http://127.0.0.1:8787),
- *      MODELROUTE_FEEDBACK=0 to disable outcome reporting.
+ * Env: EVOLVE_URL (default http://127.0.0.1:8787),
+ *      EVOLVE_FEEDBACK=0 to disable outcome reporting.
  *
  * What it does (the gateway does all routing):
  *  - stamps x-ev-session on every LLM call → precise session stickiness
  *  - reports tool success/failure to /api/feedback → flywheel ground truth
  */
-const GATEWAY = process.env.MODELROUTE_URL ?? "http://127.0.0.1:8787"
-const FEEDBACK_ENABLED = process.env.MODELROUTE_FEEDBACK !== "0"
+const GATEWAY = process.env.EVOLVE_URL ?? "http://127.0.0.1:8787"
+const FEEDBACK_ENABLED = process.env.EVOLVE_FEEDBACK !== "0"
 
 function classifyToolOutput(title, output) {
   const text = `${title}\n${output}`.toLowerCase()

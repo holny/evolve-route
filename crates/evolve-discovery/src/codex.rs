@@ -111,7 +111,7 @@ model_provider = "evolve"
 name = "EvolveRouter"
 base_url = "http://127.0.0.1:8787/v1"
 wire_api = "chat"
-env_key = "MODELROUTE_KEY"
+env_key = "EVOLVE_KEY"
 
 [model_providers.ollama]
 name = "Ollama"
@@ -123,7 +123,7 @@ wire_api = "chat"
     fn parses_active_provider_pair() {
         // std::env::remove_var is unsafe in edition 2024; env access in
         // discovery happens per-request from the gateway binary instead.
-        // (No MODELROUTE_KEY is set in CI; api_key stays None.)
+        // (No EVOLVE_KEY is set in CI; api_key stays None.)
         let models = discover_from_text(FIXTURE).unwrap();
         assert_eq!(models.len(), 1);
         let m = &models[0];

@@ -82,7 +82,7 @@ pub fn now_millis() -> Option<u64> {
         .map(|d| d.as_millis() as u64)
 }
 
-pub(crate) fn shellexpand_home_pub(dir: &str) -> PathBuf {
+pub fn shellexpand_home_pub(dir: &str) -> PathBuf {
     shellexpand_home(dir)
 }
 

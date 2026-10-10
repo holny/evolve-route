@@ -388,6 +388,7 @@ dependencies = [
 name = "evolve-memory"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "evolve-core",
  "http",
  "serde",

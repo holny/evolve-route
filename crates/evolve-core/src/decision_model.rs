@@ -27,5 +27,5 @@ pub struct DecisionModelCaps {
 /// 通用决策模型接口：所有判定后端的统一抽象。
 pub trait DecisionModel: Send + Sync {
     fn caps(&self) -> DecisionModelCaps;
-    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals) -> JudgmentSet;
+    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals, candidates_hint: &str) -> JudgmentSet;
 }

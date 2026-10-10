@@ -19,7 +19,7 @@ pub struct LayaBackend {
 
 #[async_trait]
 impl Judge for LayaBackend {
-    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals) -> JudgmentSet {
+    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals, _candidates_hint: &str) -> JudgmentSet {
         let payload = self.build_payload(features, digest);
         let client = self.client.clone();
         let endpoint = self.endpoint.clone();
@@ -37,11 +37,11 @@ impl Judge for LayaBackend {
         let result = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::try_current().ok().and_then(|h| h.block_on(async { call.await.ok() }))
         });
-        match result.as_ref().and_then(crate::typesafe::parse_judgment) {
+        match result.as_ref().and_then(crate::decision_backend::parse_judgment) {
             Some(j) => j,
             None => {
                 tracing::warn!("laya judgment failed, falling back to heuristic");
-                evolve_core::heuristic::HeuristicJudge.judge(features, digest)
+                evolve_core::heuristic::HeuristicJudge.judge(features, digest, _candidates_hint)
             }
         }
     }

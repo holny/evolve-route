@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}]});"></script>
+<style>
+  body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #fafafa; color: #1a1a2e;
+         width: 940px; padding: 28px 34px; margin: 0; }
+  h1 { font-size: 21px; margin: 0 0 4px; color: #0f3460; }
+  .sub { font-size: 12.5px; color: #666; margin-bottom: 18px; }
+  .card { background: #fff; border: 1px solid #e4e7ec; border-radius: 10px; padding: 14px 22px; margin-bottom: 14px;
+          box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+  .card h2 { font-size: 14.5px; margin: 0 0 8px; color: #0f3460; }
+  .card h2 .tag { font-size: 11px; color: #888; font-weight: normal; margin-left: 8px; }
+  .katex { font-size: 1.02em; }
+  .note { font-size: 11.5px; color: #7a7f8c; margin-top: 6px; }
+  .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: #444; }
+  .step { background: #eef2ff; border: 1px solid #dbe2f0; border-radius: 6px; padding: 3px 10px; }
+  .arrow { color: #94a3b8; }
+</style>
+</head>
+<body>
+<h1>EvolveRouter — 路由公式</h1>
+<div class="sub">每一项都对应具名量。飞轮与探索只能微调——决策模型的判定是不可逾越的天花板。</div>
+
+<div class="card">
+<h2>1 · 综合评分</h2>
+$$\text{score}(m) = \underbrace{\Big[\textstyle\sum_k W_k \cdot f_k(m)\Big]}_{\text{five factors}} \times \underbrace{B(m)}_{\text{flywheel bias}} \times \underbrace{P(m)}_{\text{budget damp}} \times \underbrace{\big(1 + 0.15\,c_r\big)}_{\text{advisor bonus}}$$
+<div class="flow">
+  <span class="step">Q quality</span><span class="arrow">+</span>
+  <span class="step">S speed</span><span class="arrow">+</span>
+  <span class="step">C cost</span><span class="arrow">+</span>
+  <span class="step">R reliability</span><span class="arrow">+</span>
+  <span class="step">H headroom</span>
+</div>
+</div>
+
+<div class="card">
+<h2>2 · 动态权重 <span class="tag">难度联动 × 配额感知（BaRP Eq.1）</span></h2>
+$$\mathbf{W} = \operatorname{norm}\Big(\underbrace{\mathbf{w}^{\,\mathrm{diff}}(d_{\mathrm{eff}})}_{\text{难任务}\,\Rightarrow\,\text{质量}\uparrow} \odot \underbrace{\mathbf{w}^{\,\mathrm{quota}}(t)}_{\text{配额紧}\,\Rightarrow\,W_c(1+1.5t),\,W_q(1-0.25t)}\Big), \quad t \in [0,1]$$
+<div class="note">t = 剩余配额不足 8× 预估 token 的候选占比；无配额数据时不干预。</div>
+</div>
+
+<div class="card">
+<h2>3 · Thompson 探索 <span class="tag">BayesianRouter Eqs.4–6 — 不确定性驱动，自动收敛</span></h2>
+$$\mu_0 = 0.15 + 0.70\,\mathrm{rank}(q), \qquad \alpha = \mu_0\nu_0 + s, \quad \beta = (1-\mu_0)\nu_0 + f, \quad \nu_0 = 8$$
+$$\tilde{\theta} \sim \mathrm{Beta}(\alpha, \beta), \qquad \text{score} \times \Big(1 + \rho\,3\,(\tilde{\theta} - \mathbb{E}[\theta])\Big), \qquad \rho = \texttt{explore\_ratio}$$
+<div class="note">后验宽（样本少）→ 偏移大 → 自动多探索；后验窄 → 自动收敛。μ₀ 取 Jev 质量因子在候选集内的 相对位次（绝对 q 普遍贴顶 1.0，直接作先验会让探索系统性死亡）。</div>
+</div>
+
+<div class="card">
+<h2>4 · 飞轮学习偏置 <span class="tag">两阶段归一化（BayesianRouter App.B）+ 基线相对更新（BaRP Eq.6）</span></h2>
+$$\operatorname{norm}(v) = \operatorname{clamp}\!\left(\frac{v - \bar{x}}{q_{80} - q_{20}},\ 0,\ 1\right) \qquad \mathrm{reward} = w_{\mathrm{ok}}\cdot\operatorname{norm}(\mathrm{ok}) + (1{-}w_{\mathrm{ok}})\cdot\big(1 - \operatorname{norm}(\ln t)\big)$$
+$$B(m) = \operatorname{clamp}\Big(1 + \big(\mathrm{reward}(m) - \operatorname*{median}_{m'}\mathrm{reward}(m')\big)\cdot\gamma,\ 0.7,\ 1.3\Big)$$
+<div class="note">两阶段：先减滚动均值，再按 20/80 分位距缩放。基线相对更新：飞轮学的是相对跨模型中位数的优势， 而非绝对结果——工作负载漂移不会泄漏进 bias。飞轮只能微调：|bias| ≤ 1.3。</div>
+</div>
+
+<div class="card">
+<h2>5 · 决策管线</h2>
+<div class="flow">
+  <span class="step">信号提取</span><span class="arrow">→</span>
+  <span class="step">粘性检查</span><span class="arrow">→</span>
+  <span class="step">双判官（Jev+规则，取严融合）</span><span class="arrow">→</span>
+  <span class="step">advisor top-8（匿名化）</span><span class="arrow">→</span>
+  <span class="step">硬过滤</span><span class="arrow">→</span>
+  <span class="step">动态权重</span><span class="arrow">→</span>
+  <span class="step">score</span><span class="arrow">→</span>
+  <span class="step">Thompson 探索</span><span class="arrow">→</span>
+  <span class="step">路由+降级链(3)+质量级联</span><span class="arrow">→</span>
+  <span class="step">结果 → 飞轮</span>
+</div>
+<div class="note">判定器/advisor/蒸馏/级联任何一处失败都不阻塞路由。学习只来自被选模型的 bandit 反馈。</div>
+</div>
+
+</body>
+</html>

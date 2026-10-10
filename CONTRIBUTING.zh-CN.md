@@ -1,8 +1,8 @@
-# 参与 EvolveRoute 贡献
+# 参与 EvolveRouter 贡献
 
 [English](CONTRIBUTING.md) | [中文](CONTRIBUTING.zh-CN.md)
 
-感谢你有兴趣改进 EvolveRoute！本文档涵盖上手所需的全部内容。
+感谢你有兴趣改进 EvolveRouter！本文档涵盖上手所需的全部内容。
 
 ## 开发环境
 
@@ -12,8 +12,8 @@
 - 无数据库、无 Docker、无 Python。一切皆 `cargo`。
 
 ```bash
-git clone https://github.com/your-org/evolve-route.git
-cd evolve-route
+git clone https://github.com/holny/evolve-router.git
+cd evolve-router
 cargo build            # debug 构建，快速迭代
 cargo test             # 全量测试（94 个）
 cargo clippy           # CI 门禁：零警告
@@ -74,9 +74,9 @@ Rust `f32` 序列化有精度毛刺（如 `1.4000000000000001`）。所有进面
 
 提 bug 请附：
 
-- EvolveRoute 版本（`evolveroute --version` 或 commit hash）
+- EvolveRouter 版本（`evo-router --version` 或 commit hash）
 - 操作系统与运行方式（二进制 / LaunchAgent / systemd）
-- `~/.evolveroute/gateway.log` 尾部日志；如有 `x-ev-*` 响应头一并附上
+- `~/.evolve/gateway.log` 尾部日志；如有 `x-ev-*` 响应头一并附上
 - 配置片段——**粘贴前隐去 API key 与请求内容**
 
 功能请求：描述你遇到的路由问题，而不是直接给方案。"我的订阅配额在简单任务上烧太快"比"加个限流"更有信息量。

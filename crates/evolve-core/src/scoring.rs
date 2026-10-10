@@ -53,11 +53,39 @@ pub fn difficulty_weights(w: &PolicyWeights, difficulty_eff: f32) -> [f32; 5] {
     v
 }
 
+/// ④ 配额感知权重（BaRP Eq.1）：偏好向量随配额状态线性调整，纯运行时无重训。
+/// tight ∈ [0,1]：候选集中配额紧张（剩余 < 本次需求若干倍）的比例。
+/// 配额充裕（tight→0）保持原权重（质量优先）；紧张（tight→1）成本权重上调、
+/// 质量轻微让位，平滑映射不跳变；无配额数据（tight=0）不干预。
+pub fn quota_aware_weights(w: &[f32; 5], tight: f32) -> [f32; 5] {
+    let t = tight.clamp(0.0, 1.0);
+    let mut v = *w;
+    v[2] *= 1.0 + 1.5 * t;
+    v[0] *= 1.0 - 0.25 * t;
+    let sum: f32 = v.iter().sum();
+    for x in v.iter_mut() {
+        *x /= sum.max(1e-6);
+    }
+    v
+}
+
 pub fn blended_price(m: &ModelRecord, est_input: u64, est_output: u64) -> f32 {
     match m.cost {
         Some(c) => (est_input as f32 / 1e6) * c.input + (est_output as f32 / 1e6) * c.output,
         None => 0.0,
     }
+}
+
+#[test]
+fn quota_aware_weights_shift_cost_when_tight() {
+    let base = [0.35f32, 0.15, 0.25, 0.15, 0.10];
+    let calm = quota_aware_weights(&base, 0.0);
+    assert_eq!(calm, base, "no quota pressure must leave weights untouched");
+    let tight = quota_aware_weights(&base, 1.0);
+    let sum: f32 = tight.iter().sum();
+    assert!((sum - 1.0).abs() < 1e-4, "weights must stay normalized, got {sum}");
+    assert!(tight[2] > calm[2], "cost weight must rise under quota pressure");
+    assert!(tight[0] < calm[0], "quality weight must yield slightly");
 }
 
 pub fn score_all(

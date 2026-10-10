@@ -70,6 +70,7 @@ fn test_config(upstream_port: u16) -> FileConfig {
         discovery: DiscoveryCfg { agents: vec![] },
         benchmarks: BenchmarksCfg { enabled: false, interval_hours: 24, sources: vec![] },
         telemetry: Default::default(),
+        strategy: Default::default(),
         models: vec![
             mk("mini", "mock-mini", 32_000, 0.1, 0.4, 0.45, 0.95),
             mk("standard", "mock-standard", 128_000, 0.6, 2.4, 0.75, 0.7),
@@ -255,9 +256,58 @@ async fn no_credit_model_is_skipped_and_marked() {
     assert_eq!(v["models"]["mini"]["available"], false);
 
     // second request: mini is pre-filtered by health, straight to standard, no wasted attempt
-    let (_, headers, _) = send(app, chat_request("auto", json!("你好"), json!({}))).await;
+    // (x-ev-no-cache bypasses the A3 completion cache so the health path is exercised)
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .header("x-ev-session", "test-session-1")
+        .header("x-ev-no-cache", "1")
+        .body(Body::from(
+            json!({"model": "auto", "messages": [{"role": "user", "content": "你好"}]}).to_string(),
+        ))
+        .unwrap();
+    let (_, headers, _) = send(app, req).await;
     assert_eq!(headers["x-ev-model"], "standard");
     assert!(headers.get("x-ev-skipped").is_none(), "no retry waste on second request");
+}
+
+// A3 completion cache：相同逻辑请求（去 model/stream 后指纹一致）第二次命中
+// 缓存（x-ev-cache: hit、内容一致）；x-ev-no-cache 头强制绕过
+#[tokio::test]
+async fn completion_cache_hits_on_identical_requests() {
+    let port = spawn_mock_upstream().await;
+    let mut cfg = test_config(port);
+    cfg.data.dir = std::env::temp_dir().join(format!("mr-test-cache-{}", std::process::id())).to_string_lossy().into_owned();
+    let app = build_router(build_state(cfg));
+
+    let body_first = json!({"model": "auto", "messages": [{"role": "user", "content": "repeat me"}]});
+    let req1 = Request::builder()
+        .method("POST").uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(body_first.to_string())).unwrap();
+    let (s1, h1, raw1) = send(app.clone(), req1).await;
+    assert_eq!(s1, StatusCode::OK);
+    assert_eq!(h1.get("x-ev-cache"), None, "first request must be a miss");
+
+    // 相同逻辑请求（model 字段不同也命中——路由可换，逻辑内容一致）
+    let req2 = Request::builder()
+        .method("POST").uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(body_first.to_string())).unwrap();
+    let (s2, h2, raw2) = send(app.clone(), req2).await;
+    assert_eq!(s2, StatusCode::OK);
+    assert_eq!(h2["x-ev-cache"], "hit", "second identical request must hit cache");
+    assert_eq!(raw1, raw2, "cached response body must match");
+
+    // no-cache 头绕过
+    let req3 = Request::builder()
+        .method("POST").uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .header("x-ev-no-cache", "1")
+        .body(Body::from(body_first.to_string())).unwrap();
+    let (_, h3, _) = send(app, req3).await;
+    assert_eq!(h3.get("x-ev-cache"), None, "x-ev-no-cache must bypass cache");
 }
 
 #[tokio::test]
@@ -797,4 +847,50 @@ async fn anthropic_ingress_context_overflow_reroutes() {
     let v = json_body(&raw);
     assert_eq!(v["type"], "message", "client receives anthropic shape");
     assert!(v["content"][0]["text"].as_str().unwrap_or("").contains("fits"));
+}
+
+// ⑤ 质量级联：首个候选返回退化输出（40 字窗×4 重复）→ 网关弃用该响应、
+// 升级链上下一个候选；客户端最终拿到正常内容而非退化文本
+#[tokio::test]
+async fn quality_cascade_escalates_to_next_candidate() {
+    let mini_hits = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let hits = mini_hits.clone();
+    let app = axum::Router::new().route(
+        "/v1/chat/completions",
+        axum::routing::post(|body: axum::body::Bytes| async move {
+            let v: Value = serde_json::from_slice(&body).unwrap();
+            let model = v["model"].as_str().unwrap_or("unknown").to_string();
+            let content = if model == "mock-mini" {
+                hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                // 周期 2 的重复串：40 字窗错位 40 字符内容相同 → looks_degenerate 命中
+                "ha".repeat(400)
+            } else {
+                "ok".to_string()
+            };
+            axum::http::Response::builder()
+                .status(200)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"model": model, "choices": [{"message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
+                           "usage": {"prompt_tokens": 10, "completion_tokens": 20}})
+                        .to_string(),
+                ))
+                .unwrap()
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+
+    let app = build_router(build_state(test_config(port)));
+    let (status, headers, raw) = send(app, chat_request("auto", json!("hi"), json!({}))).await;
+    assert_eq!(status, StatusCode::OK, "body: {}", String::from_utf8_lossy(&raw));
+    let v: Value = serde_json::from_slice(&raw).unwrap();
+    let content = v["choices"][0]["message"]["content"].as_str().unwrap_or("");
+    assert_eq!(content, "ok", "client must never receive the degraded output");
+    if mini_hits.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+        // mini 被尝试过 → 其退化响应必然被级联弃用（否则 content 不是 "ok"）
+        // 事件侧验证：非流式成功响应不携带 fallback 头
+        assert!(headers.get("x-ev-quality-cascade").is_none(), "successful escalation must not use fallback path");
+    }
 }

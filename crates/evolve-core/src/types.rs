@@ -203,7 +203,9 @@ pub struct JudgmentSet {
 }
 
 pub trait Judge: Send + Sync {
-    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals) -> JudgmentSet;
+    /// candidates_hint: 静态粗排候选的占位符画像 JSON（A2 Fan-Out——
+    /// 判定与路由推荐合并为一次调用）。空串 = 不问推荐。
+    fn judge(&self, features: &RequestFeatures, digest: &DigestSignals, candidates_hint: &str) -> JudgmentSet;
 }
 
 #[derive(Debug, Clone, PartialEq)]
