@@ -77,7 +77,7 @@ body { background:var(--bg); color:var(--fg); font:13.5px/1.55 -apple-system,"Pi
 .au-badge.hl { border-color:var(--blue); color:var(--blue); }
 .au-kv { display:flex; justify-content:space-between; gap:8px; font-size:11.5px; padding:2px 0; }
 .au-kv .k { color:var(--dim); }
-.au-bar { height:7px; border-radius:4px; background:var(--row-line); overflow:hidden; flex:1; align-self:center; }
+.au-bar { display:block; height:7px; border-radius:4px; background:var(--row-line); overflow:hidden; flex:1; align-self:center; }
 .au-bar i { display:block; height:100%; border-radius:4px; }
 .au-bar i.b { background:var(--blue); } .au-bar i.g { background:var(--green); }
 .au-bar i.a { background:var(--amber); } .au-bar i.r { background:var(--red); }
@@ -92,10 +92,10 @@ body { background:var(--bg); color:var(--fg); font:13.5px/1.55 -apple-system,"Pi
 .au-cand .top .nm { color:var(--blue); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .au-cand .top .win-tag { color:var(--green); font-size:10px; }
 .au-cand .top .sc { margin-left:auto; font-variant-numeric:tabular-nums; font-weight:600; }
-.au-factors { display:grid; grid-template-columns:repeat(5, 1fr); gap:5px; margin-top:5px; }
+.au-factors { display:grid; grid-template-columns:repeat(5, 1fr); gap:6px; margin-top:6px; }
 .au-fac { text-align:center; }
-.au-fac .au-bar { height:4px; flex:none; margin-bottom:2px; }
-.au-fac .fv { font-size:9.5px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.au-fac .au-bar { height:5px; flex:none; display:block; margin-bottom:3px; }
+.au-fac .fv { font-size:9.5px; color:var(--fg); font-variant-numeric:tabular-nums; }
 .au-fac .fk { font-size:9px; color:var(--dim); opacity:.8; }
 .au-mult { display:flex; gap:5px; margin-top:4px; flex-wrap:wrap; }
 .au-mult .m { font-size:10px; padding:0 6px; border-radius:4px; background:var(--card2); color:var(--dim); font-variant-numeric:tabular-nums; }
@@ -107,14 +107,18 @@ body { background:var(--bg); color:var(--fg); font:13.5px/1.55 -apple-system,"Pi
 .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:14px;
         box-shadow:var(--shadow); transition:border-color .15s; }
 .card:hover { border-color:var(--border-hover); }
-.card h2 { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.6px; margin-bottom:10px; }
+.card h2 { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.6px; margin-bottom:10px;
+           border-bottom:1px solid var(--row-line); padding-bottom:8px; }
 .card h2 .note { text-transform:none; letter-spacing:0; opacity:.75; margin-left:6px; }
 .card h3 { font-size:11px; color:var(--dim); margin:14px 0 6px; }
 table { width:100%; border-collapse:collapse; font-size:12px; }
 th { color:var(--dim); text-align:left; font-weight:normal; padding:4px 6px; border-bottom:1px solid var(--border); white-space:nowrap; vertical-align:bottom; }
 td { padding:4px 6px; border-bottom:1px solid var(--row-line); vertical-align:top; transition:background .12s; }
-tbody tr:hover { background:var(--card2); }
-td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+tbody tr:nth-child(even) td { background:color-mix(in srgb, var(--card2) 35%, transparent); }
+tbody tr:hover td { background:var(--card2); }
+tbody td:first-child { font-weight:500; }
+.minibar { display:block; height:3px; border-radius:2px; margin-top:3px; min-width:34px; }
+.minibar i { display:block; height:100%; border-radius:2px; }
 .dim2 { color:var(--dim); font-size:11px; }
 .badge { display:inline-block; padding:1px 7px; border-radius:5px; font-size:11px; }
 .badge.dead { background:var(--badge-dead-bg); color:var(--red); }
@@ -122,10 +126,11 @@ td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-spac
 #feed { max-height:560px; overflow-y:auto; padding-right:2px; }
 .feed-ev { border-bottom:1px solid var(--row-line); padding:4px 0; animation:fadein .25s ease-out; }
 @keyframes fadein { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:none; } }
-.feed-row { display:flex; gap:8px; padding:3px 4px; font-variant-numeric:tabular-nums; cursor:pointer; align-items:baseline; border-radius:6px; }
+.feed-row { display:flex; gap:8px; padding:3px 6px; font-variant-numeric:tabular-nums; cursor:pointer; align-items:baseline;
+            border-radius:6px; flex-wrap:wrap; }
 .feed-row:hover { background:var(--card2); }
-.feed-row .t { color:var(--dim); min-width:60px; font-size:11px; }
-.feed-row .m { color:var(--blue); min-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.feed-row .t { color:var(--dim); min-width:56px; font-size:11px; }
+.feed-row .m { color:var(--blue); min-width:110px; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .feed-row .tk { font-size:11px; color:var(--dim); }
 .feed-row .ms { margin-left:auto; color:var(--dim); }
 .pill { border-radius:10px; padding:0 8px; font-size:11px; }
@@ -198,7 +203,7 @@ table.mx tr.win td { color:var(--green); }
     <div class="sub"><span class="dot" id="sse-dot"></span><span id="sse-status" data-i18n="sse_conn">SSE 连接中…</span></div>
   </div>
   <div class="chips" id="chips"></div>
-  <button class="lang-sel" id="theme-btn" title="Theme" style="padding:5px 12px">☀</button>
+  <button class="lang-sel" id="theme-btn" title="Theme" style="padding:5px 12px;display:inline-flex;align-items:center;gap:6px"><span id="theme-ico">☀</span><span data-i18n="theme_lbl">主题</span></button>
   <select class="lang-sel" id="lang-sel"></select>
 </header>
 <main>
@@ -561,6 +566,7 @@ const T = {
   au_factor_h:{zh:'余量', en:'headroom', ko:'여유', ja:'余裕', es:'margen', fr:'marge'},
   au_win:     {zh:'胜出', en:'winner', ko:'승자', ja:'勝者', es:'ganador', fr:'gagnant'},
   au_qp:      {zh:'预算压制 ×{q}', en:'budget damp ×{q}', ko:'예산 감쇠 ×{q}', ja:'予算減衰 ×{q}', es:'amortiguación ×{q}', fr:'amortissement ×{q}'},
+  theme_lbl:  {zh:'主题', en:'Theme', ko:'테마', ja:'テーマ', es:'Tema', fr:'Thème'},
 };
 const t = k => (T[k] && (T[k][lang] ?? T[k].zh)) ?? k;
 
@@ -949,7 +955,9 @@ function renderAutopsy(e){
     L.push('<div class="au-sec au-sec-t">'+esc(t('au_evo'))+'</div>');
     L.push('<div class="au-evo-note">'+ (bv > 1.001 ? '↑ ' : bv < 0.999 ? '↓ ' : '→ ') + esc(evo) + '</div>');
     if (e.quality) {
-      L.push('<div class="dim2" style="margin-top:4px">'+esc(t('m_quality'))+': '+esc(JSON.stringify(e.quality.flags||[]))+'</div>');
+      const flags = e.quality.flags || [];
+      L.push('<div class="dim2" style="margin-top:4px">'+esc(t('m_quality'))+': ' +
+        (flags.length ? esc(JSON.stringify(flags)) : (lang==='zh'?'无异常标记':'no flags')) + '</div>');
     }
   }
 
@@ -957,9 +965,12 @@ function renderAutopsy(e){
   L.push('<div class="au-sec au-sec-t">'+esc(t('w_total'))+'</div>');
   L.push(waterfallBar(e) || '<div class="dim2">—</div>');
   if (e.filtered && e.filtered.length) {
-    L.push('<details style="margin-top:8px"><summary class="dim2" style="cursor:pointer">'+esc(t('st_filtered_head'))+'（'+e.filtered.length+'）</summary>' +
-      '<div class="dim2" style="margin-top:4px;line-height:1.7">' +
-      e.filtered.map(fl => '<span title="'+esc(fl.model)+'">'+esc(shortId(fl.model))+'</span>（'+esc(causeLocal(fl.cause))+'）').join('、 ') + '</div></details>');
+    const showN = 3, total = e.filtered.length;
+    const shown = e.filtered.slice(0, showN).map(fl =>
+      '<span title="'+esc(fl.model)+'">'+esc(shortId(fl.model))+'</span>（'+esc(causeLocal(fl.cause))+'）').join('、 ');
+    const more = total > showN ? ' …' + (lang==='zh'?'等共 '+total+' 项':'('+total+' total)') : '';
+    L.push('<details style="margin-top:8px"><summary class="dim2" style="cursor:pointer">'+esc(t('st_filtered_head'))+'（'+total+'）</summary>' +
+      '<div class="dim2" style="margin-top:4px;line-height:1.7">' + shown + more + '</div></details>');
   }
 
   B.innerHTML = L.join('');
@@ -1001,14 +1012,21 @@ function renderDyn(){
     const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total))+'%' : '-';
     const tok = '<div title="'+esc(t('t_actual'))+'">'+fmtK(s.prompt_tokens??0)+t('s_in')+' '+fmtK(s.completion_tokens??0)+t('s_out')+'</div>' +
       '<div class="dim2" title="'+esc(t('t_actual'))+'">'+t('s_incl')+fmtK(s.cached_tokens||0)+' · '+t('s_write')+fmtK(s.cache_write_tokens||0)+'</div>';
-    return '<tr><td title="'+esc(id)+'">'+esc(id.length>30?id.slice(0,29)+'…':id)+'</td>' +
+    // 设计升级：成功率/缓存率内嵌 mini bar（数据可视化内嵌表格）
+    const ratePct = s.requests ? Math.round(100*(s.success||0)/s.requests) : null;
+    const rateCell = ratePct===null ? '<td class="num">-</td>' :
+      '<td class="num">'+ratePct+'%<span class="minibar"><i style="width:'+ratePct+'%;background:'+(ratePct>=95?'var(--green)':ratePct>=80?'var(--amber)':'var(--red)')+'"></i></span></td>';
+    const cachePct = s.cache_hit_rate==null ? null : Math.round(s.cache_hit_rate*100);
+    const cacheCell = cachePct===null ? '<td class="num">-</td>' :
+      '<td class="num">'+cachePct+'%<span class="minibar"><i style="width:'+cachePct+'%;background:var(--blue)"></i></span></td>';
+    return '<tr><td title="'+esc(id)+'"><b>'+esc(id.length>30?id.slice(0,29)+'…':id)+'</b></td>' +
       '<td>'+src+'</td>' +
       '<td class="num">'+s.requests+'('+s.success+')</td>' +
       '<td class="num">'+tok+'</td>' +
       '<td class="num">'+fmtMs(s.avg_ttft_ms)+'</td>' +
       '<td class="num">'+fmtMs(s.avg_total_ms)+'</td>' +
       '<td class="num">'+fmtRate(s.avg_rate_tok_s)+'</td>' +
-      '<td class="num">'+(s.cache_hit_rate==null?'-':Math.round(s.cache_hit_rate*100)+'%')+'</td>' +
+      cacheCell +
       '<td class="num">'+toolRate+'</td></tr>';
   });
   db.innerHTML = rows.join('') || '<tr><td colspan="9" style="color:var(--dim)">'+t('noflow')+'</td></tr>';
@@ -1058,6 +1076,12 @@ function renderWheel(){
     const pct = x => x==null ? '-' : Math.round(x*100)+'%';
     const uw = s.user_weight ?? 1;
     const lb = tr.learned_bias ?? 1;
+    // review：bias 列从 ×50 刻度改为实际值 + 方向箭头徽章——用户可读
+    const biasBadge = tr.learned_bias == null ? '-' :
+      (() => { const up = lb > 1.005, dn = lb < 0.995;
+        const cls = up ? 'la c' : dn ? 'la f' : 'la';
+        const arrow = up ? '↑' : dn ? '↓' : '→';
+        return '<span class="'+cls+'" title="learned bias（1.00 = 与群体一致）">'+arrow+' '+lb.toFixed(2)+'</span>'; })();
     const fb = s.feedback || {ok:0,total:0};
     const sem = s.semantic || {matched:0,total:0};
     const act = lastAct[id];
@@ -1067,7 +1091,7 @@ function renderWheel(){
       '<td class="num">'+n100(tr.reliability)+'</td>' +
       '<td class="num">'+n50(tr.calibration)+'</td>' +
       '<td class="num">'+n100(tr.speed_obs)+'</td>' +
-      '<td class="num">'+n50(tr.learned_bias)+'</td>' +
+      '<td class="num">'+biasBadge+'</td>' +
       '<td class="num">'+(s.success_rate==null?'-':Math.round(s.success_rate*100)+'%')+'</td>' +
       '<td class="num">'+(s.cache_hit_rate==null?'-':Math.round(s.cache_hit_rate*100)+'%')+'</td>' +
       '<td class="num">'+(s.plan_kind && s.plan_kind !== 'api'
@@ -1578,7 +1602,10 @@ es.onmessage = ev => { try { addRow(JSON.parse(ev.data)); } catch(_){} };
   const theme = saved || sys;
   document.documentElement.dataset.theme = theme;
   const btn = document.getElementById('theme-btn');
-  const sync = () => { btn.textContent = theme === 'light' ? '🌙' : '☀'; btn.title = theme === 'light' ? 'Switch to dark' : 'Switch to light'; };
+  const sync = () => {
+    document.getElementById('theme-ico').textContent = theme === 'light' ? '🌙' : '☀';
+    btn.title = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
+  };
   sync();
   btn.addEventListener('click', () => {
     const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
