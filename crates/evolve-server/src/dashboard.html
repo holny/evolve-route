@@ -941,7 +941,7 @@ function renderProviders(){
     const disabled = p.disabled ? ' <span class="la f" style="margin-left:6px">'+esc(t('pv_field_disabled'))+'</span>' : '';
     const srcBadge = p.source === 'manual'
       ? '<span class="pbadge">'+esc(t('pv_source_manual'))+'</span>'
-      : '<span class="pbadge" style="background:#1c2d45;color:var(--blue)">'+esc(t('pv_source_scanned'))+'</span>';
+      : '<span class="pbadge" style="background:var(--tab-on-bg);color:var(--blue)">'+esc(t('pv_source_scanned'))+'</span>';
     const kindBadge = (PK_LABEL[p.plan_kind] || 'pk_api') && t(PK_LABEL[p.plan_kind] || 'pk_api') || p.plan_kind;
     const docs = p.docs_url ? ' <a href="'+esc(p.docs_url)+'" target="_blank" rel="noopener" style="color:var(--blue)">↗</a>' : '';
     const tName = p.tier || '-';
@@ -968,7 +968,7 @@ function renderProviders(){
       const aS = Math.round(a * 100) / 100;
       return '<div style="display:flex;align-items:center;gap:6px;margin-top:2px;font-size:10px">'
         + '<span style="min-width:28px;color:var(--dim)">'+esc(label)+'</span>'
-        + '<div style="flex:1;height:4px;background:#21262d;border-radius:2px">'
+        + '<div style="flex:1;height:4px;background:var(--row-line);border-radius:2px">'
         + '<div style="width:'+pct+'%;height:4px;background:'+col+';border-radius:2px"></div></div>'
         + '<span style="min-width:80px;text-align:right;color:'+col+'">'+pct+'%</span>'
         + '<span style="min-width:90px;text-align:right;color:var(--dim)">'+uS+' / '+aS+'</span></div>';
@@ -991,7 +991,7 @@ function renderProviders(){
           : '';
         return '<div style="display:flex;align-items:center;gap:6px;margin-top:2px;font-size:10px">'
           + '<span style="min-width:28px;color:var(--dim)">'+esc(label)+'</span>'
-          + '<div style="flex:1;height:4px;background:#21262d;border-radius:2px">'
+          + '<div style="flex:1;height:4px;background:var(--row-line);border-radius:2px">'
           + '<div style="width:'+pct+'%;height:4px;background:'+col+';border-radius:2px"></div></div>'
           + '<span style="min-width:80px;text-align:right;color:'+col+'">'+pct+'%</span>'
           + '<span style="min-width:120px;text-align:right;color:var(--dim)">'+(lim-rem)+' / '+lim+resetTxt+'</span></div>';
@@ -1052,7 +1052,7 @@ function renderProviders(){
     return '<div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px'+(p.disabled?';opacity:.5':'')+'">'
       + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
       +   '<b style="font-size:13px">'+esc(p.key)+'</b> '+srcBadge+statusBadge+dupBadge
-      +   ' <span class="pbadge" style="background:#1c2d45;color:var(--blue)">'+esc(kindBadge)+'</span>'
+      +   ' <span class="pbadge" style="background:var(--tab-on-bg);color:var(--blue)">'+esc(kindBadge)+'</span>'
       +   summary + disabled + docs + winInfo
       +   '<span style="margin-left:auto"></span>'
       +   '<button class="lang-btn" data-pv-edit="'+esc(p.key)+'" data-pv-source="'+esc(p.source)+'">'+esc(t('pv_edit'))+'</button>'
@@ -1108,22 +1108,22 @@ function openProviderDrawer(key, isManual){
   const v = existing || { key: '', base_url: '', api_key: '', protocol: 'openai', plan_kind: 'coding', tier: '', docs_url: '', model_rates: '', disabled: false, window_5h: null, window_weekly: null, window_monthly: null };
   const k = (k2) => esc(v[k2] ?? '');
   form.innerHTML = [
-    ['pv_field_baseUrl',`<input id="pv-baseUrl" value="${k('base_url')}" ${!isManual && !isNew ? 'readonly style="opacity:.6"' : ''} placeholder="https://api.open.bigmodel.cn/api/coding/paas/v4" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
-    ['pv_field_apiKey',`<input id="pv-apiKey" type="password" value="${v.api_key?'':''}" placeholder="sk-..." style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
-    ['pv_field_protocol',`<select id="pv-protocol" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px"><option value="openai" ${v.protocol==='openai'?'selected':''}>OpenAI</option><option value="anthropic" ${v.protocol==='anthropic'?'selected':''}>Anthropic</option></select>`],
-    ['pv_field_planKind',`<select id="pv-planKind" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">
+    ['pv_field_baseUrl',`<input id="pv-baseUrl" value="${k('base_url')}" ${!isManual && !isNew ? 'readonly style="opacity:.6"' : ''} placeholder="https://api.open.bigmodel.cn/api/coding/paas/v4" style="width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_apiKey',`<input id="pv-apiKey" type="password" value="${v.api_key?'':''}" placeholder="sk-..." style="width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_protocol',`<select id="pv-protocol" style="width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px"><option value="openai" ${v.protocol==='openai'?'selected':''}>OpenAI</option><option value="anthropic" ${v.protocol==='anthropic'?'selected':''}>Anthropic</option></select>`],
+    ['pv_field_planKind',`<select id="pv-planKind" style="width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">
       <option value="">-</option>
       <option value="coding" ${v.plan_kind==='coding'?'selected':''}>Coding Plan</option>
       <option value="agent" ${v.plan_kind==='agent'?'selected':''}>Agent Plan</option>
       <option value="go" ${v.plan_kind==='go'?'selected':''}>OpenCode Go (Token)</option>
       <option value="api" ${v.plan_kind==='api'?'selected':''}>API 按量</option>
     </select>`],
-    ['pv_field_tier',`<select id="pv-tier" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px"><option value="">-</option><option value="lite" ${v.tier==='lite'?'selected':''}>Lite</option><option value="pro" ${v.tier==='pro'?'selected':''}>Pro</option><option value="max" ${v.tier==='max'?'selected':''}>Max</option><option value="go" ${v.tier==='go'?'selected':''}>Go</option><option value="go-plus" ${v.tier==='go-plus'?'selected':''}>Go Plus</option></select>`],
-    ['pv_field_window5h',`<input id="pv-w5h" type="number" min="0" value="${v.window_5h??''}" placeholder="2000" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
-    ['pv_field_windowWeekly',`<input id="pv-wweek" type="number" min="0" value="${v.window_weekly??''}" placeholder="10000" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
-    ['pv_field_windowMonthly',`<input id="pv-wmonth" type="number" min="0" value="${v.window_monthly??''}" placeholder="50000" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
-    ['pv_field_docsUrl',`<input id="pv-docsUrl" value="${k('docs_url')}" placeholder="https://docs.bigmodel.cn/..." style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
-    ['pv_field_rates',`<textarea id="pv-rates" rows="4" placeholder="GLM-5.3|6.9,1.7,24&#10;GLM-5.3-Flash|2.3,0.56,8" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-family:monospace;font-size:11px">${esc(v.model_rates||'')}</textarea>`],
+    ['pv_field_tier',`<select id="pv-tier" style="width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px"><option value="">-</option><option value="lite" ${v.tier==='lite'?'selected':''}>Lite</option><option value="pro" ${v.tier==='pro'?'selected':''}>Pro</option><option value="max" ${v.tier==='max'?'selected':''}>Max</option><option value="go" ${v.tier==='go'?'selected':''}>Go</option><option value="go-plus" ${v.tier==='go-plus'?'selected':''}>Go Plus</option></select>`],
+    ['pv_field_window5h',`<input id="pv-w5h" type="number" min="0" value="${v.window_5h??''}" placeholder="2000" style="width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_windowWeekly',`<input id="pv-wweek" type="number" min="0" value="${v.window_weekly??''}" placeholder="10000" style="width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_windowMonthly',`<input id="pv-wmonth" type="number" min="0" value="${v.window_monthly??''}" placeholder="50000" style="width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_docsUrl',`<input id="pv-docsUrl" value="${k('docs_url')}" placeholder="https://docs.bigmodel.cn/..." style="width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_rates',`<textarea id="pv-rates" rows="4" placeholder="GLM-5.3|6.9,1.7,24&#10;GLM-5.3-Flash|2.3,0.56,8" style="width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-family:monospace;font-size:11px">${esc(v.model_rates||'')}</textarea>`],
   ].map(([k, html]) => '<label style="color:var(--dim);align-self:center">'+esc(t(k))+'</label>'+html).join('');
   if (!isNew) form.innerHTML += '<label></label><label style="font-size:11px"><input type="checkbox" id="pv-disabled" '+(v.disabled?'checked':'')+'> '+esc(t('pv_field_disabled'))+'</label>';
   drawer.style.display = 'flex';
