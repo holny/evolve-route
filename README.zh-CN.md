@@ -50,7 +50,7 @@
 
 ### 第 2 步 — 动态权重 *（难度联动 × 配额感知——[BaRP](https://arxiv.org/abs/2510.07429) Eq.1）*
 
-$$\mathbf{W} = \operatorname{norm}\big(\mathbf{w}^{\mathrm{diff}}(d_{\mathrm{eff}}) \odot \mathbf{w}^{\mathrm{quota}}(t)\big), \quad t = \frac{\#\{\text{配额不足 } 8 \times \text{预估的候选}\}}{\#\{\text{有配额数据的候选}\}}$$
+$$\mathbf{W} = \text{norm}\big(\mathbf{w}^{\mathrm{diff}}(d_{\mathrm{eff}}) \odot \mathbf{w}^{\mathrm{quota}}(t)\big), \quad t = \frac{\#\{\text{配额不足 } 8 \times \text{预估的候选}\}}{\#\{\text{有配额数据的候选}\}}$$
 
 *发生了什么*：难任务（d_eff 高）权重倒向质量；简单任务倒向成本。独立地，当候选中配额紧张的比例升高（t → 1）时，成本权重 ×(1+1.5t)、质量让位 ×(1−0.25t)。无配额数据 → 不干预。
 
@@ -70,8 +70,8 @@ $$\tilde{\theta} \sim \mathrm{Beta}(\alpha, \beta), \qquad \mathrm{final}(m) = \
 
 ### 第 5 步 — 飞轮偏置 *（两阶段归一化 + 基线相对更新）*
 
-$$\operatorname{norm}(v) = \operatorname{clamp}\!\left(\frac{v - \bar{x}}{q_{80} - q_{20}},\ 0,\ 1\right), \qquad \mathrm{reward} = w_{\mathrm{ok}} \cdot \operatorname{norm}(\mathrm{ok}) + (1{-}w_{\mathrm{ok}})\big(1 - \operatorname{norm}(\ln \mathrm{ms})\big)$$
-$$B(m) = \operatorname{clamp}\big(1 + (\mathrm{reward}_m - \operatorname{median}_{m'}\mathrm{reward}_{m'}) \cdot \gamma,\ 0.7,\ 1.3\big)$$
+$$\text{norm}(v) = \text{clamp}\!\left(\frac{v - \bar{x}}{q_{80} - q_{20}},\ 0,\ 1\right), \qquad \mathrm{reward} = w_{\mathrm{ok}} \cdot \text{norm}(\mathrm{ok}) + (1{-}w_{\mathrm{ok}})\big(1 - \text{norm}(\ln \mathrm{ms})\big)$$
+$$B(m) = \text{clamp}\big(1 + (\mathrm{reward}_m - \text{median}_{m'}\mathrm{reward}_{m'}) \cdot \gamma,\ 0.7,\ 1.3\big)$$
 
 *发生了什么*：每个模型近 30 条结果（成功 + 延迟，ln 压缩）归一成 [0,1] 的 reward——先对自己的滚动均值中心化，再按自己的 20/80 分位距缩放（这让 200ms 的模型和 20s 的模型可比）。bias 学的是**相对跨模型中位数的优势**，不是绝对结果——整个工作负载变难时所有 reward 同降、中位数跟着动、bias 纹丝不动。最终分数乘以 B(m)。飞轮只能微调：|B| ≤ 1.3，决策模型的判定是天花板。
 

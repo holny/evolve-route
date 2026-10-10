@@ -50,7 +50,7 @@ Context window too small for the estimate → out. Task needs vision, model can'
 
 ### Step 2 — Dynamic weights *(difficulty-linked × quota-aware — [BaRP](https://arxiv.org/abs/2510.07429) Eq.1)*
 
-$$\mathbf{W} = \operatorname{norm}\big(\mathbf{w}^{\mathrm{diff}}(d_{\mathrm{eff}}) \odot \mathbf{w}^{\mathrm{quota}}(t)\big), \quad t = \frac{\#\{\text{candidates with quota} < 8 \times \text{est}\}}{\#\{\text{candidates with quota data}\}}$$
+$$\mathbf{W} = \text{norm}\big(\mathbf{w}^{\mathrm{diff}}(d_{\mathrm{eff}}) \odot \mathbf{w}^{\mathrm{quota}}(t)\big), \quad t = \frac{\#\{\text{candidates with quota} < 8 \times \text{est}\}}{\#\{\text{candidates with quota data}\}}$$
 
 *What happens:* a hard task (d_eff high) tilts weights toward quality; a simple task tilts toward cost. Independently, when many eligible candidates are quota-tight (t → 1), the cost weight rises ×(1+1.5t) and quality yields ×(1−0.25t). No quota data → t undefined → weights untouched.
 
@@ -70,8 +70,8 @@ $$\tilde{\theta} \sim \mathrm{Beta}(\alpha, \beta), \qquad \mathrm{final}(m) = \
 
 ### Step 5 — Flywheel bias *(two-stage normalization + baseline-relative update)*
 
-$$\operatorname{norm}(v) = \operatorname{clamp}\!\left(\frac{v - \bar{x}}{q_{80} - q_{20}},\ 0,\ 1\right), \qquad \mathrm{reward} = w_{\mathrm{ok}} \cdot \operatorname{norm}(\mathrm{ok}) + (1{-}w_{\mathrm{ok}})\big(1 - \operatorname{norm}(\ln \mathrm{ms})\big)$$
-$$B(m) = \operatorname{clamp}\big(1 + (\mathrm{reward}_m - \operatorname{median}_{m'}\mathrm{reward}_{m'}) \cdot \gamma,\ 0.7,\ 1.3\big)$$
+$$\text{norm}(v) = \text{clamp}\!\left(\frac{v - \bar{x}}{q_{80} - q_{20}},\ 0,\ 1\right), \qquad \mathrm{reward} = w_{\mathrm{ok}} \cdot \text{norm}(\mathrm{ok}) + (1{-}w_{\mathrm{ok}})\big(1 - \text{norm}(\ln \mathrm{ms})\big)$$
+$$B(m) = \text{clamp}\big(1 + (\mathrm{reward}_m - \text{median}_{m'}\mathrm{reward}_{m'}) \cdot \gamma,\ 0.7,\ 1.3\big)$$
 
 *What happens:* for each model, the last 30 outcomes (success + latency, ln-compressed) become a reward in [0,1] — first normalized against its own rolling mean, then scaled by its own 20/80 spread (this is what makes a 200 ms model and a 20 s model comparable). The bias learns the *advantage over the cross-model median*, not absolute outcomes — when the whole workload gets harder, every reward drops together, the median moves with them, and bias stays still. Final scores are multiplied by B(m). The flywheel can only fine-tune: |B| ≤ 1.3, and the decision model's judgment is the ceiling.
 
