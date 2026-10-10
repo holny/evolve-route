@@ -342,6 +342,88 @@ dependencies = [
 ]
 
 [[package]]
+name = "evolve-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "evolve-decision"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "evolve-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "evolve-discovery"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "evolve-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "evolve-memory"
+version = "0.1.0"
+dependencies = [
+ "evolve-core",
+ "http",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "evolve-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "bytes",
+ "clap",
+ "evolve-core",
+ "evolve-decision",
+ "evolve-discovery",
+ "evolve-memory",
+ "futures",
+ "hex",
+ "http-body-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "switchyard-protocol",
+ "switchyard-translation",
+ "tokio",
+ "tokio-stream",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1633,88 +1715,6 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
-
-[[package]]
-name = "turbine-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "hex",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "toml",
- "tracing",
-]
-
-[[package]]
-name = "turbine-decision"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "turbine-core",
-]
-
-[[package]]
-name = "turbine-discovery"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "tokio",
- "toml",
- "tracing",
- "turbine-core",
-]
-
-[[package]]
-name = "turbine-memory"
-version = "0.1.0"
-dependencies = [
- "http",
- "serde",
- "serde_json",
- "tracing",
- "turbine-core",
-]
-
-[[package]]
-name = "turbine-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "bytes",
- "clap",
- "futures",
- "hex",
- "http-body-util",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "switchyard-protocol",
- "switchyard-translation",
- "tokio",
- "tokio-stream",
- "tower",
- "tracing",
- "tracing-subscriber",
- "turbine-core",
- "turbine-decision",
- "turbine-discovery",
- "turbine-memory",
-]
 
 [[package]]
 name = "typenum"

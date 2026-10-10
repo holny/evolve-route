@@ -1,24 +1,24 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/turbine-core",
-    "crates/turbine-decision",
-    "crates/turbine-memory",
-    "crates/turbine-discovery",
-    "crates/turbine-server",
+    "crates/evolve-core",
+    "crates/evolve-decision",
+    "crates/evolve-memory",
+    "crates/evolve-discovery",
+    "crates/evolve-server",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/holny/turbine-router"
+repository = "https://github.com/holny/evolve-router"
 
 [workspace.dependencies]
-turbine-core = { path = "crates/turbine-core" }
-turbine-decision = { path = "crates/turbine-decision" }
-turbine-memory = { path = "crates/turbine-memory" }
-turbine-discovery = { path = "crates/turbine-discovery" }
+evolve-core = { path = "crates/evolve-core" }
+evolve-decision = { path = "crates/evolve-decision" }
+evolve-memory = { path = "crates/evolve-memory" }
+evolve-discovery = { path = "crates/evolve-discovery" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }

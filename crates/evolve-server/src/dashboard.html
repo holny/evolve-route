@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>EvolveRouter</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { --bg:#0d1117; --card:#161b22; --border:#30363d; --fg:#c9d1d9; --dim:#8b949e;
+        --green:#3fb950; --red:#f85149; --amber:#d29922; --blue:#58a6ff; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--bg); color:var(--fg); font:13px/1.5 -apple-system,"PingFang SC","Helvetica Neue",sans-serif; padding:16px 20px; }
+.topbar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+.topbar h1 { font-size:17px; }
+.sub { color:var(--dim); font-size:12px; display:flex; align-items:center; gap:6px; }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--amber); display:inline-block; }
+.dot.ok { background:var(--green); } .dot.err { background:var(--red); }
+.chips { display:flex; gap:8px; flex-wrap:wrap; margin-left:auto; }
+.chip { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:2px 10px; font-size:12px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.chip b { color:var(--fg); font-weight:normal; }
+.lang-sel { background:var(--card); color:var(--fg); border:1px solid var(--border); border-radius:12px; padding:3px 8px; font-size:12px; cursor:pointer; }
+.grid { display:grid; grid-template-columns: 1.2fr 1fr; gap:14px; align-items:start; }
+@media (max-width:1100px){ .grid { grid-template-columns:1fr; } }
+.card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:14px; }
+.card h2 { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
+.card h2 .note { text-transform:none; letter-spacing:0; opacity:.75; margin-left:6px; }
+.card h3 { font-size:11px; color:var(--dim); margin:12px 0 6px; }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+th { color:var(--dim); text-align:left; font-weight:normal; padding:4px 6px; border-bottom:1px solid var(--border); white-space:nowrap; vertical-align:bottom; }
+td { padding:4px 6px; border-bottom:1px solid #21262d; vertical-align:top; }
+tbody tr:hover { background:#1c2129; }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.dim2 { color:var(--dim); font-size:11px; }
+.badge { display:inline-block; padding:0 6px; border-radius:4px; font-size:11px; }
+.badge.dead { background:#3d1618; color:var(--red); }
+.badge.ok   { background:#12261e; color:var(--green); }
+#feed { max-height:520px; overflow-y:auto; }
+.feed-ev { border-bottom:1px solid #21262d; padding:3px 0; }
+.feed-row { display:flex; gap:8px; padding:2px 0; font-variant-numeric:tabular-nums; cursor:pointer; align-items:baseline; }
+.feed-row:hover { background:#1c2129; }
+.feed-row .t { color:var(--dim); min-width:60px; font-size:11px; }
+.feed-row .m { color:var(--blue); min-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.feed-row .tk { font-size:11px; color:var(--dim); }
+.feed-row .ms { margin-left:auto; color:var(--dim); }
+.pill { border-radius:10px; padding:0 8px; font-size:11px; }
+.feed-path { display:flex; gap:10px; flex-wrap:wrap; align-items:baseline; padding:2px 0 1px 2px; font-size:11px; color:var(--dim); }
+.feed-group { border:1px solid var(--border); border-radius:8px; margin-bottom:8px; overflow:hidden; background:var(--card); }
+.feed-group-h { display:flex; gap:8px; align-items:baseline; padding:4px 10px; background:#1a2029; cursor:pointer; font-size:11px; color:var(--dim); white-space:nowrap; }
+.feed-group-h:hover { color:var(--fg); }
+.feed-group-h b { color:var(--fg); font-weight:normal; }
+.feed-group-h .cnt { margin-left:auto; font-variant-numeric:tabular-nums; }
+.feed-group-b .feed-ev { border-bottom:1px solid #21262d; }
+.feed-group-b .feed-ev:last-child { border-bottom:0; }
+.pbadge { border-radius:4px; padding:0 6px; background:#1c2431; color:var(--blue); white-space:nowrap; }
+.pbadge.explore { color:var(--amber); }
+.pbadge.warn { color:var(--red); background:#2d1a1c; }
+.pdim { font-variant-numeric:tabular-nums; }
+.feed-detail { padding:4px 12px; color:var(--dim); font-size:11px; border-left:2px solid var(--border); margin:3px 0 3px 8px; }
+.lk-h { color:var(--blue); margin:6px 0 2px; font-size:11px; }
+.lk-v { color:var(--fg); }
+table.mx { margin:2px 0 4px; font-size:11px; }
+table.mx th { padding:2px 5px; }
+table.mx td { padding:2px 5px; border-bottom:1px solid #21262d; text-align:right; font-variant-numeric:tabular-nums; }
+table.mx td.mxm { text-align:left; color:var(--blue); cursor:pointer; }
+table.mx td.mxm:hover { text-decoration:underline; }
+table.mx tr.win td { color:var(--green); }
+.mxt { font-weight:bold; }
+.wheel-row.hl { animation: hlflash 2s ease-out; }
+.wf { margin:4px 0 2px; }
+.wf-bar { display:flex; height:14px; border-radius:3px; overflow:hidden; font-size:9px; color:#0d1117; }
+.wf-seg { display:flex; align-items:center; justify-content:center; min-width:2px; white-space:nowrap; overflow:hidden; }
+.wf-pre { background:#58a6ff; } .wf-dec { background:#d29922; }
+.wf-first { background:#3fb950; } .wf-stream { background:#8957e5; }
+.wf-legend { display:flex; gap:10px; font-size:10px; color:var(--dim); margin-top:3px; flex-wrap:wrap; }
+.wf-dot { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:3px; vertical-align:middle; }
+.wtabs { display:flex; gap:4px; margin-bottom:8px; flex-wrap:wrap; }
+.wtab { border:1px solid var(--border); border-radius:10px; padding:1px 10px; font-size:11px; color:var(--dim); cursor:pointer; }
+.wtab.on { background:#1c2d45; color:var(--blue); border-color:var(--blue); }
+.trend-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px; }
+.trend-box { border:1px solid var(--border); border-radius:6px; padding:6px 8px; }
+.trend-box h4 { font-size:11px; color:var(--dim); font-weight:normal; margin-bottom:4px; }
+.trend-svg { width:100%; height:90px; display:block; }
+.trend-legend { display:flex; gap:8px; flex-wrap:wrap; font-size:10px; margin-top:2px; }
+.trend-legend span { display:inline-flex; align-items:center; gap:3px; }
+.trend-legend i { width:10px; height:3px; border-radius:1px; display:inline-block; }
+@keyframes hlflash { 0% { background:#264d2b; } 100% { background:transparent; } }
+.wedit { cursor:pointer; border-bottom:1px dashed var(--dim); }
+.pw-panel { display:none; margin:6px 0; padding:8px; border:1px solid var(--border); border-radius:6px; }
+.pw-panel .pwr { display:flex; gap:6px; align-items:center; margin:3px 0; }
+.pw-panel label { min-width:90px; color:var(--dim); font-size:11px; }
+.pw-panel input { width:70px; background:#0d1117; color:var(--fg); border:1px solid var(--border); border-radius:4px; padding:2px 6px; }
+.pw-panel button { background:#1a2029; color:var(--fg); border:1px solid var(--border); border-radius:4px; padding:2px 10px; cursor:pointer; }
+.la { font-size:10px; padding:0 4px; border-radius:3px; margin-left:4px; }
+.la.c { background:#12261e; color:var(--green); }
+.la.f { background:#3d1618; color:var(--red); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <h1 data-i18n="title">EvolveRouter Dashboard</h1>
+    <div class="sub"><span class="dot" id="sse-dot"></span><span id="sse-status" data-i18n="sse_conn">SSE 连接中…</span></div>
+  </div>
+  <div class="chips" id="chips"></div>
+  <select class="lang-sel" id="lang-sel"></select>
+</header>
+<main>
+  <section class="card">
+    <h2 data-i18n="feed">实时决策流</h2>
+    <div id="feed"></div>
+  </section>
+  <div class="grid">
+    <section class="card">
+      <h2><span data-i18n="dyn">模型动态</span><span class="note" data-i18n="dyn_note">有流量在前按流量排序，无流量按优先度</span></h2>
+      <div class="wtabs" id="dyn-tabs"></div>
+      <table id="dyn"><thead></thead><tbody></tbody></table>
+      <h3 data-i18n="health">冷却与配额窗口（上游限额头学习）</h3>
+      <table id="health"><thead></thead><tbody></tbody></table>
+      <table id="quota" style="margin-top:8px"><thead></thead><tbody></tbody></table>
+    </section>
+    <section class="card">
+      <h2 style="display:flex;align-items:center;justify-content:space-between">
+        <span data-i18n="wheel">飞轮 · 经验学习与自进化（参与路由决策的因素）</span>
+        <button class="lang-btn" id="pw-btn" style="text-transform:none">⚖ <span data-i18n="l_weights">公式权重</span></button>
+      </h2>
+      <div class="pw-panel" id="pw-panel"></div>
+      <table id="wheel"><thead></thead><tbody></tbody></table>
+    </section>
+  </div>
+  <section class="card">
+    <h2 style="display:flex;justify-content:space-between;align-items:center">
+      <span data-i18n="trends_card">趋势 · 模型性能时间线</span>
+      <span class="wtabs" id="trend-tabs"></span>
+    </h2>
+    <div class="trend-grid" id="trend-grid"><div class="dim2" data-i18n="t_nodata">窗口内暂无样本</div></div>
+  </section>
+  <section class="card">
+    <h2 style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <span data-i18n="provider_card">Provider 管理</span>
+      <span style="display:flex;gap:6px">
+        <button class="lang-btn" id="pv-add-btn" data-i18n="pv_add">+ 新增 Provider</button>
+        <button class="lang-btn" id="pv-scan-btn" data-i18n="pv_scan">🔍 全局扫描</button>
+      </span>
+    </h2>
+    <div class="sub" style="margin-bottom:8px" data-i18n="provider_sub">手动维护 provider 凭据 / 档位 / 窗口额度 · 扫描发现自动展示</div>
+    <div id="pv-scan-progress" style="display:none;margin-bottom:8px;padding:8px 10px;background:#0d1117;border:1px solid var(--border);border-radius:6px;font-size:11px;font-family:monospace;white-space:pre-wrap;max-height:200px;overflow:auto;color:var(--dim)"></div>
+    <div id="providers-list"></div>
+  </section>
+
+  <!-- Provider 编辑抽屉 -->
+  <div id="pv-drawer" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center">
+    <div class="card" style="width:560px;max-width:90vw;max-height:90vh;overflow:auto;padding:16px">
+      <h3 id="pv-drawer-title" data-i18n="pv_edit">编辑 Provider</h3>
+      <div id="pv-form" style="display:grid;grid-template-columns:1fr 2fr;gap:8px;font-size:13px"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="lang-btn" id="pv-cancel-btn" data-i18n="pv_cancel">取消</button>
+        <button class="lang-btn" id="pv-save-btn" data-i18n="pv_save">保存</button>
+        <button class="lang-btn" id="pv-refresh-btn" data-i18n="pv_refresh">🔄 拉取</button>
+        <button class="lang-btn" id="pv-delete-btn" data-i18n="pv_delete" style="border-color:var(--red);color:var(--red)">删除</button>
+      </div>
+    </div>
+  </div>
+</main>
+<script>
+const LANGS = ['zh','en','ko','ja','es','fr'];
+let lang = localStorage.getItem('mr-lang');
+if (!LANGS.includes(lang)) lang = 'zh';
+const LOCALE = {zh:'zh-CN', en:'en-US', ko:'ko-KR', ja:'ja-JP', es:'es-ES', fr:'fr-FR'};
+
+const T = {
+  title:     {zh:'EvolveRouter Dashboard', en:'EvolveRouter Dashboard', ko:'EvolveRoute 대시보드', ja:'EvolveRoute ダッシュボード', es:'Panel de EvolveRoute', fr:'Tableau de bord EvolveRoute'},
+  sse_conn:  {zh:'SSE 连接中…', en:'SSE connecting…', ko:'SSE 연결 중…', ja:'SSE 接続中…', es:'Conectando SSE…', fr:'Connexion SSE…'},
+  sse_ok:    {zh:'SSE 已连接', en:'SSE connected', ko:'SSE 연결됨', ja:'SSE 接続済み', es:'SSE conectado', fr:'SSE connecté'},
+  sse_retry: {zh:'SSE 重连中…', en:'SSE reconnecting…', ko:'SSE 재연결 중…', ja:'SSE 再接続中…', es:'Reconectando SSE…', fr:'Reconnexion SSE…'},
+  feed:      {zh:'实时决策流', en:'Live decisions', ko:'실시간 결정 스트림', ja:'リアルタイム決定ストリーム', es:'Flujo de decisiones', fr:'Flux de décisions'},
+  dyn:       {zh:'模型动态', en:'Model activity', ko:'모델 동향', ja:'モデル動向', es:'Actividad de modelos', fr:'Activité des modèles'},
+  dyn_note:  {zh:'有流量在前按流量排序，无流量按优先度', en:'with traffic first by reqs, then by priority', ko:'트래픽 있는 모델이 앞(요청 수순), 없으면 우선순위순', ja:'トラフィックありを先にリクエスト数順、なしは優先度順', es:'con tráfico primero por solicitudes, luego por prioridad', fr:'avec trafic d\'abord par requêtes, puis par priorité'},
+  health:    {zh:'冷却与配额窗口（上游限额头学习）', en:'Cooldowns & quota windows (from rate-limit headers)', ko:'쿨다운 및 쿼터 윈도우(레이트 리밋 헤더 학습)', ja:'クールダウンとクォータ窓（レート制限ヘッダー学習）', es:'Enfriamientos y ventanas de cuota (cabeceras de límite)', fr:'Refroidissements et fenêtres de quota (en-têtes de limite)'},
+  wheel:     {zh:'飞轮 · 经验学习与自进化（参与路由决策的因素）', en:'Flywheel · learned signals that feed routing', ko:'플라이휠 · 경험 학습과 자기 진화(라우팅 판단에 참여)', ja:'フライホイール · 経験学習と自己進化（ルーティング判断に参与）', es:'Volante · aprendizaje que alimenta el enrutamiento', fr:'Volant · apprentissage nourrissant le routage'},
+  noflow:    {zh:'暂无流量', en:'no traffic yet', ko:'트래픽 없음', ja:'トラフィックなし', es:'sin tráfico aún', fr:'pas de trafic'},
+  allnormal: {zh:'全部正常（无异常记录）', en:'all normal (no incidents)', ko:'모두 정상(이상 기록 없음)', ja:'すべて正常（異常記録なし）', es:'todo normal (sin incidentes)', fr:'tout est normal (aucun incident)'},
+  noquota:   {zh:'尚未观测到限额头', en:'no rate-limit headers observed yet', ko:'아직 레이트 리밋 헤더 관찰 안 됨', ja:'まだレート制限ヘッダーは観測なし', es:'aún sin cabeceras de límite', fr:'pas encore d\'en-têtes de limite'},
+  wheelcold: {zh:'飞轮经验积累中…', en:'flywheel warming up…', ko:'플라이휠 경험 축적 중…', ja:'フライホイール経験蓄積中…', es:'volante acumulando experiencia…', fr:'volant en accumulation d\'expérience…'},
+  w_sub: {zh:'订阅', en:'sub', ko:'구독', ja:'サブ', es:'sub', fr:'abo'},
+  funnel:    {zh:'决策漏斗', en:'funnel', ko:'결정 퍼널', ja:'決定ファネル', es:'embudo de decisión', fr:'entonnoir de décision'},
+  filtered:  {zh:'剔除', en:'filtered out', ko:'제외', ja:'除外', es:'filtrados', fr:'filtrés'},
+  translated:{zh:'协议翻译', en:'protocol translated', ko:'프로토콜 번역', ja:'プロトコル翻訳', es:'protocolo traducido', fr:'protocole traduit'},
+  skipped:   {zh:'降级链', en:'fallback chain', ko:'폴백 체인', ja:'フォールバック連鎖', es:'cadena de reserva', fr:'chaîne de repli'},
+  c_model:  {zh:'模型', en:'Model', ko:'모델', ja:'モデル', es:'Modelo', fr:'Modèle'},
+  c_source: {zh:'来源', en:'Source', ko:'출처', ja:'ソース', es:'Fuente', fr:'Source',
+    _t:{zh:'模型来自哪一层：用户配置 / agent 发现 / 远程拉取 / 内置先验；异常时附 ⚠', en:'which layer provided the model: user config / agent discovery / remote fetch / builtin prior; ⚠ if unhealthy', ko:'모델 출처 레이어: 사용자 설정/에이전트 발견/원격/내장; 비정상 시 ⚠', ja:'モデルの提供元：ユーザー設定/エージェント発見/リモート/内蔵。異常時は⚠', es:'capa de origen del modelo: config de usuario / descubrimiento / remoto / incorporado; ⚠ si no está sano', fr:'couche d\'origine du modèle : config utilisateur / découverte agent / distant / intégré ; ⚠ si unhealthy'}},
+  src_user: {zh:'用户', en:'user', ko:'사용자', ja:'ユーザー', es:'usuario', fr:'utilisateur'},
+  src_disc: {zh:'发现', en:'discovered', ko:'발견', ja:'発見', es:'descubierto', fr:'découvert'},
+  src_remote:{zh:'远程', en:'remote', ko:'원격', ja:'リモート', es:'remoto', fr:'distant'},
+  src_builtin:{zh:'内置', en:'builtin', ko:'내장', ja:'内蔵', es:'incorporado', fr:'intégré'},
+  c_reqs:   {zh:'请求(成功)', en:'Reqs(ok)', ko:'요청(성공)', ja:'リクエスト(成功)', es:'Solicitudes(ok)', fr:'Requêtes(ok)'},
+  c_tokens: {zh:'Tokens 入/出/缓存读/缓存写', en:'Tokens in/out/c.read/c.write', ko:'토큰 입/출/캐시읽/캐시쓰', ja:'トークン 入/出/ｷｬｯｼｭ読/書', es:'Tokens ent/sal/lee/esc', fr:'Jetons entr/sor/lect/éc',
+    _t:{zh:'输入 / 输出 / 缓存读(折扣命中) / 缓存写(计入计价)', en:'prompt / completion / cache read (discounted) / cache write (billed)', ko:'입력 / 출력 / 캐시 읽기(할인) / 캐시 쓰기(과금)', ja:'入力 / 出力 / キャッシュ読み(割引) / キャッシュ書き(課金)', es:'entrada / salida / lectura caché (descuento) / escritura caché (facturada)', fr:'entrée / sortie / lecture cache (remise) / écriture cache (facturée)'}},
+  c_ttft:   {zh:'平均TTFT', en:'avg TTFT', ko:'평균 TTFT', ja:'平均TTFT', es:'TTFT prom', fr:'TTFT moy',
+    _t:{zh:'首字延迟的平均值（各次请求 TTFT 均值）；单次 TTFT 看实时决策流', en:'average time-to-first-token across requests; per-request TTFT lives in the live feed', ko:'요청별 첫 토큰 지연의 평균; 개별 TTFT는 실시간 스트림에서', ja:'各リクエスト TTFT の平均。個別はリアルタイムストリームで', es:'promedio del tiempo al primer token; el TTFT por petición está en el flujo en vivo', fr:'moyenne du délai au 1er jeton ; le TTFT par requête est dans le flux live'}},
+  c_lat:    {zh:'平均耗时', en:'avg latency', ko:'평균 지연', ja:'平均時間', es:'latencia prom', fr:'latence moy',
+    _t:{zh:'总耗时的平均值（各次请求均值）；单次耗时看实时决策流', en:'average total latency across requests; per-request latency lives in the live feed', ko:'요청별 총 지연의 평균; 개별 지연은 실시간 스트림에서', ja:'各リクエストの合計時間の平均。個別はリアルタイムストリームで', es:'promedio de latencia total; la latencia por petición está en el flujo en vivo', fr:'moyenne de la latence totale ; la latence par requête est dans le flux live'}},
+  c_rate:   {zh:'平均tok/s', en:'avg tok/s', ko:'평균 tok/s', ja:'平均tok/s', es:'tok/s prom', fr:'tok/s moy',
+    _t:{zh:'平均吐 token 速率 = 补全 tokens ÷ 生成窗口（总耗时−TTFT），各次请求取均值', en:'average generation speed = completion tokens ÷ generation window (total − TTFT), averaged over requests', ko:'평균 토큰 생성 속도 = 완료 토큰 ÷ 생성 구간(총−TTFT), 요청 평균', ja:'平均生成速度 = 完成トークン ÷ 生成窓（合計−TTFT）、リクエスト平均', es:'velocidad media = tokens completados ÷ ventana de generación (total − TTFT), promedio', fr:'vitesse moyenne = jetons complétés ÷ fenêtre de génération (total − TTFT), en moyenne'}},
+  c_cache:  {zh:'缓存%', en:'Cache%', ko:'캐시%', ja:'ｷｬｯｼｭ%', es:'Caché%', fr:'Cache%',
+    _t:{zh:'缓存命中率 = 缓存 tokens ÷ prompt tokens', en:'cache hit rate = cached ÷ prompt tokens', ko:'캐시 적중률 = 캐시 토큰 ÷ 프롬프트 토큰', ja:'命中率 = キャッシュ ÷ プロンプトトークン', es:'tasa de acierto = caché ÷ prompt', fr:'taux de succès = cache ÷ prompt'}},
+  c_tools:  {zh:'工具%', en:'Tools%', ko:'도구%', ja:'ツール%', es:'Herram%', fr:'Outils%',
+    _t:{zh:'工具调用 valid_json 占比', en:'tool calls with valid JSON', ko:'도구 호출 valid_json 비율', ja:'ツール呼び出し valid_json 比率', es:'llamadas con JSON válido', fr:'appels avec JSON valide'}},
+  c_mk:     {zh:'模型×key', en:'Model×key', ko:'모델×키', ja:'モデル×キー', es:'Modelo×key', fr:'Modèle×clé'},
+  c_status: {zh:'状态', en:'Status', ko:'상태', ja:'状態', es:'Estado', fr:'État'},
+  c_detail: {zh:'详情/冷却', en:'Detail/Cooldown', ko:'상세/쿨다운', ja:'詳細/クールダウン', es:'Detalle/Enfriamiento', fr:'Détail/Refroidissement'},
+  c_window: {zh:'窗口', en:'Window', ko:'윈도우', ja:'ウィンドウ', es:'Ventana', fr:'Fenêtre'},
+  c_remain: {zh:'剩余', en:'Remaining', ko:'잔여', ja:'残り', es:'Restante', fr:'Restant'},
+  c_reset:  {zh:'重置', en:'Reset', ko:'리셋', ja:'リセット', es:'Reinicio', fr:'Réinitialisation'},
+  available:{zh:'可用', en:'available', ko:'사용 가능', ja:'利用可能', es:'disponible', fr:'disponible'},
+  w_bench:  {zh:'榜单c/r/a', en:'Bench c/r/a', ko:'벤치 c/r/a', ja:'指標 c/r/a', es:'Bench c/r/a', fr:'Bench c/r/a',
+    _t:{zh:'能力先验 coding/reasoning/agentic（0-100%）：配置了外部榜单源时显示榜单学习覆盖值，否则显示目录/发现层先验基线；作为评分的能力项参与路由', en:'capability priors coding/reasoning/agentic (0-100%): shows learned benchmark overlay when configured, otherwise the catalog/discovery prior baseline; feeds the capability term of scoring', ko:'능력 사전 coding/reasoning/agentic(0-100%): 벤치 오버레이가 설정되면 학습값, 없으면 카탈로그/발견 기본값, 점수의 능력 항목에 사용', ja:'能力事前値 coding/reasoning/agentic（0-100%）：ベンチ学習の上書きがあれば優先、なければカタログ/発見の基準値。スコアの能力項に使用', es:'priors de capacidad coding/reasoning/agentic (0-100%): muestra la superposición de benchmarks si está configurada, si no la base del catálogo/descubrimiento; alimenta el término de capacidad', fr:'a priori de capacité coding/reasoning/agentic (0-100%) : affiche la surcouche benchmark si configurée, sinon la base catalogue/découverte ; alimente le terme de capacité du score'}},
+  w_rel:    {zh:'rel', en:'rel', ko:'rel', ja:'rel', es:'rel', fr:'rel',
+    _t:{zh:'实测可靠性，归一化 0-100（50=基线 0.5）：传输成功率 × 工具调用质量，再按会话确认与插件反馈融合', en:'observed reliability, normalized 0-100 (50 = baseline 0.5): transport success × tool-call quality, fused with session/plugin feedback', ko:'실측 신뢰성, 0-100 정규화(50=기준 0.5): 전송 성공률 × 도구 품질, 세션·플러그인 피드백 융합', ja:'実測信頼性、0-100 正規化（50=基準 0.5）：転送成功率 × ツール品質、セッション確認と融合', es:'fiabilidad observada, normalizada 0-100 (50 = base 0.5): éxito de transporte × calidad de herramientas, fusionada con feedback', fr:'fiabilité observée, normalisée 0-100 (50 = base 0.5) : succès transport × qualité outils, fusionnée avec le feedback'}},
+  w_calib:  {zh:'calib', en:'calib', ko:'calib', ja:'calib', es:'calib', fr:'calib',
+    _t:{zh:'token 校准，归一化 0-100（50=系数 1.0，>50 表示实际用量比估算偏多）：实际 ÷ 估算 prompt tokens（≥5 样本学习），用于上下文窗口硬约束', en:'token calibration, normalized 0-100 (50 = factor 1.0, >50 means actual runs above estimate): actual ÷ estimated prompt tokens, learned at ≥5 samples, hard constraint for the context window', ko:'토큰 캘리브레이션, 0-100(50=계수 1.0, >50 실제 사용량 많음): 실제 ÷ 추정 프롬프트 토큰, ≥5 샘플 학습, 컨텍스트 윈도우 제약용', ja:'トークン較正、0-100（50=係数 1.0、>50 は実使用が推定超）：実際 ÷ 推定プロンプトトークン、≥5サンプルで学習、コンテキスト窓の硬制約用', es:'calibración de tokens, normalizada 0-100 (50 = factor 1.0, >50 uso por encima del estimado): real ÷ estimado, aprendido con ≥5 muestras, restricción dura de ventana', fr:'calibrage des jetons, normalisé 0-100 (50 = facteur 1.0, >50 usage au-dessus de l\'estimé) : réel ÷ estimé, appris à ≥5 échantillons, contrainte dure de fenêtre'}},
+  w_speed:  {zh:'speed', en:'speed', ko:'speed', ja:'speed', es:'speed', fr:'speed',
+    _t:{zh:'实测速度，归一化 0-100（50=基线 0.5）：目录先验 7 : 真实请求观测 3 混合，随时间对数衰减', en:'observed speed, normalized 0-100 (50 = baseline 0.5): catalog prior 7 : real-request observation 3 blend, log decay over time', ko:'실측 속도, 0-100(50=기준 0.5): 카탈로그 사전 7 : 실제 관측 3 혼합, 시간 로그 감쇠', ja:'実測速度、0-100（50=基準 0.5）：カタログ事前 7 : 実リクエスト観測 3 混合、時間で対数減衰', es:'velocidad observada, normalizada 0-100 (50 = base 0.5): priori de catálogo 7 : observación real 3, decaimiento log', fr:'vitesse observée, normalisée 0-100 (50 = base 0.5) : priori catalogue 7 : observation réelle 3, décroissance log'}},
+  w_bias:   {zh:'bias', en:'bias', ko:'bias', ja:'bias', es:'bias', fr:'bias',
+    _t:{zh:'学习偏置，归一化 0-100（50=与目录中位持平，>50 优于中位）：实际成功率相对目录中位数比值（原始 0.7-1.3），表现好上浮、翻车下沉', en:'learned bias, normalized 0-100 (50 = at catalog median, >50 outperforms): actual success vs catalog median ratio (raw 0.7-1.3), rises with good performance, sinks on failures', ko:'학습 편향, 0-100(50=카탈로그 중앙값, >50 중위 초과): 실제 성공률 ÷ 중앙값(원래 0.7-1.3), 좋으면 상승·실패 시 하락', ja:'学習バイアス、0-100（50=カタログ中央値一致、>50 は中央値超）：実成功率 ÷ 中央値（元 0.7-1.3）、好調で上昇・失敗で低下', es:'sesgo aprendido, normalizado 0-100 (50 = mediana del catálogo, >50 supera): éxito real vs mediana (crudo 0.7-1.3), sube si va bien, baja si falla', fr:'biais appris, normalisé 0-100 (50 = médiane du catalogue, >50 surpasse) : succès réel vs médiane (brut 0.7-1.3), monte si performant, descend sinon'}},
+  w_sr:     {zh:'成功率', en:'Succ%', ko:'성공률', ja:'成功率', es:'Éxito%', fr:'Succ%',
+    _t:{zh:'传输成功率（≥5 样本后显示）', en:'transport success rate (≥5 samples)', ko:'전송 성공률(≥5 샘플)', ja:'転送成功率（≥5サンプル）', es:'tasa de éxito (≥5 muestras)', fr:'taux de succès (≥5 échantillons)'}},
+  w_cache:  {zh:'缓存%', en:'Cache%', ko:'캐시%', ja:'ｷｬｯｼｭ%', es:'Caché%', fr:'Cache%',
+    _t:{zh:'缓存命中率 = 缓存 tokens ÷ prompt tokens', en:'cache hit rate = cached ÷ prompt tokens', ko:'캐시 적중률 = 캐시 토큰 ÷ 프롬프트 토큰', ja:'命中率 = キャッシュ ÷ プロンプトトークン', es:'tasa de acierto = caché ÷ prompt', fr:'taux de succès = cache ÷ prompt'}},
+  w_cost:   {zh:'费用', en:'Cost', ko:'비용', ja:'費用', es:'Coste', fr:'Coût',
+    _t:{zh:'订阅制方案显示「订阅」（边际成本≈0，套餐摊薄）；按量方案 = 目录单价 × 累计 tokens（按厂商币种）', en:'subscription plans show "sub" (marginal cost ≈ 0, plan amortized); pay-as-you-go = catalog price × tokens (vendor currency)', ko:'구독 플랜은 "구독" 표시(한계 비용≈0); 종량제 = 카탈로그 단가 × 누적 토큰', ja:'サブスク プランは「サブ」表示（限界費用≈0）; 従量課金 = カタログ単価 × 累計トークン', es:'planes de suscripción muestran "sub" (coste marginal ≈ 0); por uso = precio × tokens', fr:'les plans par abonnement affichent "sub" (coût marginal ≈ 0); à l\'usage = prix × jetons'}},
+  w_samples:{zh:'样本', en:'Samples', ko:'샘플', ja:'サンプル', es:'Muestras', fr:'Échant.',
+    _t:{zh:'飞轮样本量（请求数），学习项达 5 样本后生效（冷启动保护）', en:'flywheel sample size; learning kicks in at 5', ko:'플라이휠 샘플 수(요청 수), 학습은 5 샘플부터(콜드스타트 보호)', ja:'サンプル数（リクエスト数）、学習は5サンプルから（コールドスタート保護）', es:'muestras del volante; el aprendizaje inicia en 5', fr:'échantillons du volant; l\'apprentissage démarre à 5'}},
+  w_fb:     {zh:'反馈', en:'Feedback', ko:'피드백', ja:'フィードバック', es:'Feedback', fr:'Retour',
+    _t:{zh:'主显 L3 语义回路（上一轮工具调用被会话执行确认 matched/total，已折入可靠性）；括号内为 L4 插件显式反馈（需装 opencode 插件回传）', en:'L3 semantic loop primary (previous-turn tool calls confirmed executed by session, folded into reliability); L4 plugin feedback in parens (needs opencode plugin)', ko:'L3 시맨틱 루프 기본(세션에서 실행 확인된 도구 호출, 신뢰성에 반영); 괄호 안 L4 플러그인 피드백', ja:'L3 セマンティックループ優先（セッションで実行確認されたツール呼び出し、信頼性に反映）; 括弧内は L4 プラグインフィードバック', es:'bucle semántico L3 primario (llamadas confirmadas por la sesión, integrado en fiabilidad); feedback L4 del plugin en paréntesis', fr:'boucle sémantique L3 en principal (outils confirmés par la session, intégré à la fiabilité); retour plugin L4 entre parenthèses'}},
+  w_weight: {zh:'权重', en:'Weight', ko:'가중치', ja:'重み', es:'Peso', fr:'Poids',
+    _t:{zh:'最终权重 = 用户 weight × 学习偏置，开方软化后乘入评分', en:'final weight = user weight × learned bias, sqrt-softened into score', ko:'최종 가중치 = 사용자 weight × 학습 편향, 제곱근 완화 후 점수에 곱', ja:'最終重み = ユーザーweight × 学習バイアス、平方根緩和してスコアに乗算', es:'peso final = peso usuario × sesgo, suavizado con raíz', fr:'poids final = poids utilisateur × biais, adouci par racine'}},
+  p_sticky: {zh:'粘性复用', en:'sticky reuse', ko:'스티키 재사용', ja:'スティキー再利用', es:'reutilización sticky', fr:'réutilisation sticky'},
+  p_sticky_hint: {zh:'粘性复用的全部条件（任一不满足即重新完整评估）：①上轮任务难度低(L1/L2) ②同会话连续 ③窗口装得下 ④服务健康 ⑤配额充足 ⑥量级双向2倍内 ⑦工具未变 ⑧轮次未耗尽(默认2轮)', en:'sticky reuse requires ALL of: previous task low-difficulty (L1/L2), same session, fits in window, service healthy, quota sufficient, size within 2x, same tools, turns remaining — otherwise full re-evaluation', ko:'스티키 재사용 전부 충족 시: 이전 작업 저난이도(L1/L2), 동일 세션, 윈도우 적합, 헬스, 쿼터, 크기 2배 내, 도구 동일, 잔여 턴 — 하나라도 불일치 시 전체 재평가', ja:'スティキー再利用の全条件（一つでも崩れると完全再評価）：前タスク低難度(L1/L2)、同一セッション、窓に収まる、ヘルス正常、クォータ十分、量級2倍内、ツール不変、残ターンあり', es:'la reutilización sticky exige TODO: tarea anterior de baja dificultad (L1/L2), misma sesión, cabe en ventana, servicio sano, cuota suficiente, tamaño dentro de 2x, mismas herramientas, turnos restantes — si no, reevaluación completa', fr:'la réutilisation sticky exige TOUT : tâche précédente de faible difficulté (L1/L2), même session, tient dans la fenêtre, service sain, quota suffisant, taille dans 2x, mêmes outils, tours restants — sinon réévaluation complète'},
+  p_explore: {zh:'探索', en:'exploring', ko:'탐색', ja:'探索', es:'explorando', fr:'exploration'},
+  t_explore: {zh:'ε-greedy：10% 请求改用次优模型，采集对比样本（高危/hard 任务不探索）', en:'ε-greedy: 10% of requests try the runner-up for comparative samples (skipped on high-stakes)', ko:'ε-greedy: 요청의 10%가 차점 모델 시험(고위험 제외)', ja:'ε-greedy: リクエストの10%で次点モデルを試行（高リスクは除外）', es:'ε-greedy: 10% prueban el segundo modelo (alto riesgo excluido)', fr:'ε-greedy: 10% des requêtes essaient le 2e (haut risque exclu)'},
+  p_funnel:  {zh:'漏斗', en:'funnel', ko:'퍼널', ja:'ファネル', es:'embudo', fr:'entonnoir'},
+  t_funnel:  {zh:'漏斗四层：目录 {a} → 候选 {b}（硬检查：健康/凭据/上下文窗口/配额）→ 合格 {c}（质量底线随难度提高）→ 评分 {d}（综合排序选出首选）', en:'funnel, 4 stages: catalog {a} → candidates {b} (hard checks: health/credentials/context window/quota) → eligible {c} (quality floor rises with difficulty) → scored {d} (composite ranking picks the top)', ko:'퍼널 4단계: 카탈로그 {a} → 후보 {b}(하드 체크: 헬스/자격/윈도우/쿼터) → 적격 {c}(품질 기준은 난이도에 비례) → 점수 {d}(종합 정렬로 선택)', ja:'ファネル4段階：カタログ {a} → 候補 {b}（ハードチェック：ヘルス/認証/窓/クォータ）→ 適格 {c}（品質基準は難度に連動）→ スコア {d}（総合ソートで選出）', es:'embudo de 4 etapas: catálogo {a} → candidatos {b} (controles duros: salud/credenciales/ventana/cuota) → aptos {c} (el piso de calidad sube con la dificultad) → puntuados {d} (el orden compuesto elige al primero)', fr:'entonnoir à 4 étages : catalogue {a} → candidats {b} (contrôles durs : santé/identifiants/fenêtre/quota) → aptes {c} (plancher de qualité selon la difficulté) → notés {d} (le classement composite choisit le 1er)'},
+  t_diff:    {zh:'任务难度 0-3：由判定器（决策模型+规则）评估请求复杂度，随会话深度略增。用途：难度越高质量底线越高（弱模型先出局）、≥2 取消 ε 探索、影响评分权重', en:'task difficulty 0-3, judged by the decision model + rules, rises slightly with session depth. Used for: higher quality floor at higher difficulty (weak models drop first), no ε-exploration at ≥2, and scoring weights', ko:'작업 난이도 0-3: 결정 모델+규칙이 평가, 세션 깊이에 따라 소폭 증가. 용도: 난이도가 높을수록 품질 기준 상승(약한 모델 먼저 탈락), ≥2면 ε 탐색 중단, 점수 가중치 영향', ja:'タスク難度 0-3：判断モデル＋規則がリクエスト複雑度を評価、セッション深度で微増。用途：難度が高いほど品質基準上昇（弱いモデルから脱落）、≥2でε探索中止、スコア重みに影響', es:'dificultad de la tarea 0-3, evaluada por el modelo de decisión + reglas, sube algo con la profundidad de la sesión. Usos: a más dificultad, más piso de calidad (los débiles caen primero), sin exploración ε si ≥2, afecta los pesos', fr:'difficulté de tâche 0-3, évaluée par le modèle de décision + règles, augmente un peu avec la profondeur de session. Usages : difficulté plus haute ⇒ plancher plus haut (les faibles sortent d\'abord), pas d\'exploration ε si ≥2, influence les poids'},
+  p_alt:     {zh:'备选', en:'runner-ups', ko:'차점', ja:'次点', es:'alternos', fr:'alternatives'},
+  p_diff:    {zh:'难度', en:'difficulty', ko:'난이도', ja:'難度', es:'dificultad', fr:'difficulté'},
+  p_est:     {zh:'预估入', en:'est in', ko:'추정 입', ja:'推定入', es:'ent est.', fr:'entr est.'},
+  t_est:     {zh:'请求发出前的输入 tokens 估算（用于窗口/配额/粘性检查）；行内「入」是上游实报用量，两者可能不同', en:'input-token estimate made before the request (drives window/quota/sticky checks); the in/out in the row are actual usage reported by upstream and may differ', ko:'요청 전 입력 토큰 추정(윈도우/쿼터/스티키 검사용); 행의 입/출은 업스트림 실제 사용량으로 다를 수 있음', ja:'リクエスト前の入力トークン推定（窓/クォータ/スティキー検査用）；行内の入/出は上流の実使用量で異なり得る', es:'estimación de tokens de entrada antes de la solicitud (ventana/cuota/sticky); lo in/out de la fila es uso real reportado por el upstream', fr:'estimation des jetons d\'entrée avant la requête (fenêtre/quota/sticky) ; le entr/sort de la ligne est l\'usage réel remonté, qui peut différer'},
+  t_actual:  {zh:'入=上游实报的总输入 tokens（读是其中命中缓存、按折扣计价的部分；写=新增缓存计费；出=补全）。入的大小由发送内容决定：全新短请求几十 token、带全部历史的长会话几十万都正常', en:'in = total input tokens reported by upstream (r = the cached subset, billed at discount; w = new cache written, billed; out = completion). Size follows content: a fresh short request is tens of tokens, a long session with full history is hundreds of thousands', ko:'입=업스트림이 보고한 총 입력 토큰(읽=그중 캐시 적중 부분, 할인 과금; 쓰=신규 캐시 기록, 과금; 출=보완). 크기는 내용에 비례: 새 짧은 요청은 수십 토큰, 전체 히스토리를 실Long 세션은 수십만', ja:'入=上流が報告する総入力トークン（読=うちキャッシュ適中部分、割引課金；書=新規キャッシュ書き込み、課金；出=補完）。大きさは内容次第：全新の短いリクエストは数十トークン、全履歴を含む長いセッションは数十万', es:'ent = total de tokens de entrada reportados por el upstream (lee = parte en caché, con descuento; esc = caché nueva, facturada; sal = complementación). El tamaño sigue al contenido: una petición corta nueva son decenas de tokens, una sesión larga con historial son cientos de miles', fr:'entr = total des jetons d\'entrée remontés (lect = partie en cache, facturée au rabais ; éc = cache nouvelle, facturée ; sor = complétion). La taille suit le contenu : une requête courte neuve fait des dizaines de jetons, une longue session avec historique en fait des centaines de milliers'},
+  s_incl: {zh:'其中读', en:'incl. r', ko:'이중 읽', ja:'内 読', es:'incl. lee', fr:'dont lect'},
+  f_cache_util: {zh:'缓存利用', en:'cache util', ko:'캐시 활용', ja:'ｷｬｯｼｭ利用', es:'uso caché', fr:'util. cache'},
+  t_cache_util: {zh:'缓存利用率 = 缓存读 ÷ 总输入 tokens（读是入的子集，折扣计价；越高越省钱）', en:'cache utilisation = cached read ÷ total input tokens (read is a subset of input, billed at discount; higher is cheaper)', ko:'캐시 활용률 = 캐시 읽기 ÷ 총 입력 토큰(읽은 입력의 부분집합, 할인; 높을수록 저렴)', ja:'キャッシュ利用率 = キャッシュ読み ÷ 総入力トークン（読みは入力の部分集合、割引。高いほど安い）', es:'uso de caché = lectura caché ÷ total de tokens de entrada (la lectura es subconjunto de la entrada, con descuento; más alto es más barato)', fr:'utilisation du cache = lecture cache ÷ total des jetons d\'entrée (la lecture fait partie de l\'entrée, au rabais ; plus haut = moins cher)'},
+  f_tools:   {zh:'工具', en:'tools', ko:'도구', ja:'ツール', es:'herram.', fr:'outils'},
+  f_entries: {zh:'条', en:'entries', ko:'건', ja:'件', es:'reg.', fr:'entrées'},
+  t_rate_f:  {zh:'吐 token 速率 = 补全 tokens ÷ 生成窗口（总耗时 − TTFT）', en:'generation speed = completion tokens ÷ generation window (total − TTFT)', ko:'토큰 생성 속도 = 완료 토큰 ÷ 생성 구간(총 − TTFT)', ja:'生成速度 = 完成トークン ÷ 生成窓（合計 − TTFT）', es:'velocidad = tokens completados ÷ ventana de generación (total − TTFT)', fr:'vitesse = jetons complétés ÷ fenêtre de génération (total − TTFT)'},
+  p_scores:  {zh:'评分', en:'scores', ko:'점수', ja:'スコア', es:'puntajes', fr:'scores'},
+  p_session: {zh:'会话', en:'session', ko:'세션', ja:'セッション', es:'sesión', fr:'session'},
+  sec_judge:  {zh:'① 任务判定', en:'① Task judgment', ko:'① 작업 판정', ja:'① タスク判定', es:'① Juicio de tarea', fr:'① Jugement de tâche'},
+  sec_matrix: {zh:'③ 评分矩阵', en:'③ Scoring matrix', ko:'③ 점수 매트릭스', ja:'③ スコア行列', es:'③ Matriz de puntuación', fr:'③ Matrice de notation'},
+  sec_formula:{zh:'② 公式', en:'② Formula', ko:'② 공식', ja:'② 計算式', es:'② Fórmula', fr:'② Formule'},
+  m_quality: {zh:'质量', en:'Quality', ko:'품질', ja:'品質', es:'Calidad', fr:'Qualité',
+    _t:{zh:'榜单 c/r/a 按任务域与难度匹配后的能力分（0-100）', en:'benchmark tiers matched to domain & difficulty (0-100)', ko:'벤치 c/r/a를 도메인·난이도에 맞춘 능력 점수(0-100)', ja:'ベンチ c/r/a をドメイン・難度に合わせた能力スコア（0-100）', es:'niveles de benchmark según dominio y dificultad (0-100)', fr:'niveaux de benchmark selon domaine et difficulté (0-100)'}},
+  m_speed:   {zh:'速度', en:'Speed', ko:'속도', ja:'速度', es:'Velocidad', fr:'Vitesse',
+    _t:{zh:'目录先验 7 : 实测观测 3 混合（0-100）', en:'catalog prior 7 : observed 3 blend (0-100)', ko:'카탈로그 사전 7 : 실측 3 혼합(0-100)', ja:'カタログ事前 7 : 実測 3 の混合（0-100）', es:'priori de catálogo 7 : observado 3 (0-100)', fr:'priori catalogue 7 : observé 3 (0-100)'}},
+  m_cost:    {zh:'成本', en:'Cost', ko:'비용', ja:'コスト', es:'Coste', fr:'Coût',
+    _t:{zh:'价格竞争力：订阅=100，越接近目录最低价越高（0-100）', en:'price competitiveness: plan=100, closer to catalog cheapest = higher (0-100)', ko:'가격 경쟁력: 플랜=100, 최저가에 가까울수록 높음(0-100)', ja:'価格競争力：プラン=100、最安に近いほど高（0-100）', es:'competitividad de precio: plan=100, más cerca del más barato = más alto (0-100)', fr:'compétitivité prix : plan=100, proche du moins cher = plus haut (0-100)'}},
+  m_rel:     {zh:'可靠', en:'Reliability', ko:'신뢰', ja:'信頼', es:'Fiabilidad', fr:'Fiabilité',
+    _t:{zh:'飞轮实测可靠性（0-100，50=基线 0.5）', en:'flywheel observed reliability (0-100, 50 = baseline 0.5)', ko:'플라이휠 실측 신뢰성(0-100, 50=기준 0.5)', ja:'フライホイール実測信頼性（0-100、50=基準 0.5）', es:'fiabilidad observada del volante (0-100, 50 = base 0.5)', fr:'fiabilité observée du volant (0-100, 50 = base 0.5)'}},
+  m_head:    {zh:'余量', en:'Headroom', ko:'여유', ja:'余裕', es:'Margen', fr:'Marge',
+    _t:{zh:'上下文余量：窗口减去本次请求后剩余占比（0-100）', en:'context headroom after this request (0-100)', ko:'컨텍스트 여유: 이번 요청 후 남은 비율(0-100)', ja:'コンテキスト余裕：今回のリクエスト後の残り比率（0-100）', es:'margen de contexto tras esta solicitud (0-100)', fr:'marge de contexte après cette requête (0-100)'}},
+  m_interv:  {zh:'干预', en:'Intervention', ko:'개입', ja:'介入', es:'Intervención', fr:'Intervention',
+    _t:{zh:'你的权重×学习偏置，开方软化（50=无干预，<50 被调低，>50 被调高；点击改权重）', en:'your weight × learned bias, sqrt-softened (50 = none, <50 lowered, >50 raised; click to edit)', ko:'사용자 가중치×학습 편향, 제곱근 완화(50=없음, <50 낮춤, >50 높임; 클릭 편집)', ja:'ユーザー重み×学習バイアス、平方根緩和（50=なし、<50 低減、>50 引上げ；クリックで編集）', es:'tu peso × sesgo aprendido, suavizado con raíz (50 = nada; clic para editar)', fr:'votre poids × biais appris, adouci racine (50 = rien ; cliquer pour modifier)'}},
+  m_total:   {zh:'总分', en:'Score', ko:'총점', ja:'合計', es:'Total', fr:'Total',
+    _t:{zh:'加权合成后再乘干预系数（×100 展示）', en:'weighted composite × intervention multiplier (shown ×100)', ko:'가중 합성 × 개입 계수(×100 표시)', ja:'加重合成 × 介入係数（×100 表示）', es:'compuesto ponderado × multiplicador de intervención (×100)', fr:'composite pondéré × multiplicateur d\'intervention (×100)'}},
+  fw_headroom:{zh:'余量', en:'Headroom', ko:'여유', ja:'余裕', es:'Margen', fr:'Marge'},
+  l_weights:  {zh:'公式权重', en:'Formula weights', ko:'공식 가중치', ja:'計算式の重み', es:'Pesos de fórmula', fr:'Poids de la formule'},
+  l_edit_weight: {zh:'修改模型权重（影响路由干预强度）', en:'Edit model weight (affects routing intervention)', ko:'모델 가중치 수정(라우팅 개입 강도 영향)', ja:'モデル重みを編集（ルーティング介入の強さに影響）', es:'Editar peso del modelo (afecta la intervención en el enrutamiento)', fr:'Modifier le poids du modèle (affecte l\'intervention de routage)'},
+  l_save:     {zh:'保存', en:'Save', ko:'저장', ja:'保存', es:'Guardar', fr:'Enregistrer'},
+  l_cancel:   {zh:'取消', en:'Cancel', ko:'취소', ja:'キャンセル', es:'Cancelar', fr:'Annuler'},
+  la_chosen:  {zh:'选中', en:'chosen', ko:'선택', ja:'選択', es:'elegido', fr:'choisi'},
+  la_failed:  {zh:'失败', en:'failed', ko:'실패', ja:'失敗', es:'falló', fr:'échoué'},
+  d_l1: {zh:'简单', en:'simple', ko:'간단', ja:'簡単', es:'simple', fr:'simple'},
+  d_l2: {zh:'中等', en:'moderate', ko:'보통', ja:'中程度', es:'moderada', fr:'modérée'},
+  d_l3: {zh:'复杂', en:'complex', ko:'복잡', ja:'複雑', es:'compleja', fr:'complexe'},
+  d_l4: {zh:'关键', en:'critical', ko:'중대', ja:'重大', es:'crítica', fr:'critique'},
+  w_pre:    {zh:'网关预处理', en:'preprocess', ko:'전처리', ja:'前処理', es:'preproceso', fr:'prétraitement'},
+  w_dec:    {zh:'路由决策', en:'routing decision', ko:'라우팅 결정', ja:'ルーティング判定', es:'decisión de ruta', fr:'décision de routage'},
+  w_first:  {zh:'上游首字', en:'first token', ko:'첫 토큰', ja:'初トークン', es:'primer token', fr:'premier jeton'},
+  w_stream: {zh:'流式传输', en:'streaming', ko:'스트리밍', ja:'ストリーミング', es:'streaming', fr:'streaming'},
+  wf_title: {zh:'⏱ 耗时分解', en:'⏱ Latency breakdown', ko:'⏱ 지연 분해', ja:'⏱ レイテンシ分解', es:'⏱ Desglose de latencia', fr:'⏱ Décomposition de latence'},
+  w_total:  {zh:'总耗时', en:'total', ko:'총', ja:'合計', es:'total', fr:'total'},
+  win_overview: {zh:'总览', en:'overview', ko:'전체', ja:'全体', es:'todo', fr:'global'},
+  win_7d: {zh:'近7天', en:'7 days', ko:'7일', ja:'7日', es:'7 días', fr:'7 jours'},
+  win_24h: {zh:'24小时', en:'24 hours', ko:'24시간', ja:'24時間', es:'24 horas', fr:'24 heures'},
+  win_1h: {zh:'1小时', en:'1 hour', ko:'1시간', ja:'1時間', es:'1 hora', fr:'1 heure'},
+  win_10m: {zh:'10分钟', en:'10 min', ko:'10분', ja:'10分', es:'10 min', fr:'10 min'},
+  win_last30: {zh:'近30次', en:'last 30', ko:'최근 30건', ja:'直近30件', es:'últimas 30', fr:'30 dernières'},
+  win_last10: {zh:'近10次', en:'last 10', ko:'최근 10건', ja:'直近10件', es:'últimas 10', fr:'10 dernières'},
+  trends_card: {zh:'趋势 · 模型性能时间线', en:'Trends · model performance timeline', ko:'추세 · 모델 성능 타임라인', ja:'トレンド · モデル性能タイムライン', es:'Tendencias · línea de tiempo', fr:'Tendances · chronologie des performances'},
+  t_ttft: {zh:'TTFT', en:'TTFT', ko:'TTFT', ja:'TTFT', es:'TTFT', fr:'TTFT'},
+  t_total: {zh:'耗时', en:'Latency', ko:'지연', ja:'レイテンシ', es:'Latencia', fr:'Latence'},
+  t_rate: {zh:'吐字速率', en:'Token rate', ko:'토큰 속도', ja:'トークン速度', es:'Velocidad', fr:'Débit'},
+  t_cache: {zh:'缓存命中', en:'Cache hit', ko:'캐시 적중', ja:'キャッシュ適中', es:'Acierto caché', fr:'Accès cache'},
+  t_tools: {zh:'工具成功率', en:'Tool success', ko:'도구 성공률', ja:'ツール成功率', es:'Éxito herramientas', fr:'Succès outils'},
+  t_nodata: {zh:'窗口内暂无样本', en:'no samples in window', ko:'윈도우에 샘플 없음', ja:'窓内サンプルなし', es:'sin muestras', fr:'aucun échantillon'},
+  plan_card:  {zh:'配额方案', en:'Quota plans', ko:'쿼터 플랜', ja:'クォータプラン', es:'Planes de cuota', fr:'Plans de quota'},
+  plan_sub:   {zh:'按 baseUrl 自动匹配官方接入方案 · 点击档位/窗口可订正', en:'matched by baseUrl from official docs · click tier/windows to correct', ko:'baseUrl로 공식 스킴 자동 매칭 · 등급/윈도우 클릭하여 수정', ja:'baseUrlで公式スキームを自動マッチング・ティア/窓クリックで訂正', es:'asignado por baseUrl desde docs oficiales · clic en nivel/ventanas para corregir', fr:'correspondance par baseUrl depuis les docs officielles · cliquer palier/fenêtres pour corriger'},
+  plan_provider: {zh:'提供方', en:'Provider', ko:'제공자', ja:'プロバイダー', es:'Proveedor', fr:'Fournisseur'},
+  plan_scheme: {zh:'方案', en:'Scheme', ko:'방식', ja:'方式', es:'Esquema', fr:'Schéma'},
+  plan_windows:{zh:'窗口与额度', en:'Windows & allowance', ko:'윈도우·한도', ja:'窓と上限', es:'Ventanas y límites', fr:'Fenêtres et quotas'},
+  plan_note:  {zh:'模型级差异', en:'Model-level notes', ko:'모델별 차이', ja:'モデル別差異', es:'Notas por modelo', fr:'Notes par modèle'},
+  plan_models:{zh:'模型数', en:'Models', ko:'모델 수', ja:'モデル数', es:'Modelos', fr:'Modèles'},
+  plan_tier:  {zh:'档位', en:'Tier', ko:'등급', ja:'ティア', es:'Nivel', fr:'Palier'},
+  plan_used:  {zh:'消耗(5h)', en:'Used (5h)', ko:'소비(5h)', ja:'消費(5h)', es:'Uso (5h)', fr:'Consommé (5h)'},
+  plan_over_soft: {zh:'预算超软阈值·已降权（硬任务仍优先）', en:'over soft cap · deprioritized (hard tasks still favored)', ko:'소프트 한도 초과·가중치 감소(어려운 작업 우선)', ja:'ソフト上限超過·優先度 down（難タスクは優先）', es:'sobre el límite suave · despriorizado (tareas duras aún favored)', fr:'au-dessus du seuil doux · dépriorisé (tâches dures toujours favorisées)'},
+  provider_card: {zh:'Provider 管理', en:'Provider management', ko:'Provider 관리', ja:'Provider 관리', es:'Gestión de providers', fr:'Gestion des providers'},
+  provider_sub: {zh:'手动维护 provider 凭据 / 档位 / 窗口额度 · 扫描发现自动展示', en:'maintain credentials / tier / window allowance · scanned providers auto-listed', ko:'provider 자격 증명 / 등급 / 윈도우 한도 수동 관리 · 스캔 발견 자동 표시', ja:'provider 認証 / ティア / ウィンドウ枠を手動管理 · スキャン検出は自動表示', es:'mantén credenciales / nivel / ventana de cuota · escaneo detectado auto-listado', fr:'maintenir credentials / tier / quota · scannés auto-listés'},
+  pv_add: {zh:'+ 新增 Provider', en:'+ Add provider', ko:'+ Provider 추가', ja:'+ Provider 追加', es:'+ Añadir provider', fr:'+ Ajouter provider'},
+  pv_scan_running: {zh:'⏳ 扫描中…', en:'⏳ scanning…', ko:'⏳ 스캔 중…', ja:'⏳ スキャン中…', es:'⏳ escaneando…', fr:'⏳ scan en cours…'},
+  pv_dup_of: {zh:'⚠ 与 {x} 重复（同 baseURL+apiKey）', en:'⚠ duplicate of {x} (same baseURL+apiKey)', ko:'⚠ {x}와 중복(동일 baseURL+apiKey)', ja:'⚠ {x} と重複(同一 baseURL+apiKey)', es:'⚠ duplicado de {x} (mismo baseURL+apiKey)', fr:'⚠ doublon de {x} (même baseURL+apiKey)'},
+  pv_edit: {zh:'编辑 Provider', en:'Edit provider', ko:'Provider 편집', ja:'Provider 編集', es:'Editar provider', fr:'Modifier provider'},
+  pv_cancel: {zh:'取消', en:'Cancel', ko:'취소', ja:'キャンセル', es:'Cancelar', fr:'Annuler'},
+  pv_save: {zh:'保存', en:'Save', ko:'저장', ja:'保存', es:'Guardar', fr:'Enregistrer'},
+  pv_refresh: {zh:'🔄 拉取', en:'🔄 Fetch', ko:'🔄 가져오기', ja:'🔄 取得', es:'🔄 Traer', fr:'🔄 Récupérer'},
+  pv_delete: {zh:'删除', en:'Delete', ko:'삭제', ja:'削除', es:'Eliminar', fr:'Supprimer'},
+  pv_restore: {zh:'恢复', en:'Restore', ko:'복원', ja:'復元', es:'Restaurar', fr:'Restaurer'},
+  pv_field_baseUrl: {zh:'Base URL', en:'Base URL', ko:'Base URL', ja:'Base URL', es:'Base URL', fr:'Base URL'},
+  pv_field_apiKey: {zh:'API Key', en:'API Key', ko:'API Key', ja:'API Key', es:'API Key', fr:'API Key'},
+  pv_field_protocol: {zh:'协议', en:'Protocol', ko:'프로토콜', ja:'プロトコル', es:'Protocolo', fr:'Protocole'},
+  pv_field_planKind: {zh:'方案', en:'Plan', ko:'플랜', ja:'プラン', es:'Plan', fr:'Plan'},
+  pv_field_tier: {zh:'档位', en:'Tier', ko:'등급', ja:'ティア', es:'Nivel', fr:'Tier'},
+  pv_field_window5h: {zh:'5h 额度', en:'5h allowance', ko:'5h 한도', ja:'5h 上限', es:'cuota 5h', fr:'quota 5h'},
+  pv_field_windowWeekly: {zh:'周额度', en:'Weekly allowance', ko:'주간 한도', ja:'週上限', es:'cuota semanal', fr:'quota semaine'},
+  pv_field_windowMonthly: {zh:'月额度', en:'Monthly allowance', ko:'월간 한도', ja:'月上限', es:'cuota mensual', fr:'quota mois'},
+  pv_field_docsUrl: {zh:'文档链接', en:'Docs URL', ko:'문서 링크', ja:'ドキュメント', es:'Docs', fr:'Docs'},
+  pv_field_rates: {zh:'模型系数表（model|in,cached,out / 行）', en:'Model rates (model|in,cached,out / line)', ko:'모델 계수 (model|in,cached,out / 줄)', ja:'モデル係数 (model|in,cached,out / 行)', es:'Tasas por modelo (model|in,cached,out / línea)', fr:'Taux par modèle (model|in,cached,out / ligne)'},
+  pv_field_disabled: {zh:'已禁用', en:'Disabled', ko:'비활성', ja:'無効', es:'Deshabilitado', fr:'Désactivé'},
+  pv_available: {zh:'可用', en:'available', ko:'사용 가능', ja:'利用可能', es:'disponible', fr:'disponible'},
+  pv_scan: {zh:'🔍 全局扫描', en:'🔍 Scan all', ko:'🔍 전체 스캔', ja:'🔍 全スキャン', es:'🔍 Escanear todo', fr:'🔍 Tout scanner'},
+  pv_prov_obs: {zh:'Provider 测', en:'Provider live', ko:'Provider 실측', ja:'Provider 実測', es:'Proveedor en vivo', fr:'Provider direct'},
+  pv_reconcile: {zh:'对账', en:'Sync', ko:'동기화', ja:'同期', es:'Sincronizar', fr:'Synchroniser'},
+  pv_confirm_delete_disc: {zh:'删除该扫描发现的 Provider？其全部模型将移出目录（重启/扫描不会自动加回，可重新扫描恢复）。', en:"Delete this scanned provider? All its models leave the catalog (won't come back on restart/scan; re-add via scan after restore).", ko:'이 스캔된 Provider를 삭제하시겠습니까? 모든 모델이 목록에서 제거됩니다(재스캔으로 복원 가능).', ja:'このスキャン検出 Provider を削除しますか？全モデルがカタログから削除されます（再スキャンで復元可能）。', es:'¿Eliminar este provider escaneado? Todos sus modelos salen del catálogo (restaurable re-escaneando).', fr:'Supprimer ce provider scanné ? Tous ses modèles quittent le catalogue (restaurable en re-scan).'},
+  pv_5h: {zh:'5小时', en:'5 hours', ko:'5시간', ja:'5時間', es:'5 horas', fr:'5 heures'},
+  pv_week: {zh:'一周', en:'weekly', ko:'주간', ja:'週', es:'semana', fr:'semaine'},
+  pv_month: {zh:'一月', en:'monthly', ko:'월간', ja:'月', es:'mes', fr:'mois'},
+  pv_source_manual: {zh:'手动', en:'manual', ko:'수동', ja:'手動', es:'manual', fr:'manuel'},
+  pv_source_scanned: {zh:'扫描发现', en:'scanned', ko:'스캔 발견', ja:'スキャン検出', es:'escaneado', fr:'scanné'},
+  pv_confirm_delete: {zh:'确认删除此 Provider？软删除可恢复。', en:'Delete this provider? Soft-delete can be restored.', ko:'이 Provider를 삭제하시겠습니까? 소프트 삭제는 복원 가능합니다.', ja:'この Provider を削除しますか? ソフト削除は復元可能です。', es:'¿Eliminar este provider? Borrado suave se puede restaurar.', fr:'Supprimer ce provider ? Suppression douce restaurable.'},
+  pv_confirm_baseurl: {zh:'baseUrl 已变更，将重新拉取模型并覆盖 fetched_models。', en:'baseUrl changed, will re-fetch models and overwrite fetched_models.', ko:'baseUrl가 변경되어 모델을 다시 가져와 fetched_models를 덮어씁니다.', ja:'baseUrl 変更済 → モデル再取得で fetched_models 上書き', es:'baseUrl cambió: se re-obtienen modelos y sobrescribe fetched_models.', fr:'baseUrl modifié : ré-fetch des modèles, écrasera fetched_models.'},
+  pv_fetched: {zh:'已拉取 {n} 个模型', en:'fetched {n} models', ko:'{n}개 모델 가져옴', ja:'{n} モデル取得', es:'recuperados {n} modelos', fr:'{n} modèles récupérés'},
+  plan_docs:  {zh:'文档', en:'Docs', ko:'문서', ja:'ドキュメント', es:'Docs', fr:'Docs'},
+  scheme_credits5h: {zh:'积分制 · 5h+周窗口', en:'credits · 5h+weekly', ko:'크레딧 · 5h+주간', ja:'クレジット · 5h+週', es:'créditos · 5h+semana', fr:'crédits · 5h+semaine'},
+  scheme_credits3w: {zh:'积分制 · 5h/周/月', en:'credits · 5h/week/month', ko:'크레딧 · 5h/주/월', ja:'クレジット · 5h/週/月', es:'créditos · 5h/semana/mes', fr:'crédits · 5h/semaine/mois'},
+  scheme_dollar: {zh:'月度美元 · 按模型', en:'monthly $ · per model', ko:'월별 $ · 모델별', ja:'月次$ · モデル別', es:'$ mensual · por modelo', fr:'$ mensuel · par modèle'},
+  scheme_afp: {zh:'AFP 抵扣', en:'AFP deduction', ko:'AFP 공제', ja:'AFP控除', es:'deducción AFP', fr:'déduction AFP'},
+  scheme_payg: {zh:'按量计费', en:'pay-as-you-go', ko:'종량제', ja:'従量課金', es:'pago por uso', fr:'paiement à l\'usage'},
+  plan_next_reset: {zh:'下次窗口重置', en:'Next window reset', ko:'다음 윈도우 리셋', ja:'次の窓リセット', es:'Próximo reinicio de ventana', fr:'Prochaine réinitialisation'},
+  pk_api:    {zh:'API', en:'API', ko:'API', ja:'API', es:'API', fr:'API'},
+  pk_coding: {zh:'Coding Plan', en:'Coding Plan', ko:'Coding Plan', ja:'Coding Plan', es:'Coding Plan', fr:'Coding Plan'},
+  pk_go:     {zh:'OpenCode Go', en:'OpenCode Go', ko:'OpenCode Go', ja:'OpenCode Go', es:'OpenCode Go', fr:'OpenCode Go'},
+  pk_agent:  {zh:'Agent Plan', en:'Agent Plan', ko:'Agent Plan', ja:'Agent Plan', es:'Agent Plan', fr:'Agent Plan'},
+  plan_edit_tier: {zh:'输入档位（如 lite/pro/max/go/go-plus，留空清除）', en:'enter tier (e.g. lite/pro/max/go/go-plus, empty to clear)', ko:'등급 입력(예: lite/pro/max, 빈값清除)', ja:'ティアを入力（例: lite/pro/max、空で解除）', es:'introduce nivel (p.ej. lite/pro/max, vacío para borrar)', fr:'saisir le palier (ex. lite/pro/max, vide pour effacer)'},
+  plan_edit_win: {zh:'订正窗口与额度说明', en:'correct windows & allowance note', ko:'윈도우·한도 설명 수정', ja:'窓と上限の説明を訂正', es:'corregir nota de ventanas y límites', fr:'corriger la note fenêtres et quotas'},
+  r_toggle:  {zh:'系数表', en:'Rates', ko:'계수표', ja:'係数表', es:'Tabla de tasas', fr:'Table des taux'},
+  rate_model:{zh:'模型', en:'Model', ko:'모델', ja:'モデル', es:'Modelo', fr:'Modèle'},
+  rate_in_c: {zh:'输入系数', en:'Input k', ko:'입력 계수', ja:'入力係数', es:'Coef. entrada', fr:'Coef. entrée'},
+  rate_cached_c:{zh:'缓存系数', en:'Cached k', ko:'캐시 계수', ja:'キャッシュ係数', es:'Coef. caché', fr:'Coef. cache'},
+  rate_out_c:{zh:'输出系数', en:'Output k', ko:'출력 계수', ja:'出力係数', es:'Coef. salida', fr:'Coef. sortie'},
+  rate_in_d: {zh:'输入$/M', en:'Input $/M', ko:'입력 $/M', ja:'入力$/M', es:'Entrada $/M', fr:'Entrée $/M'},
+  rate_cached_d:{zh:'缓存读$/M', en:'Cached read $/M', ko:'캐시 읽기 $/M', ja:'キャッシュ読$/M', es:'Lectura caché $/M', fr:'Lecture cache $/M'},
+  rate_out_d:{zh:'输出$/M', en:'Output $/M', ko:'출력 $/M', ja:'出力$/M', es:'Salida $/M', fr:'Sortie $/M'},
+  rate_limit:{zh:'月限', en:'Monthly cap', ko:'월 한도', ja:'月上限', es:'Límite mensual', fr:'Plafond mensuel'},
+  rate_in_a: {zh:'输入系数', en:'Input k', ko:'입력 계수', ja:'入力係数', es:'Coef. entrada', fr:'Coef. entrée'},
+  rate_out_a:{zh:'输出系数', en:'Output k', ko:'출력 계수', ja:'出力係数', es:'Coef. salida', fr:'Coef. sortie'},
+  st_why:    {zh:'为什么选', en:'Why', ko:'왜', ja:'なぜ', es:'Por qué', fr:'Pourquoi'},
+  st_by_model: {zh:'由决策模型语义评估全部候选后选出', en:'selected after the decision model semantically evaluated all candidates', ko:'결정 모델이 모든 후보를 의미 평가한 뒤 선택', ja:'判断モデルが全候補を意味評価して選出', es:'elegido tras evaluación semántica de todos los candidatos por el modelo de decisión', fr:'choisi après évaluation sémantique de tous les candidats par le modèle de décision'},
+  st_by_hybrid: {zh:'决策模型 + 规则双判官评估（冲突取严，防中文误判）', en:'dual-judge evaluation (decision model + rules; conservative on conflict)', ko:'이중 판정(결정 모델+규칙, 충돌 시 보수적으로)', ja:'二重判定（判断モデル＋規則、衝突時は保守的に）', es:'evaluación con doble juez (modelo de decisión + reglas, conservador en conflictos)', fr:'évaluation à double juge (modèle de décision + règles, conservateur en cas de conflit)'},
+  st_by_heur: {zh:'决策模型不可用：本次由规则引擎判定兜底（路由不被阻塞）', en:'decision model unavailable: the rule engine judged this request as fallback (routing never blocked)', ko:'결정 모델 불가: 규칙 엔진이 폴백 판정(라우팅은 차단 없음)', ja:'判断モデル利用不可：規則エンジンがフォールバック判定（ルーティングは止まらない）', es:'modelo de decisión no disponible: el motor de reglas juzgó como respaldo (el enrutamiento nunca se bloquea)', fr:'modèle de décision indisponible : le moteur de règles a jugé en secours (le routage n\'est jamais bloqué)'},
+  st_by_explicit: {zh:'你在请求中显式指定了该模型（未走路由决策）', en:'you explicitly named this model in the request (no routing decision involved)', ko:'요청에서 이 모델을 명시적으로 지정(라우팅 결정 없음)', ja:'リクエストでこのモデルを明示指定（ルーティング判定なし）', es:'indicaste explícitamente este modelo en la solicitud (sin decisión de enrutamiento)', fr:'vous avez explicitement nommé ce modèle dans la requête (sans décision de routage)'},
+  bj_model:    {zh:'决策模型', en:'decision model', ko:'결정 모델', ja:'判断モデル', es:'modelo de decisión', fr:'modèle de décision'},
+  t_bj_model:  {zh:'本条路由由决策模型语义评估决定', en:'this route was decided by semantic evaluation of the decision model', ko:'이 라우팅은 결정 모델의 의미 평가로 결정됨', ja:'このルーティングは判断モデルの意味評価で決定', es:'ruta decidida por evaluación semántica del modelo de decisión', fr:'route décidée par évaluation sémantique du modèle de décision'},
+  bj_hybrid:   {zh:'决策模型+规则', en:'model+rules', ko:'모델+규칙', ja:'モデル＋規則', es:'modelo+reglas', fr:'modèle+règles'},
+  t_bj_hybrid: {zh:'双判官融合：决策模型为主、规则为独立第二意见，冲突取严（专治中文误判）', en:'dual-judge fusion: decision model primary, rules as independent second opinion, conservative on conflict', ko:'이중 판정 융합: 결정 모델 주판정, 규칙은 독립 제2의견, 충돌 시 보수적', ja:'二重判定融合：判断モデルが主、規則は独立の第二意見、衝突時は保守的', es:'fusión de doble juez: modelo de decisión principal, reglas como segunda opinión, conservador en conflictos', fr:'fusion à double juge : modèle de décision principal, règles en seconde opinion, conservateur en conflit'},
+  bj_heur:     {zh:'规则判定', en:'rule-based', ko:'규칙 판정', ja:'規則判定', es:'por reglas', fr:'par règles'},
+  t_bj_heur:   {zh:'决策模型不可用时由规则引擎兜底判定（决策失败永不阻塞路由）', en:'rule-engine fallback when the decision model is unavailable (decision failure never blocks routing)', ko:'결정 모델 불가 시 규칙 엔진 폴백 판정(결정 실패가 라우팅을 막지 않음)', ja:'判断モデル不可時は規則エンジンがフォールバック判定（判定失敗でルーティングを止めない）', es:'motor de reglas como respaldo si el modelo de decisión no está disponible (un fallo nunca bloquea el enrutamiento)', fr:'moteur de règles en secours si le modèle de décision est indisponible (un échec ne bloque jamais le routage)'},
+  bj_explicit: {zh:'指定模型', en:'explicit', ko:'지정 모델', ja:'指定モデル', es:'explícito', fr:'explicite'},
+  t_bj_explicit: {zh:'请求里显式指定了该模型，未走路由决策', en:'the request explicitly named this model; no routing decision involved', ko:'요청이 이 모델을 명시 지정, 라우팅 결정 없음', ja:'リクエストがこのモデルを明示指定、ルーティング判定なし', es:'la solicitud nombró explícitamente este modelo, sin decisión de enrutamiento', fr:'la requête a explicitement nommé ce modèle, sans décision de routage'},
+  st_task:   {zh:'任务判定：{d}类请求，难度{w}（{v}/3）', en:'Task: {d}, difficulty {w} ({v}/3)', ko:'작업 판정: {d}류 요청, 난이도 {w}({v}/3)', ja:'タスク判定：{d}系リクエスト、難度{w}（{v}/3）', es:'Tarea: {d}, dificultad {w} ({v}/3)', fr:'Tâche : {d}, difficulté {w} ({v}/3)'},
+  st_hard_pass: {zh:'{n} 个候选模型全部通过硬性检查（上下文窗口、健康状态、配额、凭据）', en:'all {n} candidates passed the hard checks (context window, health, quota, credentials)', ko:'{n}개 후보 모두 하드 체크 통과(컨텍스트 윈도우/헬스/쿼터/자격)', ja:'{n}個の候補がすべてハードチェック通過（コンテキスト窓/ヘルス/クォータ/認証）', es:'los {n} candidatos pasaron las comprobaciones duras (ventana, salud, cuota, credenciales)', fr:'les {n} candidats ont passé les contrôles durs (fenêtre, santé, quota, identifiants)'},
+  st_hard_some: {zh:'{a} 个候选中 {b} 个通过硬性检查（上下文窗口、健康状态、配额、凭据），其余已剔除', en:'{b} of {a} candidates passed the hard checks (context window, health, quota, credentials), the rest were filtered out', ko:'{a}개 중 {b}개가 하드 체크 통과(윈도우/헬스/쿼터/자격), 나머지는 제외', ja:'{a}候補中 {b}個がハードチェック通過（窓/ヘルス/クォータ/認証）、残りは除外', es:'{b} de {a} candidatos pasaron las comprobaciones (ventana, salud, cuota, credenciales), el resto fue filtrado', fr:'{b} sur {a} candidats ont passé les contrôles (fenêtre, santé, quota, identifiants), le reste a été filtré'},
+  st_score_top: {zh:'综合评分第一（{s}）：加权考量榜单能力、实测速度与可靠性、价格与订阅优势、你的权重', en:'composite score #1 ({s}): blends benchmark capability, observed speed & reliability, price/plan edge, and your weight', ko:'종합 점수 1위({s}): 벤치 능력·실측 속도·신뢰성·가격(플랜 우대)·사용자 가중치를 가중합산', ja:'総合スコア1位（{s}）：ベンチ能力・実測速度・信頼性・価格（プラン優遇）・重みを加重合算', es:'puntaje compuesto #1 ({s}): combina capacidad de benchmark, velocidad y fiabilidad observadas, precio/plan y tu peso', fr:'score composite n°1 ({s}) : mélange capacité benchmark, vitesse et fiabilité observées, prix/plan, votre poids'},
+  st_second: {zh:'领先第二名 {m}（{s}）', en:'ahead of runner-up {m} ({s})', ko:'차점 {m}({s})보다 앞섬', ja:'次点 {m}（{s}）をリード', es:'por delante de {m} ({s})', fr:'devant {m} ({s})'},
+  st_explore: {zh:'ε 探索：按 10% 概率改试次优模型，为飞轮采集对比样本', en:'ε-greedy: switched to the runner-up (10% chance) to gather comparative samples for the flywheel', ko:'ε 탐색: 10% 확률로 차점 모델로 바꿔 시험, 플라이휠 비교 샘플 수집', ja:'ε探索：10%の確率で次点モデルに切替、フライホイール用の比較サンプルを収集', es:'ε-greedy: cambió al segundo modelo (10%) para recolectar muestras comparativas del volante', fr:'ε-greedy : passé au 2e modèle (10%) pour recueillir des échantillons comparatifs du volant'},
+  st_sticky_1: {zh:'同一会话此前已选它——粘性窗口内直接沿用，不必每次重新决策', en:'the same session already picked it — reused within the sticky window, no re-decision per turn', ko:'같은 세션이 이미 선택함 — 스티키 윈도우 내 재사용, 매번 재판단 불필요', ja:'同一セッションが既に選択 — スティキー窓内で再利用、毎回の再判定は不要', es:'la misma sesión ya lo eligió — reutilizado dentro de la ventana sticky, sin redecidir cada turno', fr:'la même session l\'a déjà choisi — réutilisé dans la fenêtre sticky, sans redécider à chaque tour'},
+  st_sticky_2: {zh:'本次约 {n} tokens：模型窗口装得下、服务健康、配额充足', en:'~{n} tokens this turn: fits the window, service healthy, quota sufficient', ko:'이번 약 {n} 토큰: 윈도우에 들어감, 서비스 정상, 쿼터 충분', ja:'今回約 {n} トークン：窓に収まる、サービス正常、クォータ十分', es:'~{n} tokens esta vez: cabe en la ventana, servicio sano, cuota suficiente', fr:'~{n} jetons ce tour : tient dans la fenêtre, service sain, quota suffisant'},
+  st_sticky_3: {zh:'请求量级与工具需求和上次相近 → 跳过决策调用直接复用，省时省钱', en:'request band & tools match the previous turn → reuse without a decision call, saving time and cost', ko:'요청 밴드·도구가 직전과 유사 → 결정 호출 없이 재사용, 시간·비용 절감', ja:'リクエスト量級・ツールが前回と一致 → 判定呼び出しを省いて再利用、時間とコストを削減', es:'banda de solicitud y herramientas como el turno anterior → reutiliza sin llamada de decisión, ahorra tiempo y coste', fr:'bande de requête et outils identiques au tour précédent → réutilisation sans appel de décision, gain de temps et de coût'},
+  st_filtered_head: {zh:'未通过硬性检查', en:'failed hard checks', ko:'하드 체크 실패', ja:'ハードチェック不通過', es:'fallaron las comprobaciones', fr:'échec des contrôles'},
+  dom_Code:      {zh:'代码', en:'coding', ko:'코딩', ja:'コーディング', es:'código', fr:'code'},
+  dom_MathLogic: {zh:'数学逻辑', en:'math & logic', ko:'수학·논리', ja:'数学・論理', es:'matemáticas y lógica', fr:'maths et logique'},
+  dom_Writing:   {zh:'写作', en:'writing', ko:'글쓰기', ja:'ライティング', es:'escritura', fr:'rédaction'},
+  dom_Lookup:    {zh:'资料查找', en:'lookup', ko:'자료 조회', ja:'情報検索', es:'búsqueda', fr:'recherche'},
+  dom_Data:      {zh:'数据处理', en:'data', ko:'데이터', ja:'データ処理', es:'datos', fr:'données'},
+  dom_Chitchat:  {zh:'闲聊', en:'chitchat', ko:'잡담', ja:'雑談', es:'charla', fr:'bavardage'},
+  dom_AgentOps:  {zh:'Agent 操作', en:'agent ops', ko:'에이전트 작업', ja:'エージェント操作', es:'operaciones de agente', fr:'opérations d\'agent'},
+  dom_Other:     {zh:'通用', en:'general', ko:'일반', ja:'汎用', es:'general', fr:'général'},
+  diff_low:  {zh:'低', en:'low', ko:'낮음', ja:'低', es:'baja', fr:'faible'},
+  diff_mid:  {zh:'中', en:'medium', ko:'보통', ja:'中', es:'media', fr:'moyenne'},
+  diff_high: {zh:'高', en:'high', ko:'높음', ja:'高', es:'alta', fr:'élevée'},
+  ca_cred:    {zh:'无凭据', en:'no credentials', ko:'자격 증명 없음', ja:'認証情報なし', es:'sin credenciales', fr:'pas d\'identifiants'},
+  ca_vision:  {zh:'不支持图像输入', en:'no vision support', ko:'비전 미지원', ja:'画像入力非対応', es:'sin soporte de visión', fr:'pas de support vision'},
+  ca_window:  {zh:'上下文窗口装不下本次请求', en:'context window too small for this request', ko:'컨텍스트 윈도우에 들어가지 않음', ja:'コンテキスト窓に収まらない', es:'ventana de contexto muy pequeña', fr:'fenêtre de contexte trop petite'},
+  ca_proven:  {zh:'窗口未知：实测仅证明可接受 {n} tokens', en:'unknown window: only proven up to {n} tokens', ko:'윈도우 미지: {n} 토큰까지만 입증됨', ja:'窓不明：実績は {n} トークンまで', es:'ventana desconocida: probado solo hasta {n} tokens', fr:'fenêtre inconnue : prouvé seulement jusqu\'à {n} jetons'},
+  ca_quota:   {zh:'配额剩余 {a}，不够本次估算的 {b}', en:'quota left {a} < estimated {b}', ko:'쿼터 잔여 {a} < 추정 {b}', ja:'クォータ残り {a} < 推定 {b}', es:'cuota restante {a} < estimado {b}', fr:'quota restant {a} < estimé {b}'},
+  ca_cooldown:{zh:'冷却 {n}s', en:'cooldown {n}s', ko:'쿨다운 {n}s', ja:'クールダウン {n}s', es:'enfriamiento {n}s', fr:'refroidissement {n}s'},
+  hk_auth_failed:       {zh:'鉴权失败', en:'auth failed', ko:'인증 실패', ja:'認証失敗', es:'fallo de autenticación', fr:'échec d\'authentification'},
+  hk_no_credit:         {zh:'余额不足', en:'no credit', ko:'잔액 없음', ja:'残高不足', es:'sin saldo', fr:'sans crédit'},
+  hk_quota_exhausted:   {zh:'配额耗尽', en:'quota exhausted', ko:'쿼터 소진', ja:'クォータ枯渇', es:'cuota agotada', fr:'quota épuisé'},
+  hk_rate_limited:      {zh:'被限流', en:'rate limited', ko:'레이트 리밋', ja:'レート制限', es:'limitado', fr:'limité'},
+  hk_model_unsupported: {zh:'模型不支持', en:'model unsupported', ko:'미지원 모델', ja:'非対応モデル', es:'modelo no soportado', fr:'modèle non pris en charge'},
+  hk_context_overflow:  {zh:'上下文溢出', en:'context overflow', ko:'컨텍스트 오버플로', ja:'コンテキスト溢れ', es:'desbordamiento de contexto', fr:'débordement de contexte'},
+  hk_transient_error:   {zh:'暂时错误', en:'transient error', ko:'일시 오류', ja:'一時的エラー', es:'error transitorio', fr:'erreur transitoire'},
+  chip_reqs:  {zh:'请求', en:'reqs', ko:'요청', ja:'リクエスト', es:'solicitudes', fr:'requêtes'},
+  profile:    {zh:'预设', en:'profile', ko:'프로필', ja:'プロファイル', es:'perfil', fr:'profil'},
+  chip_cost:  {zh:'累计费用', en:'cost', ko:'누적 비용', ja:'累計費用', es:'coste', fr:'coût'},
+  chip_active:{zh:'活跃模型', en:'active', ko:'활성 모델', ja:'アクティブ', es:'activos', fr:'actifs'},
+  s_in:   {zh:'入', en:' in', ko:'입', ja:'入', es:' ent', fr:' entr'},
+  s_out:  {zh:'出', en:' out', ko:'출', ja:'出', es:' sal', fr:' sor'},
+  s_read: {zh:'读', en:'r', ko:'읽', ja:'読', es:'lee', fr:'lect'},
+  s_write:{zh:'写', en:'w', ko:'쓰', ja:'書', es:'esc', fr:'éc'},
+};
+const t = k => (T[k] && (T[k][lang] ?? T[k].zh)) ?? k;
+
+const feed = document.getElementById('feed');
+function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function fmtK(n){ return n==null ? '-' : (n>=1e6 ? (n/1e6).toFixed(1)+'M' : n>=1000 ? (n/1000).toFixed(1)+'k' : String(n)); }
+function fmtCost(n, cur){ if (n==null) return '-'; const sym = cur==='CNY' ? '¥' : '$'; return sym + (n>=100 ? n.toFixed(0) : n.toFixed(n<1 ? 3 : 2)); }
+function fmtMs(ms){ return ms==null ? '-' : (ms>=10000 ? (ms/1000).toFixed(0)+'s' : ms>=1000 ? (ms/1000).toFixed(1)+'s' : Math.round(ms)+'ms'); }
+function fmtRate(r){ return r==null ? '-' : r.toFixed(1); }
+function timeStr(d){ return d.toLocaleTimeString(LOCALE[lang], {hour12:false}); }
+function feedTokens(e){
+  let s = fmtK(e.prompt_tokens ?? e.est_tokens)+t('s_in')+' '+fmtK(e.completion_tokens ?? 0)+t('s_out');
+  if (e.cached_tokens)      s += ' · '+t('s_incl')+fmtK(e.cached_tokens);
+  if (e.cache_write_tokens) s += ' · '+t('s_write')+fmtK(e.cache_write_tokens);
+  return s;
+}
+
+function judgeBadge(e){
+  const map = {'decision_model':'bj_model', 'decision_model+rules':'bj_hybrid', 'heuristic':'bj_heur', 'explicit':'bj_explicit'};
+  const k = map[e.judge];
+  return k ? '<span class="pbadge" title="'+esc(t('t_'+k))+'">'+esc(t(k))+'</span>' : '';
+}
+function decisionPath(e){
+  const parts = [];
+  if (e.skipped) parts.push('<span class="pbadge warn" title="'+t('skipped')+'">↩ '+esc(e.skipped)+'</span>');
+  if (e.sticky) {
+    parts.push('<span class="pbadge" title="'+esc(t('p_sticky_hint'))+'">'+esc(t('p_sticky'))+'</span>');
+  } else {
+    parts.push(judgeBadge(e));
+    if ((e.reason||'').includes('[exploring]'))
+      parts.push('<span class="pbadge explore" title="'+esc(t('t_explore'))+'">'+esc(t('p_explore'))+'</span>');
+    const f = e.funnel || [];
+    if (f.length === 4 && f.some(x => x > 0)) {
+      const tip = t('t_funnel').replace('{a}',f[0]).replace('{b}',f[1]).replace('{c}',f[2]).replace('{d}',f[3]);
+      parts.push('<span class="pdim" title="'+esc(tip)+'">'+esc(t('p_funnel'))+' '+f.join('→')+'</span>');
+    }
+    if (e.difficulty_eff != null)
+      parts.push('<span class="pdim" title="'+esc(t('t_diff'))+'">'+esc(t('p_diff'))+' '+(+e.difficulty_eff).toFixed(1)+'</span>');
+  }
+  const alts = (e.chain || []).filter(m => m !== e.chosen).slice(0, 2);
+  if (alts.length) parts.push('<span class="pdim" title="'+esc(t('p_alt'))+'">'+esc(t('p_alt'))+' '+alts.map(a => esc(a.length>22?a.slice(0,21)+'…':a)).join(' ▸ ')+'</span>');
+  if (e.est_tokens) parts.push('<span class="pdim" title="'+esc(t('t_est'))+'">'+esc(t('p_est'))+' '+fmtK(e.est_tokens)+' tok</span>');
+  return parts.join('');
+}
+function shortId(m){ return m.length>26 ? m.slice(0,25)+'…' : m; }
+function causeLocal(c){
+  const paren = s => lang==='zh'||lang==='ja'||lang==='ko' ? '（'+s+'）' : '('+s+')';
+  let m;
+  if (c === 'no credential') return t('ca_cred');
+  if (c === 'no vision support') return t('ca_vision');
+  if (c === 'context window too small') return t('ca_window');
+  if ((m = c.match(/^unknown context window \(proven max accepted (\d+) tok\)$/)))
+    return t('ca_proven').replace('{n}', fmtK(+m[1]));
+  if ((m = c.match(/^quota remaining (\d+) < est (\d+)$/)))
+    return t('ca_quota').replace('{a}', fmtK(+m[1])).replace('{b}', fmtK(+m[2]));
+  if ((m = c.match(/^(auth failed|no credit|quota exhausted|rate limited|model unsupported|context overflow|transient error)(?: for (\d+)s)? \((.*)\)$/))) {
+    const hk = T['hk_'+m[1].replace(/ /g,'_')];
+    let s = hk ? (hk[lang] ?? hk.zh) : m[1];
+    if (m[2]) s += ' · ' + t('ca_cooldown').replace('{n}', m[2]);
+    return s + paren(m[3]);
+  }
+  return c;
+}
+function decisionDetail(e){
+  const L = [];
+  L.push('<b>'+esc(t('st_why'))+' '+esc(shortId(e.chosen))+(lang==='zh'?'？':'?')+'</b>');
+  L.push(waterfallBar(e));
+  L.push(linkView(e));
+  if (e.sticky) {
+    push2(L, esc(t('st_sticky_1')));
+    push2(L, esc(t('st_sticky_2').replace('{n}', fmtK(e.est_tokens||e.prompt_tokens||0))));
+    push2(L, esc(t('st_sticky_3')));
+  } else {
+    const bym = {'decision_model':'st_by_model', 'decision_model+rules':'st_by_hybrid', 'heuristic':'st_by_heur', 'explicit':'st_by_explicit'}[e.judge];
+    if (bym) push2(L, esc(t(bym)));
+    const dm = (e.reason||'').match(/domain=(\w+)/);
+    if (dm) {
+      const dk = T['dom_'+dm[1]];
+      const diff = +e.difficulty_eff || 0;
+      const dw = diff < 1 ? t('diff_low') : diff < 2 ? t('diff_mid') : t('diff_high');
+      push2(L, esc(t('st_task').replace('{d}', dk ? (dk[lang] ?? dk.zh) : dm[1]).replace('{w}', dw).replace('{v}', diff.toFixed(1))));
+    }
+    const f = e.funnel || [];
+    if (f.length === 4 && f[0] > 0)
+      push2(L, esc(f[1] === f[2] ? t('st_hard_pass').replace('{n}', f[2]) : t('st_hard_some').replace('{a}', f[1]).replace('{b}', f[2])));
+    const sc = Object.entries(e.scores||{}).sort((a,b) => b[1]-a[1]);
+    const mine = sc.find(([m]) => m === e.chosen);
+    if (mine) push2(L, esc(t('st_score_top').replace('{s}', Math.round(+mine[1]*100))));
+    const second = sc.find(([m]) => m !== e.chosen);
+    if (second) push2(L, esc(t('st_second').replace('{m}', shortId(second[0])).replace('{s}', Math.round(+second[1]*100))));
+    if ((e.reason||'').includes('[exploring]')) push2(L, esc(t('st_explore')));
+  }
+  if (e.filtered && e.filtered.length)
+    push2(L, '<span style="color:var(--dim)">'+esc(t('st_filtered_head'))+'：' +
+      e.filtered.map(f => '<span title="'+esc(f.model)+'">'+esc(f.model)+'</span>（'+esc(causeLocal(f.cause))+'）').join('、 ')+'</span>');
+  if (e.skipped && e.skipped.length)
+    push2(L, '<span style="color:var(--red)">'+esc(t('skipped'))+'：'+e.skipped.map(s => esc(s)).join(' → ')+'</span>');
+  L.push('<div style="opacity:.6;margin-top:3px">'+esc(t('p_session'))+': '+esc(e.session||'-')+'</div>');
+  return L.join('');
+}
+function push2(L, h){ L.push('<div style="margin:1px 0">· '+h+'</div>'); }
+function diffLevel(v){
+  return v < 1 ? t('d_l1') : v < 1.9 ? t('d_l2') : v < 2.6 ? t('d_l3') : t('d_l4');
+}
+function waterfallBar(e){
+  const pre = e.preprocess_ms, dec = e.decision_ms;
+  const ttft = e.ttft_ms, total = e.total_ms || 0;
+  if (pre == null && dec == null) return '';
+  const first = Math.max(0, (ttft||0) - (pre||0) - (dec||0));
+  const stream = Math.max(0, total - (ttft||0));
+  const segs = [
+    {cls:'wf-pre',   ms: pre||0,  label:t('w_pre')},
+    {cls:'wf-dec',   ms: dec||0,  label:t('w_dec')},
+    {cls:'wf-first', ms: first,   label:t('w_first')},
+    {cls:'wf-stream',ms: stream,  label:t('w_stream')},
+  ].filter(sg => sg.ms > 0);
+  if (!segs.length) return '';
+  const total2 = segs.reduce((a,s) => a+s.ms, 0);
+  const bar = segs.map(sg =>
+    '<span class="wf-seg '+sg.cls+'" style="width:'+Math.max(1.5, 100*sg.ms/total2)+'%" '+
+    'title="'+esc(sg.label)+' '+fmtMs(sg.ms)+'">'+(100*sg.ms/total2 > 14 ? fmtMs(sg.ms) : '')+'</span>').join('');
+  const legend = '<span class="wf-legend">' + segs.map(sg =>
+    '<span><i class="wf-dot '+sg.cls+'"></i>'+esc(sg.label)+' '+fmtMs(sg.ms)+'</span>').join('') +
+    '<span style="margin-left:auto">'+esc(t('w_total'))+' '+fmtMs(total2)+'</span></span>';
+  return '<div class="wf"><div class="wf-bar">'+bar+'</div>'+legend+'</div>';
+}
+function linkView(e){
+  const parts = [];
+  const j = e.judgment;
+  if (j) {
+    const dk = T['dom_'+(j.domain||'Other')];
+    const jl = {'decision_model':'bj_model','decision_model+rules':'bj_hybrid','heuristic':'bj_heur','explicit':'bj_explicit','sticky':'p_sticky'}[j.judge_source];
+    parts.push('<div class="lk-h">'+esc(t('sec_judge'))+'</div><div class="lk-v">' +
+      esc((dk ? (dk[lang] ?? dk.zh) : (j.domain||'-'))) +
+      ' · '+esc(t('p_diff'))+' '+diffLevel(+e.difficulty_eff||0)+' ('+(+(e.difficulty_eff||0)).toFixed(1)+'/3)' +
+      (jl ? ' · <span class="pbadge">'+esc(t(jl))+'</span>' : '') +
+      '</div>');
+  }
+  const sb = e.scoreboard || [];
+  // 502/全灭时 scoreboard 为空但 attempted 链有内容——降级链试过这些
+  if (sb.length) {
+    const w = e.weights || [0.35, 0.15, 0.25, 0.15, 0.10];
+    const wp = w.map(x => Math.round(x*100));
+    parts.push('<div class="lk-h">'+esc(t('sec_formula'))+' <span class="dim2">'+
+      wp[0]+'%'+esc(t('m_quality'))+' + '+wp[1]+'%'+esc(t('m_speed'))+' + '+wp[2]+'%'+esc(t('m_cost'))+
+      ' + '+wp[3]+'%'+esc(t('m_rel'))+' + '+wp[4]+'%'+esc(t('fw_headroom'))+' → ×√'+esc(t('m_interv'))+'</span></div>');
+    let rows = sb.slice(0, 5);
+    if (!rows.some(r => r.model_id === e.chosen)) {
+      const ci = sb.findIndex(r => r.model_id === e.chosen);
+      if (ci > 0) rows.push(sb[ci]);
+    }
+    const n = x => Math.round((+x||0)*100);
+    const iv = r => Math.round(50*Math.sqrt((r.uw||1)*(r.bias||1)));
+    parts.push('<div class="lk-h">'+esc(t('sec_matrix'))+'</div><table class="mx"><tr>' +
+      '<th>'+esc(t('c_model'))+'</th><th>'+esc(t('m_quality'))+'</th><th>'+esc(t('m_speed'))+'</th><th>'+esc(t('m_cost'))+'</th><th>'+esc(t('m_rel'))+'</th><th>'+esc(t('fw_headroom'))+'</th><th>'+esc(t('m_interv'))+'</th><th>'+esc(t('m_total'))+'</th></tr>' +
+      rows.map(r => '<tr'+(r.model_id===e.chosen?' class="win"':'')+'>' +
+        '<td class="mxm" data-jump="'+esc(r.model_id)+'">'+esc(shortId(r.model_id))+(r.model_id===e.chosen?' ★':'')+'</td>' +
+        '<td>'+n(r.q)+'</td><td>'+n(r.s)+'</td><td>'+n(r.c)+'</td><td>'+n(r.r)+'</td><td>'+n(r.h)+'</td>' +
+        '<td>'+iv(r)+'</td><td class="mxt">'+n(r.score)+'</td></tr>').join('') +
+      '</table>');
+  } else if (e.attempted && e.attempted.length) {
+    // 502/全灭：所有候选被 health 熔断或窗口过滤——展示降级链试过什么
+    const tried = e.attempted.map(m => {
+      const fail = (e.skipped||[]).find(s => s.startsWith(m));
+      const failTxt = fail ? ' '+esc(fail.replace(m, '').replace(/^[\[\(]/, '(')) : '';
+      return '<span style="display:inline-block;padding:1px 6px;border:1px solid var(--border);border-radius:3px;margin:1px;font-size:10px;color:#bbb">'+esc(shortId(m))+failTxt+'</span>';
+    }).join(' ');
+    parts.push('<div class="lk-h">'+esc(t('sec_matrix'))+' <span class="dim2">(全灭 · 降级链试过)</span></div>' +
+      '<div style="line-height:1.8">'+tried+'</div>');
+  }
+  return parts.join('');
+}
+function feedMetrics(e){
+  const parts = [];
+  parts.push('<span title="'+esc(t('t_actual'))+'">'+feedTokens(e)+'</span>');
+  if (e.ttft_ms != null) parts.push('<span>TTFT '+fmtMs(e.ttft_ms)+'</span>');
+  if (e.ttft_ms != null && e.total_ms > e.ttft_ms && (e.completion_tokens||0) > 0) {
+    const rate = e.completion_tokens / ((e.total_ms - e.ttft_ms) / 1000);
+    parts.push('<span title="'+esc(t('t_rate_f'))+'">'+rate.toFixed(1)+' tok/s</span>');
+  }
+  if ((e.prompt_tokens||0) > 0 && e.cached_tokens)
+    parts.push('<span title="'+esc(t('t_cache_util'))+'">'+esc(t('f_cache_util'))+' '+Math.round(100*e.cached_tokens/e.prompt_tokens)+'%</span>');
+  const tools = e.tools || [];
+  const qc = ((e.quality||{}).tool_calls_total) || 0;
+  if (tools.length) parts.push('<span title="'+esc(t('f_tools'))+'">'+esc(t('f_tools'))+': '+tools.map(x => esc(x.length>20?x.slice(0,19)+'…':x)).join(', ')+'</span>');
+  else if (qc) parts.push('<span title="'+esc(t('f_tools'))+'">'+esc(t('f_tools'))+' ×'+qc+'</span>');
+  return parts.join('<span class="dim2"> · </span>');
+}
+const groups = new Map();
+function groupKey(e){
+  const agent = (e.agent||'').replace(/\/.*$/, '');
+  return (agent||'-')+'\u001f'+(e.session||'-');
+}
+function shortMid(s){ return s.length>24 ? s.slice(0,14)+'…'+s.slice(-6) : s; }
+function groupBlock(e){
+  const key = groupKey(e);
+  let g = groups.get(key);
+  if (!g) {
+    const el = document.createElement('div');
+    el.className = 'feed-group';
+    el.dataset.key = key;
+    const agent = (e.agent||'').replace(/\/.*$/, '');
+    const h = document.createElement('div');
+    h.className = 'feed-group-h';
+    h.innerHTML = '<span class="garrow">▾</span> <b>'+esc(agent||'-')+'</b> · <span title="'+esc(e.session||'')+'">'+esc(shortMid(e.session||'-'))+'</span><span class="cnt"></span>';
+    const b = document.createElement('div');
+    b.className = 'feed-group-b';
+    h.addEventListener('click', () => {
+      const hidden = b.style.display === 'none';
+      b.style.display = hidden ? '' : 'none';
+      h.querySelector('.garrow').textContent = hidden ? '▾' : '▸';
+    });
+    el.appendChild(h); el.appendChild(b);
+    g = {el, b, h, count:0};
+    groups.set(key, g);
+  }
+  feed.prepend(g.el);
+  return g;
+}
+function addRow(e){
+  if (e.kind !== 'chat') return;
+  const badge = (200<=e.status && e.status<300) ? 'ok' : 'dead';
+  const row = document.createElement('div');
+  row.className = 'feed-ev';
+  row.innerHTML = '<div class="feed-row">' +
+    '<span class="t">'+timeStr(new Date())+'</span>' +
+    '<span class="pill badge '+badge+'">'+e.status+'</span>' +
+    '<span class="m" title="'+esc(e.chosen)+'">'+esc(e.chosen)+'</span>' +
+    feedMetrics(e) +
+    (e.translated ? '<span class="tk" title="'+t('translated')+'">⇄'+esc(e.translated)+'</span>' : '') +
+    '<span class="ms">'+fmtMs(e.total_ms)+'</span></div>' +
+    '<div class="feed-path">'+decisionPath(e)+'</div>' +
+    '<div class="feed-detail" style="display:none">'+decisionDetail(e)+'</div>';
+  row.querySelector('.feed-row').addEventListener('click', () => {
+    const d = row.querySelector('.feed-detail');
+    if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
+  });
+  const g = groupBlock(e);
+  g.count++;
+  g.h.querySelector('.cnt').textContent = g.count+' '+t('f_entries')+' · '+timeStr(new Date());
+  g.b.prepend(row);
+  lastAct[e.chosen] = {a: badge === 'ok' ? 'c' : 'f', t: Date.now()};
+  while (g.b.children.length > 50) { if (g.b.lastChild) g.b.removeChild(g.b.lastChild); }
+  while (feed.children.length > 24) {
+    const last = feed.lastChild;
+    if (!last) break;
+    if (last.dataset && last.dataset.key) groups.delete(last.dataset.key);
+    feed.removeChild(last);
+  }
+}
+
+const state = { stats:{}, bench:{}, health:{}, quota:{}, policyw:null, plans:[], trends:[], win:'overview', twin:'24h', providers:[], providersStatus:null, statusTs:0 };
+
+// 评分矩阵模型名 → 飞轮行高亮（事件委托，覆盖后续新增的矩阵单元格）
+feed.addEventListener('click', ev => {
+  const el = ev.target.closest('td.mxm');
+  if (el && el.dataset.jump) jumpToWheel(el.dataset.jump);
+});
+
+function tt(key){ const [k, sub] = key.split('.'); return sub && T[k] && T[k][sub] ? (T[k][sub][lang] ?? T[k][sub].zh) : t(key); }
+function buildThead(table, cols){
+  table.querySelector('thead').innerHTML = '<tr>' + cols.map(c =>
+    '<th class="'+(c.num?'num':'')+'"'+(c.tk?' title="'+esc(tt(c.tk))+'"':'')+'>'+esc(t(c.k))+'</th>').join('') + '</tr>';
+}
+const DYN_COLS = [
+  {k:'c_model'}, {k:'c_source', tk:'c_source._t'}, {k:'c_reqs', num:1},
+  {k:'c_tokens', num:1, tk:'c_tokens._t'}, {k:'c_ttft', num:1, tk:'c_ttft._t'},
+  {k:'c_lat', num:1, tk:'c_lat._t'}, {k:'c_rate', num:1, tk:'c_rate._t'},
+  {k:'c_cache', num:1, tk:'c_cache._t'}, {k:'c_tools', num:1, tk:'c_tools._t'},
+];
+function renderDyn(){
+  buildThead(document.getElementById('dyn'), DYN_COLS);
+  const db = document.querySelector('#dyn tbody');
+  const srcLabel = k => ({user:t('src_user'), discovered:t('src_disc'), remote:t('src_remote'), builtin:t('src_builtin')})[k] || k || '-';
+  const rows = Object.entries(state.stats).slice(0, 50).map(([id, s]) => {
+    const keys = Object.keys(state.health).filter(k => k.split('\u001f')[0] === id);
+    const degraded = keys.length > 0 && !keys.some(k => state.health[k].available);
+    const pkShort = {'api':'API', coding:'CP', token:'TP', agent:'AP'}[s.plan_kind] || '';
+    const pkFull = {'api':'pk_api', coding:'pk_coding', token:'pk_token', agent:'pk_agent'}[s.plan_kind];
+    const pkBadge = pkShort ? ' <span class="pbadge dim2" title="'+esc(t(pkFull))+'">'+pkShort+'</span>' : '';
+    const src = '<span'+(degraded?' style="color:var(--red)" title="⚠ '+esc(t('allnormal')).replace(/（.*/,'')+'"':'')+'>'+esc(srcLabel(s.source))+(degraded?' ⚠':'')+'</span>'+pkBadge;
+    const tc = s.tool_calls || {};
+    const toolRate = tc.total ? Math.round(100*(tc.valid_json/tc.total))+'%' : '-';
+    const tok = '<div title="'+esc(t('t_actual'))+'">'+fmtK(s.prompt_tokens??0)+t('s_in')+' '+fmtK(s.completion_tokens??0)+t('s_out')+'</div>' +
+      '<div class="dim2" title="'+esc(t('t_actual'))+'">'+t('s_incl')+fmtK(s.cached_tokens||0)+' · '+t('s_write')+fmtK(s.cache_write_tokens||0)+'</div>';
+    return '<tr><td title="'+esc(id)+'">'+esc(id.length>30?id.slice(0,29)+'…':id)+'</td>' +
+      '<td>'+src+'</td>' +
+      '<td class="num">'+s.requests+'('+s.success+')</td>' +
+      '<td class="num">'+tok+'</td>' +
+      '<td class="num">'+fmtMs(s.avg_ttft_ms)+'</td>' +
+      '<td class="num">'+fmtMs(s.avg_total_ms)+'</td>' +
+      '<td class="num">'+fmtRate(s.avg_rate_tok_s)+'</td>' +
+      '<td class="num">'+(s.cache_hit_rate==null?'-':Math.round(s.cache_hit_rate*100)+'%')+'</td>' +
+      '<td class="num">'+toolRate+'</td></tr>';
+  });
+  db.innerHTML = rows.join('') || '<tr><td colspan="9" style="color:var(--dim)">'+t('noflow')+'</td></tr>';
+}
+const HEALTH_COLS = [{k:'c_mk'},{k:'c_status'},{k:'c_detail'}];
+const QUOTA_COLS  = [{k:'c_mk'},{k:'c_window'},{k:'c_remain',num:1},{k:'c_reset',num:1}];
+function renderHealthQuota(){
+  buildThead(document.getElementById('health'), HEALTH_COLS);
+  buildThead(document.getElementById('quota'), QUOTA_COLS);
+  const hb = document.querySelector('#health tbody');
+  const hentries = Object.entries(state.health);
+  hb.innerHTML = hentries.length ? hentries.map(([id,h]) => '<tr>' +
+    '<td>'+esc(id)+'</td>' +
+    '<td><span class="pill badge '+(h.available?'ok':'dead')+'">'+(h.available?t('available'):esc(h.kind))+'</span></td>' +
+    '<td style="color:var(--dim)">'+esc(h.message||'')+(h.cooldown_remaining_ms?' ('+Math.round(h.cooldown_remaining_ms/1000)+'s)':'')+'</td></tr>').join('')
+    : '<tr><td colspan="3" style="color:var(--dim)">'+t('allnormal')+'</td></tr>';
+  const qb = document.querySelector('#quota tbody');
+  const qrows = Object.entries(state.quota).flatMap(([id, ws]) => (ws||[]).map(w => {
+    const human = id.split('\u001f')[0] + (id.includes('\u001f') ? '['+id.split('\u001f')[1]+']' : '');
+    return '<tr><td>'+esc(human)+'</td><td>'+esc(w.scope)+'</td><td class="num">'+fmtK(w.remaining)+'</td><td class="num">'+(w.reset_epoch_ms?timeStr(new Date(w.reset_epoch_ms)):'-')+'</td></tr>';
+  }));
+  qb.innerHTML = qrows.length ? qrows.join('') : '<tr><td colspan="4" style="color:var(--dim)">'+t('noquota')+'</td></tr>';
+}
+const WHEEL_COLS = [
+  {k:'c_model'},
+  {k:'w_bench', num:1, tk:'w_bench._t'}, {k:'w_rel', num:1, tk:'w_rel._t'},
+  {k:'w_calib', num:1, tk:'w_calib._t'}, {k:'w_speed', num:1, tk:'w_speed._t'},
+  {k:'w_bias', num:1, tk:'w_bias._t'}, {k:'w_sr', num:1, tk:'w_sr._t'},
+  {k:'w_cache', num:1, tk:'w_cache._t'}, {k:'w_cost', num:1, tk:'w_cost._t'},
+  {k:'w_samples', num:1, tk:'w_samples._t'}, {k:'w_fb', num:1, tk:'w_fb._t'},
+  {k:'m_interv', num:1, tk:'m_interv._t'},
+];
+function renderWheel(){
+  buildThead(document.getElementById('wheel'), WHEEL_COLS);
+  const applied = state.bench.applied || {};
+  const wb = document.querySelector('#wheel tbody');
+  const entries = Object.entries(state.stats).sort((a,b) => {
+    const ra = (b[1].requests||0) - (a[1].requests||0);
+    if (ra !== 0) return ra;
+    return (b[1].dynamic_score??0) - (a[1].dynamic_score??0);
+  }).slice(0, 15);
+  const n100 = x => x==null ? '-' : Math.round(x*100);
+  const n50 = x => x==null ? '-' : Math.round(x*50);
+  const rows = entries.map(([id, s]) => {
+    const tr = s.telemetry || {};
+    const bt = (applied[id] || {}).tiers || s.tiers || {};
+    const pct = x => x==null ? '-' : Math.round(x*100)+'%';
+    const uw = s.user_weight ?? 1;
+    const lb = tr.learned_bias ?? 1;
+    const fb = s.feedback || {ok:0,total:0};
+    const sem = s.semantic || {matched:0,total:0};
+    const act = lastAct[id];
+    const actB = act ? '<span class="la '+(act.a==='c'?'c':'f')+'" title="'+timeStr(new Date(act.t))+'">'+(act.a==='c'?t('la_chosen'):t('la_failed'))+'</span>' : '';
+    return '<tr class="wheel-row" data-model="'+esc(id)+'"><td title="'+esc(id)+'">'+esc(id.length>28?id.slice(0,27)+'…':id)+actB+'</td>' +
+      '<td class="num">'+pct(bt.coding)+'/'+pct(bt.reasoning)+'/'+pct(bt.agentic)+'</td>' +
+      '<td class="num">'+n100(tr.reliability)+'</td>' +
+      '<td class="num">'+n50(tr.calibration)+'</td>' +
+      '<td class="num">'+n100(tr.speed_obs)+'</td>' +
+      '<td class="num">'+n50(tr.learned_bias)+'</td>' +
+      '<td class="num">'+(s.success_rate==null?'-':Math.round(s.success_rate*100)+'%')+'</td>' +
+      '<td class="num">'+(s.cache_hit_rate==null?'-':Math.round(s.cache_hit_rate*100)+'%')+'</td>' +
+      '<td class="num">'+(s.plan_kind && s.plan_kind !== 'api'
+        ? '<span class="pbadge" title="'+esc(t('w_cost._t'))+'">'+esc(t('w_sub'))+'</span>'
+        : fmtCost(s.est_cost, s.currency))+'</td>' +
+      '<td class="num">'+(s.samples??0)+'</td>' +
+      '<td class="num">'+esc(String(sem.matched ?? 0)+'/'+String(sem.total ?? 0))
+        + (fb.total > 0 ? ' <span class="dim2">('+fb.ok+'/'+fb.total+')</span>' : '')+'</td>' +
+      '<td class="num"><span class="wedit" title="'+esc(t('m_interv._t'))+'" data-wmodel="'+esc(id)+'" data-wcur="'+uw+'">'+Math.round(50*Math.sqrt(uw*lb))+'</span></td></tr>';
+  });
+  wb.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="12" style="color:var(--dim)">'+t('wheelcold')+'</td></tr>';
+  wb.querySelectorAll('.wedit').forEach(el => el.addEventListener('click', () => {
+    const cur = el.dataset.wcur || '1';
+    const v = prompt(t('l_edit_weight')+'\n'+el.dataset.wmodel+'\n(0.2-3.0)', cur);
+    if (v == null) return;
+    const num = parseFloat(v);
+    if (!isFinite(num)) return;
+    fetch('/api/weight', {method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({model: el.dataset.wmodel, weight: num})}).then(refresh);
+  }));
+  wb.querySelectorAll('td.mxm').forEach(el => el.addEventListener('click', () => jumpToWheel(el.dataset.jump)));
+}
+const lastAct = {};
+function jumpToWheel(model){
+  const row = document.querySelector('#wheel tr[data-model="'+CSS.escape(model)+'"]');
+  if (!row) return;
+  document.querySelectorAll('#wheel tr.hl').forEach(x => x.classList.remove('hl'));
+  row.classList.add('hl');
+  row.scrollIntoView({block:'center', behavior:'smooth'});
+}
+const WIN_KEYS = ['overview','7d','24h','1h','10m','last30','last10'];
+function renderTabs(el, cur, keys, onpick) {
+  el.innerHTML = keys.map(k =>
+    '<span class="wtab'+(k===cur?' on':'')+'" data-w="'+k+'">'+esc(t('win_'+k))+'</span>').join('');
+  el.querySelectorAll('.wtab').forEach(b => b.addEventListener('click', () => onpick(b.dataset.w)));
+}
+function renderDynTabs(){
+  renderTabs(document.getElementById('dyn-tabs'), state.win, WIN_KEYS, w => {
+    state.win = w; refresh();
+  });
+}
+function renderTrendTabs(){
+  renderTabs(document.getElementById('trend-tabs'), state.twin, ['24h','7d','1h','10m'], w => {
+    state.twin = w; refresh();
+  });
+}
+function renderChips(){
+  const all = Object.values(state.stats);
+  const reqs = all.reduce((a,s) => a+(s.requests||0), 0);
+  const ok = all.reduce((a,s) => a+(s.success||0), 0);
+  const byCur = {};
+  all.forEach(s => { if (s.est_cost) byCur[s.currency||'USD'] = (byCur[s.currency||'USD']||0)+s.est_cost; });
+  const cost = Object.entries(byCur).map(([c,v]) => fmtCost(v, c)).join(' · ') || '-';
+  const active = all.filter(s => (s.requests||0) > 0).length;
+  document.getElementById('chips').innerHTML =
+    '<span class="chip">'+t('chip_reqs')+' <b>'+reqs+'</b>'+(reqs?' <b>'+Math.round(100*ok/reqs)+'%</b>':'')+'</span>' +
+    '<span class="chip">'+t('chip_cost')+' <b>'+cost+'</b></span>' +
+    '<span class="chip">'+t('chip_active')+' <b>'+active+'</b>/'+all.length+'</span>';
+  renderPwPanel();
+}
+const PLANS_COLS = [
+  {k:'plan_provider'}, {k:'plan_scheme'}, {k:'plan_windows'}, {k:'plan_note'},
+  {k:'plan_used', num:1}, {k:'plan_models', num:1}, {k:'plan_tier'}, {k:'r_toggle'}, {k:'plan_docs'},
+];
+const PK_LABEL = {'api':'pk_api', coding:'pk_coding', go:'pk_go', agent:'pk_agent'};
+const PK_SHORT = {api:'API', coding:'CP', go:'GO', agent:'AP'};
+const RATE_COLS = {
+  credits: [['m', 'rate_model'], ['a', 'rate_in_c'], ['b', 'rate_cached_c'], ['v', 'rate_out_c']],
+  dollar:  [['m', 'rate_model'], ['a', 'rate_in_d'], ['b', 'rate_cached_d'], ['v', 'rate_out_d'], ['l', 'rate_limit']],
+  afp:     [['m', 'rate_model'], ['a', 'rate_in_a'], ['v', 'rate_out_a']],
+};
+// Provider 档位下拉联动窗口额度预设（智谱/zai Coding 套餐官方）
+const TIER_PRESETS = {
+  'zhipu-coding': {'lite':[2000,10000,50000],'pro':[12000,60000,240000],'max':[28000,140000,600000]},
+  'zai-devpack':   {'lite':[2000,10000,50000],'pro':[12000,60000,240000],'max':[28000,140000,600000]},
+  'minimax-coding':{'lite':[4000,null,null],'pro':[16000,null,null],'max':[40000,null,null]},
+  'volces-coding': {'lite':[null,null,null],'pro':[null,null,null]},
+};
+function applyTierPreset(planKind, tier, fields){
+  // 套餐下拉值（coding/agent/go/api）→ 匹配 TIER_PRESETS 键（含该值的所有套餐）
+  let p = null;
+  for (const key of Object.keys(TIER_PRESETS)) {
+    if (key.includes(planKind) && TIER_PRESETS[key][tier]) {
+      p = TIER_PRESETS[key][tier];
+      break;
+    }
+  }
+  if (!p) return;
+  fields.w5h.value = p[0] != null ? p[0] : '';
+  fields.wweek.value = p[1] != null ? p[1] : '';
+  fields.wmonth.value = p[2] != null ? p[2] : '';
+}
+function renderProviders(){
+  const cont = document.getElementById('providers-list');
+  const ps = state.providers || [];
+  if (!ps.length) {
+    cont.innerHTML = '<div class="dim2" style="padding:20px">'+esc(t('t_nodata'))+'</div>';
+    return;
+  }
+  cont.innerHTML = ps.map((p, i) => {
+    const disabled = p.disabled ? ' <span class="la f" style="margin-left:6px">'+esc(t('pv_field_disabled'))+'</span>' : '';
+    const srcBadge = p.source === 'manual'
+      ? '<span class="pbadge">'+esc(t('pv_source_manual'))+'</span>'
+      : '<span class="pbadge" style="background:#1c2d45;color:var(--blue)">'+esc(t('pv_source_scanned'))+'</span>';
+    const kindBadge = (PK_LABEL[p.plan_kind] || 'pk_api') && t(PK_LABEL[p.plan_kind] || 'pk_api') || p.plan_kind;
+    const docs = p.docs_url ? ' <a href="'+esc(p.docs_url)+'" target="_blank" rel="noopener" style="color:var(--blue)">↗</a>' : '';
+    const tName = p.tier || '-';
+    const tShow = tName !== '-';
+    const tVal = (p.allowance != null ? Math.round(p.allowance) : '-') + (p.allowance != null ? ' / 5h' : '');
+    const fetch = p.fetched_models || p.model_count || 0;
+    // 配额展示：5h 额度 + 已用 + 进度条 + 下次重置
+    const allowance = (p.windows && p.windows['5h']) || p.allowance;
+    const used = p.used_5h || 0;
+    const soft = p.soft_pct || 60;
+    // 三窗口配额（5h/周/月）+ 重复标记
+    const wkAllow = p.windows && p.windows['weekly'];
+    const moAllow = p.windows && p.windows['monthly'];
+    // 重复标记（后端按 baseURL+apiKey 指纹判定，指明跟谁重复）
+    const dupBadge = p.duplicate_of
+      ? '<span class="la f" style="margin-left:4px">'+esc(t('pv_dup_of').replace('{x}', p.duplicate_of))+'</span>'
+      : '';
+    let budgetHtml = '';
+    const bar = (a, u, label) => {
+      if (a == null || a <= 0) return '';
+      const pct = Math.min(100, Math.round(100 * u / a));
+      const col = pct >= 90 ? 'var(--red)' : pct >= soft ? 'var(--amber)' : 'var(--green)';
+      const uS = Math.round(u * 100) / 100;
+      const aS = Math.round(a * 100) / 100;
+      return '<div style="display:flex;align-items:center;gap:6px;margin-top:2px;font-size:10px">'
+        + '<span style="min-width:28px;color:var(--dim)">'+esc(label)+'</span>'
+        + '<div style="flex:1;height:4px;background:#21262d;border-radius:2px">'
+        + '<div style="width:'+pct+'%;height:4px;background:'+col+';border-radius:2px"></div></div>'
+        + '<span style="min-width:80px;text-align:right;color:'+col+'">'+pct+'%</span>'
+        + '<span style="min-width:90px;text-align:right;color:var(--dim)">'+uS+' / '+aS+'</span></div>';
+    };
+    // 三窗口展示（用户裁决）：provider 实测优先（observed.remaining / limit /
+    // reset），本地 token 估算兜底；重置时间显示钟面时刻而非倒计时。
+    // scope 映射：7d ≈ weekly（同一窗口，不同 provider 命名不同）
+    const obs = p.observed || {};
+    const obsWin = (k) => obs[k] || (k === 'weekly' ? obs['7d'] : null);
+    const winBar = (label, allowanceKey, simFactor) => {
+      const a = p.windows && p.windows[allowanceKey];
+      const o = obsWin(allowanceKey);
+      // provider 实测 with reset time
+      if (o && o.remaining != null && o.limit != null && o.limit > 0) {
+        const rem = o.remaining, lim = o.limit;
+        const pct = Math.min(100, Math.round(100 * (lim - rem) / lim));
+        const col = pct >= 90 ? 'var(--red)' : pct >= soft ? 'var(--amber)' : 'var(--green)';
+        const resetTxt = o.reset_epoch_ms
+          ? ' · <span style="color:var(--fg)">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(o.reset_epoch_ms))+'</span>'
+          : '';
+        return '<div style="display:flex;align-items:center;gap:6px;margin-top:2px;font-size:10px">'
+          + '<span style="min-width:28px;color:var(--dim)">'+esc(label)+'</span>'
+          + '<div style="flex:1;height:4px;background:#21262d;border-radius:2px">'
+          + '<div style="width:'+pct+'%;height:4px;background:'+col+';border-radius:2px"></div></div>'
+          + '<span style="min-width:80px;text-align:right;color:'+col+'">'+pct+'%</span>'
+          + '<span style="min-width:120px;text-align:right;color:var(--dim)">'+(lim-rem)+' / '+lim+resetTxt+'</span></div>';
+      }
+      // 本地估算兜底（无 provider 观测值）
+      if (a == null || a <= 0) return '';
+      return bar(a, used * simFactor, label);
+    };
+    if (allowance || wkAllow || moAllow || Object.keys(obs).length) {
+      budgetHtml = '<div style="margin-top:6px;max-width:520px">'
+        + winBar(t('pv_5h'), '5h', 1)
+        + winBar(t('pv_week'), 'weekly', 7)
+        + winBar(t('pv_month'), 'monthly', 30);
+      if (p.next_reset_epoch_ms)
+        budgetHtml += '<span class="la f" style="margin-top:2px">'+esc(t('plan_next_reset'))+' '+timeStr(new Date(p.next_reset_epoch_ms))+'</span>';
+      budgetHtml += '</div>';
+    }
+    // Provider 测实时余量（用户裁决：以 Provider 测为准；本地 token 估算仅兜底）
+    let provHtml = '';
+    const obsRows = [];
+    const obsMap = {
+      '5h': t('pv_5h'),
+      '7d': t('pv_week'),
+      'tokens': t('pv_5h'),
+      'requests': 'req',
+    };
+    Object.keys(obsMap).forEach(k => {
+      const w = obs[k]; if (!w || w.remaining == null) return;
+      const age = Math.max(0, Math.floor((Date.now() - (w.updated_epoch_ms||0))/1000));
+      const limTxt = w.limit != null ? w.limit : '?';
+      const lowPct = w.limit ? Math.round(100 * (1 - w.remaining / w.limit)) : 0;
+      const col = lowPct >= 90 ? 'var(--red)' : lowPct >= 60 ? 'var(--amber)' : 'var(--green)';
+      const ageTxt = age < 60 ? age+'s' : Math.floor(age/60)+'m';
+      obsRows.push('<span class="dim2" style="font-size:10px;margin-right:10px">'
+        + '<b style="color:'+col+'">'+esc(obsMap[k])+'</b>: '+w.remaining+' / '+limTxt
+        + ' <span class="dim2">('+ageTxt+' 前)</span></span>');
+    });
+    if (obsRows.length) {
+      provHtml = '<div style="margin-top:4px">'
+        + '<span class="dim2" style="font-size:10px;margin-right:6px">📡 '+esc(t('pv_prov_obs'))+':</span>'
+        + obsRows.join('')
+        + '<button class="lang-btn" data-pv-reconcile="'+esc(p.key)+'" style="font-size:10px;padding:1px 6px">🔄 '+esc(t('pv_reconcile'))+'</button>'
+        + '</div>';
+    }
+    const summary = tName === '-' ? '' : ' <span class="dim2">('+esc(tName)+' · '+esc(tVal)+')</span>';
+    // 实时状态（providersStatus 轮询数据，按 key 匹配）
+    const stat = ((state.providersStatus||{}).providers||[]).find(s => s.key === p.key) || {};
+    const onCool = stat.cooldown_remaining_ms && stat.cooldown_remaining_ms > 0;
+    const statusBadge = onCool
+      ? '<span class="la f">⏳ '+Math.ceil(stat.cooldown_remaining_ms/1000)+'s</span>'
+      : '<span class="la c">✓</span>';
+    // 周月窗口展示
+    const wk = p.windows && p.windows['weekly'];
+    const mo = p.windows && p.windows['monthly'];
+    const winInfo = (allowance || wk || mo)
+      ? '<span class="dim2" style="font-size:10px;margin-left:4px">5h:'+(allowance??'-')+' 周:'+(wk??'-')+' 月:'+(mo??'-')+'</span>'
+      : '';
+    return '<div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px'+(p.disabled?';opacity:.5':'')+'">'
+      + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      +   '<b style="font-size:13px">'+esc(p.key)+'</b> '+srcBadge+statusBadge+dupBadge
+      +   ' <span class="pbadge" style="background:#1c2d45;color:var(--blue)">'+esc(kindBadge)+'</span>'
+      +   summary + disabled + docs + winInfo
+      +   '<span style="margin-left:auto"></span>'
+      +   '<button class="lang-btn" data-pv-edit="'+esc(p.key)+'" data-pv-source="'+esc(p.source)+'">'+esc(t('pv_edit'))+'</button>'
+      +   (p.source === 'manual'
+            ? (p.disabled ? '<button class="lang-btn" data-pv-restore="'+esc(p.key)+'">'+esc(t('pv_restore'))+'</button>'
+                              : '<button class="lang-btn" data-pv-del="'+esc(p.key)+'" style="border-color:var(--red);color:var(--red)">'+esc(t('pv_delete'))+'</button>')
+            : '<button class="lang-btn" data-pv-del-disc="'+esc(p.key)+'" data-pv-url="'+esc(p.base_url||'')+'" style="border-color:var(--red);color:var(--red)">'+esc(t('pv_delete'))+'</button>')
+      + '</div>'
+      + '<div class="dim2" style="margin-top:4px;font-size:11px">'
+      +   esc(p.base_url || '') + ' · ' + esc(p.protocol || 'openai') + ' · ' + fetch + ' models'
+      + '</div>'
+      + budgetHtml
+      + provHtml
+      + '</div>';
+  }).join('');
+  cont.querySelectorAll('[data-pv-edit]').forEach(b => b.addEventListener('click', () => openProviderDrawer(b.dataset.pvEdit, b.dataset.pvSource === 'manual')));
+  cont.querySelectorAll('[data-pv-del]').forEach(b => b.addEventListener('click', () => confirmDeleteProvider(b.dataset.pvDel)));
+  cont.querySelectorAll('[data-pv-del-disc]').forEach(b => b.addEventListener('click', () => confirmDeleteDiscovered(b.dataset.pvDelDisc, b.dataset.pvUrl)));
+  cont.querySelectorAll('[data-pv-reconcile]').forEach(b => b.addEventListener('click', () => reconcileProvider(b.dataset.pvReconcile)));
+  cont.querySelectorAll('[data-pv-restore]').forEach(b => b.addEventListener('click', () => restoreProvider(b.dataset.pvRestore)));
+}
+function confirmDeleteProvider(key){
+  if (!confirm(t('pv_confirm_delete'))) return;
+  fetch('/api/providers/delete', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({key})}).then(refresh);
+}
+function reconcileProvider(key){
+  const btn = document.querySelector('[data-pv-reconcile="'+CSS.escape(key)+'"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  fetch('/api/providers/reconcile', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({key})}).then(r=>r.json()).then(() => refresh()).catch(()=>refresh())
+    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '🔄 '+t('pv_reconcile'); } });
+}
+function confirmDeleteDiscovered(key, baseUrl){
+  if (!confirm(t('pv_confirm_delete_disc'))) return;
+  fetch('/api/providers/delete', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({key, base_url: baseUrl})}).then(refresh);
+}
+function restoreProvider(key){
+  // 恢复：取该 key 的现有设置 + disabled=false 存回
+  const p = (state.providers||[]).find(x => x.key === key);
+  if (!p) return;
+  fetch('/api/providers', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({...p, key, disabled: false})}).then(refresh);
+}
+function openProviderDrawer(key, isManual){
+  const isNew = !key;
+  const existing = isNew ? null : (state.providers||[]).find(x => x.key === key);
+  const drawer = document.getElementById('pv-drawer');
+  const form = document.getElementById('pv-form');
+  const title = document.getElementById('pv-drawer-title');
+  title.textContent = isNew ? t('pv_add') : t('pv_edit');
+  const v = existing || { key: '', base_url: '', api_key: '', protocol: 'openai', plan_kind: 'coding', tier: '', docs_url: '', model_rates: '', disabled: false, window_5h: null, window_weekly: null, window_monthly: null };
+  const k = (k2) => esc(v[k2] ?? '');
+  form.innerHTML = [
+    ['pv_field_baseUrl',`<input id="pv-baseUrl" value="${k('base_url')}" ${!isManual && !isNew ? 'readonly style="opacity:.6"' : ''} placeholder="https://api.open.bigmodel.cn/api/coding/paas/v4" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_apiKey',`<input id="pv-apiKey" type="password" value="${v.api_key?'':''}" placeholder="sk-..." style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_protocol',`<select id="pv-protocol" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px"><option value="openai" ${v.protocol==='openai'?'selected':''}>OpenAI</option><option value="anthropic" ${v.protocol==='anthropic'?'selected':''}>Anthropic</option></select>`],
+    ['pv_field_planKind',`<select id="pv-planKind" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">
+      <option value="">-</option>
+      <option value="coding" ${v.plan_kind==='coding'?'selected':''}>Coding Plan</option>
+      <option value="agent" ${v.plan_kind==='agent'?'selected':''}>Agent Plan</option>
+      <option value="go" ${v.plan_kind==='go'?'selected':''}>OpenCode Go (Token)</option>
+      <option value="api" ${v.plan_kind==='api'?'selected':''}>API 按量</option>
+    </select>`],
+    ['pv_field_tier',`<select id="pv-tier" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px"><option value="">-</option><option value="lite" ${v.tier==='lite'?'selected':''}>Lite</option><option value="pro" ${v.tier==='pro'?'selected':''}>Pro</option><option value="max" ${v.tier==='max'?'selected':''}>Max</option><option value="go" ${v.tier==='go'?'selected':''}>Go</option><option value="go-plus" ${v.tier==='go-plus'?'selected':''}>Go Plus</option></select>`],
+    ['pv_field_window5h',`<input id="pv-w5h" type="number" min="0" value="${v.window_5h??''}" placeholder="2000" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_windowWeekly',`<input id="pv-wweek" type="number" min="0" value="${v.window_weekly??''}" placeholder="10000" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_windowMonthly',`<input id="pv-wmonth" type="number" min="0" value="${v.window_monthly??''}" placeholder="50000" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_docsUrl',`<input id="pv-docsUrl" value="${k('docs_url')}" placeholder="https://docs.bigmodel.cn/..." style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px">`],
+    ['pv_field_rates',`<textarea id="pv-rates" rows="4" placeholder="GLM-5.3|6.9,1.7,24&#10;GLM-5.3-Flash|2.3,0.56,8" style="width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-family:monospace;font-size:11px">${esc(v.model_rates||'')}</textarea>`],
+  ].map(([k, html]) => '<label style="color:var(--dim);align-self:center">'+esc(t(k))+'</label>'+html).join('');
+  if (!isNew) form.innerHTML += '<label></label><label style="font-size:11px"><input type="checkbox" id="pv-disabled" '+(v.disabled?'checked':'')+'> '+esc(t('pv_field_disabled'))+'</label>';
+  drawer.style.display = 'flex';
+  // Tier 联动预设
+  const fields = {w5h: document.getElementById('pv-w5h'), wweek: document.getElementById('pv-wweek'), wmonth: document.getElementById('pv-wmonth')};
+  const onPreset = () => applyTierPreset(document.getElementById('pv-planKind').value, document.getElementById('pv-tier').value, fields);
+  document.getElementById('pv-planKind').addEventListener('change', onPreset);
+  document.getElementById('pv-tier').addEventListener('change', onPreset);
+  // 按钮事件
+  document.getElementById('pv-cancel-btn').onclick = () => { drawer.style.display = 'none'; };
+  document.getElementById('pv-save-btn').onclick = () => saveProvider(isNew, isManual);
+  document.getElementById('pv-refresh-btn').onclick = () => refreshProvider();
+  const delBtn = document.getElementById('pv-delete-btn');
+  if (delBtn) {
+    delBtn.onclick = () => { confirmDeleteProvider(document.getElementById('pv-form').dataset.key || ''); drawer.style.display='none'; };
+    delBtn.style.display = isManual ? '' : 'none';
+  }
+  // baseUrl 变更 → 提示重拉
+  document.getElementById('pv-baseUrl').addEventListener('change', () => {
+    if (existing && document.getElementById('pv-baseUrl').value !== existing.base_url) {
+      alert(t('pv_confirm_baseurl'));
+    }
+  });
+  // 暂存 key 到 form.dataset
+  form.dataset.key = key || '';
+}
+function collectProviderForm(){
+  const g = id => document.getElementById(id);
+  return {
+    key: g('pv-form').dataset.key || g('pv-baseUrl').value.split('/').pop() || g('pv-baseUrl').value,
+    base_url: g('pv-baseUrl').value.trim(),
+    api_key: g('pv-apiKey').value,
+    protocol: g('pv-protocol').value,
+    plan_kind: g('pv-planKind').value,
+    tier: g('pv-tier').value,
+    docs_url: g('pv-docsUrl').value,
+    model_rates: g('pv-rates').value,
+    window_5h: g('pv-w5h').value ? Number(g('pv-w5h').value) : null,
+    window_weekly: g('pv-wweek').value ? Number(g('pv-wweek').value) : null,
+    window_monthly: g('pv-wmonth').value ? Number(g('pv-wmonth').value) : null,
+    disabled: g('pv-disabled') ? g('pv-disabled').checked : false,
+  };
+}
+function saveProvider(isNew, isManual){
+  const body = collectProviderForm();
+  if (!body.base_url) { alert('base_url required'); return; }
+  // 判重由服务端按 baseURL+apiKey 指纹权威判定（duplicate_of 徽章），此处不再做
+  // base_url 近似检查——同端点不同 key 是两个 provider（如 opencode-go 与 -github）
+  // 扫描发现的 provider 也可编辑 overlay 字段（tier/plan_kind/windows/rates/docs_url）——
+  // 这些写入 overrides 不影响 agent 原始配置；baseUrl/apiKey 来自 agent 配置不建议在此改
+  fetch('/api/providers', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)})
+    .then(r => r.json().then(j => {
+      if (j.fetched_models != null) alert(t('pv_fetched').replace('{n}', j.fetched_models));
+      document.getElementById('pv-drawer').style.display = 'none';
+      refresh();
+    }));
+}
+function refreshProvider(){
+  const key = document.getElementById('pv-form').dataset.key;
+  if (!key) return;
+  fetch('/api/providers/refresh', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({key})})
+    .then(r => r.json().then(j => {
+      if (j.fetched != null) alert(t('pv_fetched').replace('{n}', j.fetched));
+      refresh();
+    }));
+}
+document.getElementById('pv-add-btn').addEventListener('click', () => openProviderDrawer('', true));
+let pvScanTimer = null;
+function pollScanProgress(){
+  fetch('/api/providers/scan-progress').then(r => r.json()).then(j => {
+    const box = document.getElementById('pv-scan-progress');
+    if (!j.running && !j.done) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    box.textContent = j.log.join('\n');
+    box.scrollTop = box.scrollHeight;
+    const btn = document.getElementById('pv-scan-btn');
+    if (j.running) {
+      btn.textContent = t('pv_scan_running');
+      btn.disabled = true;
+      pvScanTimer = setTimeout(pollScanProgress, 500);
+    } else {
+      btn.textContent = t('pv_scan');
+      btn.disabled = false;
+      refresh();
+    }
+  }).catch(() => { pvScanTimer = setTimeout(pollScanProgress, 1000); });
+}
+document.getElementById('pv-scan-btn').addEventListener('click', () => {
+  const btn = document.getElementById('pv-scan-btn');
+  if (btn.disabled) return;
+  btn.textContent = t('pv_scan_running');
+  btn.disabled = true;
+  const box = document.getElementById('pv-scan-progress');
+  box.style.display = 'block';
+  box.textContent = '';
+  fetch('/api/providers/scan', {method:'POST'}).then(r => r.json()).then(j => {
+    if (j.status === 'already_running') { pollScanProgress(); return; }
+    pollScanProgress();
+  }).catch(() => { btn.textContent = t('pv_scan'); btn.disabled = false; });
+});
+function renderPlans(){ renderProviders(); }
+const TREND_COLORS = ['#58a6ff','#3fb950','#d29922','#f85149','#8957e5','#39d2c0'];
+function trendSvg(series, pick, fmt, y0forced) {
+  const W = 260, H = 78, PAD = 4;
+  const pts = series.map(s => ({
+    model: s.model,
+    xy: s.points.map(p => ({ x: p.ts, y: pick(p) })).filter(pt => pt.y != null && isFinite(pt.y)),
+  })).filter(s => s.xy.length > 1);
+  if (!pts.length) return '<div class="dim2">'+esc(t('t_nodata'))+'</div>';
+  const all = pts.flatMap(s => s.xy.map(p => p.y));
+  let lo = y0forced != null ? y0forced : Math.min(...all);
+  let hi = Math.max(...all);
+  if (lo === hi) { hi = lo + 1; }
+  const t0 = Math.min(...pts.flatMap(s => s.xy.map(p => p.x)));
+  const t1 = Math.max(...pts.flatMap(s => s.xy.map(p => p.x))) || 1;
+  const X = x => PAD + ((x - t0) / (t1 - t0)) * (W - 2 * PAD);
+  const Y = y => PAD + (1 - (y - lo) / (hi - lo)) * (H - 2 * PAD);
+  const lines = pts.map((s, i) => {
+    const d = s.xy.map((p, j) => (j ? 'L' : 'M') + X(p.x).toFixed(1) + ',' + Y(p.y).toFixed(1)).join('');
+    const col = TREND_COLORS[i % TREND_COLORS.length];
+    return '<path d="'+d+'" fill="none" stroke="'+col+'" stroke-width="1.5"/>' +
+      '<text x="'+(W-PAD)+'" y="'+(PAD+8+i*10)+'" text-anchor="end" font-size="8" fill="'+col+'">'+
+      esc(shortId(s.model))+'</text>';
+  });
+  const yLab = v => '<text x="'+(PAD+2)+'" y="'+(Y(v)+3)+'" font-size="8" fill="var(--dim)">'+fmt(v)+'</text>';
+  return '<svg class="trend-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">' +
+    '<line x1="'+PAD+'" y1="'+Y(hi)+'" x2="'+(W-PAD)+'" y2="'+Y(hi)+'" stroke="var(--border)" stroke-dasharray="3,3"/>' +
+    '<line x1="'+PAD+'" y1="'+Y(lo)+'" x2="'+(W-PAD)+'" y2="'+Y(lo)+'" stroke="var(--border)" stroke-dasharray="3,3"/>' +
+    yLab(hi) + yLab(lo) + lines.join('') + '</svg>';
+}
+function renderTrends(){
+  const grid = document.getElementById('trend-grid');
+  if (!grid) return;
+  const metrics = [
+    {k:'ttft',  label:'t_ttft',  pick: p => p.ttft || null,  fmt: v => fmtMs(v)},
+    {k:'total', label:'t_total', pick: p => p.total || null, fmt: v => fmtMs(v)},
+    {k:'rate',  label:'t_rate',  pick: p => p.tok_s || null, fmt: v => v+' t/s'},
+    {k:'cache', label:'t_cache', pick: p => (p.tools_total ? p.cache_pct : null), fmt: v => v+'%'},
+    {k:'tools', label:'t_tools', pick: p => (p.tools_total ? p.tools_pct : null), fmt: v => v+'%'},
+  ];
+  grid.innerHTML = metrics.map(m => {
+    const chart = trendSvg(state.trends, m.pick, m.fmt, m.k === 'cache' || m.k === 'tools' ? 0 : null);
+    const legend = '<div class="trend-legend">'+state.trends.map((s, i) =>
+      '<span><i style="background:'+TREND_COLORS[i % TREND_COLORS.length]+'"></i>'+esc(shortId(s.model))+'</span>').join('')+'</div>';
+    return '<div class="trend-box"><h4>'+esc(t(m.label))+'</h4>'+chart+legend+'</div>';
+  }).join('');
+}
+function renderPwPanel(){
+  const panel = document.getElementById('pw-panel');
+  if (panel.style.display !== 'block') return;
+  const p = state.policyw || {};
+  const w = p.weights || {quality:0.35, speed:0.15, cost:0.25, stability:0.15, headroom:0.10};
+  const fld = (k, label) => '<div class="pwr"><label>'+esc(label)+'</label><input type="number" step="0.05" min="0" max="2" data-pw="'+k+'" value="'+(+w[k]||0).toFixed(2)+'"></div>';
+  panel.innerHTML =
+    '<div class="dim2" style="margin-bottom:4px">'+esc(t('profile'))+': '+esc(p.profile||'-')+(p.overridden?' · override':'')+'</div>' +
+    fld('quality', t('m_quality')) + fld('speed', t('m_speed')) + fld('cost', t('m_cost')) +
+    fld('stability', t('m_rel')) + fld('headroom', t('fw_headroom')) +
+    '<div class="pwr"><button id="pw-save">'+esc(t('l_save'))+'</button><button id="pw-reset">'+esc(t('l_cancel'))+'</button></div>';
+  panel.querySelector('#pw-save').addEventListener('click', () => {
+    const body = {};
+    panel.querySelectorAll('[data-pw]').forEach(i => {
+      const v = parseFloat(i.value);
+      if (isFinite(v)) body[i.dataset.pw] = v;
+    });
+    fetch('/api/policy-weights', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body)}).then(refresh);
+  });
+  panel.querySelector('#pw-reset').addEventListener('click', () => { panel.style.display = 'none'; });
+}
+document.getElementById('pw-btn').addEventListener('click', () => {
+  const panel = document.getElementById('pw-panel');
+  panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+  renderPwPanel();
+});
+
+async function refresh(){
+  try {
+    const [statsR, healthR, quotaR, benchR, pwR, plansR, trendsR, provR, statR] = await Promise.all([
+      fetch('/api/stats?window='+encodeURIComponent(state.win)), fetch('/api/health'), fetch('/api/quota'), fetch('/api/benchmarks'),
+      fetch('/api/policy-weights'), fetch('/api/plans'),
+      fetch('/api/trends?window='+encodeURIComponent(state.twin)),
+      fetch('/api/providers'), fetch('/api/providers/status')]);
+    state.stats  = (await statsR.json()).models  || {};
+    state.health = (await healthR.json()).models || {};
+    state.quota  = (await quotaR.json()).windows || {};
+    state.bench  = (await benchR.json()) || {};
+    state.policyw = (await pwR.json()) || {};
+    state.plans  = (await plansR.json()).providers || [];
+    state.trends = (await trendsR.json()).series || [];
+    state.providers = (await provR.json()).providers || [];
+    state.providersStatus = (await statR.json());
+    renderPlans();
+    renderTrends();
+    renderChips();
+    renderDynTabs();
+    renderTrendTabs();
+    renderDyn();
+    renderHealthQuota();
+    renderWheel();
+    renderTrends();
+  } catch(_){}
+}
+
+const es = new EventSource('/api/stream');
+const dot = document.getElementById('sse-dot');
+let sseState = 'conn';
+function updateSse(){
+  const map = {ok:['ok','sse_ok'], err:['err','sse_retry'], conn:['','sse_conn']};
+  const [cls, key] = map[sseState];
+  dot.className = 'dot ' + cls;
+  document.getElementById('sse-status').textContent = t(key);
+}
+es.onopen  = () => { sseState = 'ok';  updateSse(); };
+es.onerror = () => { sseState = 'err'; updateSse(); };
+es.onmessage = ev => { try { addRow(JSON.parse(ev.data)); } catch(_){} };
+
+const sel = document.getElementById('lang-sel');
+const LANG_LABEL = {zh:'中文', en:'English', ko:'한국어', ja:'日本語', es:'Español', fr:'Français'};
+LANGS.forEach(l => { const o = document.createElement('option'); o.value = l; o.textContent = LANG_LABEL[l]; sel.appendChild(o); });
+sel.value = lang;
+function applyLang(){
+  document.documentElement.lang = lang;
+  document.title = t('title');
+  document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
+  sel.value = lang;
+  updateSse();
+  renderChips(); renderDyn(); renderHealthQuota(); renderWheel();
+}
+sel.addEventListener('change', () => {
+  lang = sel.value;
+  localStorage.setItem('mr-lang', lang);
+  applyLang();
+});
+
+(async () => {
+  try {
+    const evs = await (await fetch('/api/events?limit=30')).json();
+    if (Array.isArray(evs)) evs.forEach(addRow);
+  } catch(_){}
+})();
+applyLang();
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
