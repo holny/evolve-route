@@ -104,6 +104,23 @@ body { background:var(--bg); color:var(--fg); font:13.5px/1.55 -apple-system,"Pi
 .au-turn { border-left:2px solid var(--amber); padding:2px 0 2px 9px; margin:5px 0; font-size:11.5px; }
 .au-turn.neu { border-left-color:var(--border); }
 .au-evo-note { font-size:11.5px; padding:7px 10px; border-radius:8px; background:var(--card2); margin-top:5px; line-height:1.6; }
+/* ③ 真漏斗：梯形堆叠居中递减 */
+.au-funnel-shape { display:flex; flex-direction:column; align-items:center; gap:3px; padding:4px 0; }
+.fu-row { display:grid; grid-template-columns:minmax(0,1fr) 92px; gap:8px; align-items:center; width:100%; }
+.fu-trap { height:22px; display:flex; align-items:center; justify-content:center;
+           clip-path:polygon(0 0, 100% 0, calc(100% - 7px) 100%, 7px 100%);
+           color:var(--wf-text); font-size:11px; font-weight:600; font-variant-numeric:tabular-nums;
+           transition:width .4s ease; min-width:56px; }
+.fu-lb { color:var(--dim); font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.fu-a { background:var(--amber); } .fu-b { background:var(--blue); }
+.fu-c { background:#58a6ff88; } .fu-d { background:var(--green); }
+/* ⑤ 公式实代行 */
+.au-formula { margin-top:7px; padding:6px 9px; border-radius:6px; background:var(--feed-detail-bg);
+              font-size:11px; color:var(--fg); font-variant-numeric:tabular-nums; line-height:1.6; }
+.au-formula b { color:var(--green); font-size:13px; }
+/* feed 选中行高亮 */
+.feed-ev.sel .feed-row { background:color-mix(in srgb, var(--blue) 10%, transparent); }
+.feed-ev.sel .feed-row .m { font-weight:600; }
 .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:14px;
         box-shadow:var(--shadow); transition:border-color .15s; }
 .card:hover { border-color:var(--border-hover); }
@@ -567,6 +584,19 @@ const T = {
   au_win:     {zh:'胜出', en:'winner', ko:'승자', ja:'勝者', es:'ganador', fr:'gagnant'},
   au_qp:      {zh:'预算压制 ×{q}', en:'budget damp ×{q}', ko:'예산 감쇠 ×{q}', ja:'予算減衰 ×{q}', es:'amortiguación ×{q}', fr:'amortissement ×{q}'},
   theme_lbl:  {zh:'主题', en:'Theme', ko:'테마', ja:'テーマ', es:'Tema', fr:'Thème'},
+  dom_code:      {zh:'代码', en:'code', ko:'코드', ja:'コード', es:'código', fr:'code'},
+  dom_math_logic:{zh:'数理逻辑', en:'math/logic', ko:'수리 논리', ja:'数理論理', es:'matemática', fr:'maths/logique'},
+  dom_writing:   {zh:'写作', en:'writing', ko:'작문', ja:'執筆', es:'escritura', fr:'écriture'},
+  dom_factual_lookup:{zh:'事实查询', en:'factual lookup', ko:'사실 조회', ja:'事実検索', es:'búsqueda factual', fr:'recherche factuelle'},
+  dom_data_analysis:{zh:'数据分析', en:'data analysis', ko:'데이터 분석', ja:'データ分析', es:'análisis de datos', fr:'analyse de données'},
+  dom_chitchat:  {zh:'闲聊', en:'chitchat', ko:'잡담', ja:'雑談', es:'charla', fr:'discussion'},
+  dom_agent_ops: {zh:'Agent 操作', en:'agent ops', ko:'에이전트 작업', ja:'エージェント操作', es:'operación de agente', fr:'opérations d\'agent'},
+  dom_other:     {zh:'其他', en:'other', ko:'기타', ja:'その他', es:'otro', fr:'autre'},
+  au_wsrc:    {zh:'由难度联动 × 配额感知调节后归一化——百分比 = 各因子的重要度占比（总和 100%）', en:'adjusted by difficulty link × quota awareness, then normalized — each % is a factor\'s importance share (sums to 100%)', ko:'난이도×할당량 조절 후 정규화—각 %는 중요도 비율(합 100%)', ja:'難易度× quota 調整後に正規化—%は重要度の割合（合計100%）', es:'ajustado por dificultad × cuota y normalizado — cada % es la importancia del factor (suma 100%)', fr:'ajusté par difficulté × quota puis normalisé — chaque % est le poids du facteur (somme 100%)'},
+  au_formula: {zh:'本次计算', en:'this run', ko:'이번 계산', ja:'今回の計算', es:'este cálculo', fr:'ce calcul'},
+  au_bias_tip:{zh:'飞轮学习偏置：>1 近期表现优于群体被加分，<1 被减分——只会微调，不改判', en:'flywheel learned bias: >1 rewarded (outperforming peers), <1 penalized — fine-tuning only, never overrides', ko:'플라이휠 학습 바이어스: >1 가산, <1 감산—미세 조정만', ja:'フライホイール学習バイアス：>1 加算、<1 減算—微調整のみ', es:'sesgo aprendido: >1 premiado, <1 penalizado — solo ajuste fino', fr:'biais appris : >1 récompensé, <1 pénalisé — ajustement fin uniquement'},
+  au_normal:  {zh:'常规决策：公式直选最优，无探索 / 举荐介入', en:'routine decision: formula picked the best directly, no exploration / endorsement', ko:'일반 결정: 공식이 직접 최선을 선택', ja:'通常判定：公式が直接最良を選択', es:'decisión rutinaria: la fórmula eligió directamente', fr:'décision de routine : la formule a choisi directement'},
+  au_filters_n:{zh:'另有 {n} 个候选未通过硬性检查', en:'{n} more candidates failed hard filters', ko:'{n}개 추가 후보가 필터 탈락', ja:'{n} 個の候補がフィルター落ち', es:'{n} candidatos más fallaron filtros', fr:'{n} candidats de plus ont échoué'},
 };
 const t = k => (T[k] && (T[k][lang] ?? T[k].zh)) ?? k;
 
@@ -798,12 +828,12 @@ function addRow(e){
     feedMetrics(e) +
     (e.translated ? '<span class="tk" title="'+t('translated')+'">⇄'+esc(e.translated)+'</span>' : '') +
     '<span class="ms">'+fmtMs(e.total_ms)+'</span></div>' +
-    '<div class="feed-path">'+decisionPath(e)+'</div>' +
-    '<div class="feed-detail" style="display:none">'+decisionDetail(e)+'</div>';
+    '<div class="feed-path">'+decisionPath(e)+'</div>';
   row.querySelector('.feed-row').addEventListener('click', () => {
-    renderAutopsy(e);          // A-decision：点击即还原完整决策过程（右侧解剖面板）
-    const d = row.querySelector('.feed-detail');
-    if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
+    renderAutopsy(e);          // A-decision：点击即还原完整决策过程（右侧解剖面板，
+                               // 行内详情已合并进解剖——不再重复展开）
+    row.classList.add('sel');
+    document.querySelectorAll('.feed-ev.sel').forEach(x => { if (x !== row) x.classList.remove('sel'); });
   });
   const g = groupBlock(e);
   g.count++;
@@ -820,8 +850,11 @@ function addRow(e){
 }
 
 // ═══ A-decision 决策解剖：把一次路由的公式全过程钉在七段可视化里 ═══
-// ① 任务画像 ② 双判官 ③ 候选漏斗 ④ 动态权重 ⑤ 候选评分榜（因子微条+bias 乘数）
-// ⑥ 决策转折点（探索/advisor/regret）⑦ 自进化反馈（bias 相对中位的方向）
+// ① 任务画像（中文化域标签+tooltip）② 双判官（来源+置信度+叙事）
+// ③ 候选漏斗（真漏斗形：宽度∝数量，居中递减）④ 动态权重（横条+来源说明）
+// ⑤ 候选评分榜（紧凑：公式实代代入本次数值 + bias 含义 tooltip）
+// ⑥ 决策转折点（无转折时给最小叙事）⑦ 自进化反馈（bias 方向人话）
+// ⑧ 时序瀑布 ⑨ 过滤明细（重点+计数折叠）
 // 全部数据来自事件 JSON——纯前端重组，零后端改动。
 function autopsyBar(pct, cls){
   return '<span class="au-bar"><i class="'+(cls||'b')+'" style="width:'+Math.max(1, Math.min(100, pct))+'%"></i></span>';
@@ -838,48 +871,51 @@ function renderAutopsy(e){
     '<b style="font-size:14px;color:var(--blue)">'+esc(chosen)+'</b>' +
     '<span class="dim2">'+fmtMs(e.total_ms)+(e.ttft_ms?' · TTFT '+fmtMs(e.ttft_ms):'')+'</span></div>');
 
-  // ① 任务画像
+  // ① 任务画像（域中文化 + 徽章 tooltip）
   const jg = e.judgment || {};
   L.push('<div class="au-sec au-sec-t">'+esc(t('au_req'))+'</div>');
   const dk = T['dom_'+(jg.domain||'Other')];
+  const domLabel = dk ? (dk[lang] ?? dk.zh) : (jg.domain||'-');
   L.push('<div>' +
-    '<span class="au-badge hl">'+esc(dk ? (dk[lang] ?? dk.zh) : (jg.domain||'-'))+'</span>' +
-    '<span class="au-badge">'+esc(t('p_diff'))+' '+(+(e.difficulty_eff||0)).toFixed(1)+'/3 · '+esc(diffLevel(+e.difficulty_eff||0))+'</span>' +
-    (e.est_tokens ? '<span class="au-badge">'+esc(t('p_est'))+' '+fmtK(e.est_tokens)+' tok</span>' : '') +
-    (jg.is_trivial >= 0.5 ? '<span class="au-badge">'+esc(t('p_sticky'))+'</span>' : '') +
+    '<span class="au-badge hl" title="决策模型判定本请求的业务领域，决定质量权重的倾向">'+esc(domLabel)+'</span>' +
+    '<span class="au-badge" title="有效难度 = 判定难度 + 会话深度加成；决定难度联动权重与质量及格线">'+esc(t('p_diff'))+' '+(+(e.difficulty_eff||0)).toFixed(1)+'/3 · '+esc(diffLevel(+e.difficulty_eff||0))+'</span>' +
+    (e.est_tokens ? '<span class="au-badge" title="本次请求预估输入 token——配额硬过滤与预算保护的基准">'+esc(t('p_est'))+' '+fmtK(e.est_tokens)+' tok</span>' : '') +
+    (jg.is_trivial >= 0.5 ? '<span class="au-badge" title="判定为琐碎请求，可走会话粘性直接复用上次选择">'+esc(t('p_sticky'))+'</span>' : '') +
     '</div>');
 
-  // ② 双判官
+  // ② 双判官（来源 + 置信度 + 叙事）
   L.push('<div class="au-sec au-sec-t">'+esc(t('au_judge'))+'</div>');
   const jl = {'decision_model':'bj_model','decision_model+rules':'bj_hybrid','heuristic':'bj_heur','explicit':'bj_explicit','sticky':'p_sticky'}[jg.judge_source];
   L.push('<div class="au-kv"><span class="k">'+esc(t('judge_src'))+'</span><span>'+(jl ? esc(t(jl)) : esc(jg.judge_source||'-'))+'</span></div>');
   const conf = Math.round((+jg.domain_confidence||0)*100);
   L.push('<div class="au-kv"><span class="k">'+esc(t('au_conf'))+'</span><span style="display:flex;gap:8px;align-items:center;width:60%">'+autopsyBar(conf,'g')+conf+'%</span></div>');
+  const bym = {'decision_model':'st_by_model', 'decision_model+rules':'st_by_hybrid', 'heuristic':'st_by_heur', 'explicit':'st_by_explicit'}[jg.judge_source];
+  if (bym) L.push('<div class="dim2" style="margin-top:3px">'+esc(t(bym))+'</div>');
 
-  // ③ 候选漏斗（阶梯）
+  // ③ 候选漏斗（真漏斗：梯形堆叠，宽度∝数量，居中递减）
   const f = e.funnel || [];
   if (f.length === 4 && f[0] > 0) {
-    L.push('<div class="au-sec au-sec-t">'+esc(t('au_funnel'))+'</div><div class="au-funnel">');
+    L.push('<div class="au-sec au-sec-t">'+esc(t('au_funnel'))+'</div><div class="au-funnel-shape">');
     const stages = [
-      {lb:t('au_stage_cat'),    n:f[0]},
-      {lb:t('au_stage_hard'),   n:f[1]},
-      {lb:t('au_stage_floor'),  n:f[2]},
-      {lb:t('au_stage_scored'), n:f[3]},
+      {lb:t('au_stage_cat'),    n:f[0], cls:'fu-a'},
+      {lb:t('au_stage_hard'),   n:f[1], cls:'fu-b'},
+      {lb:t('au_stage_floor'),  n:f[2], cls:'fu-c'},
+      {lb:t('au_stage_scored'), n:f[3], cls:'fu-d'},
     ];
     const mx = Math.max(f[0], 1);
-    stages.forEach((st, i) => {
-      const cls = i === 3 ? 'g' : (i === 0 ? 'a' : 'b');
-      L.push('<div class="fr"><span class="lb">'+esc(st.lb)+'</span>' +
-        autopsyBar(100*st.n/mx, cls) +
-        '<span class="num">'+st.n+'</span></div>');
+    stages.forEach(st => {
+      const wp = Math.max(14, 100*st.n/mx);
+      L.push('<div class="fu-row"><div class="fu-trap '+st.cls+'" style="width:'+wp+'%">' +
+        '<span class="fu-n">'+st.n+'</span></div><span class="fu-lb">'+esc(st.lb)+'</span></div>');
     });
     L.push('</div>');
   }
 
-  // ④ 动态权重（难度联动 × 配额感知后的实际值）
+  // ④ 动态权重（横条 + 来源说明——回答"怎么来的/为什么是百分比"）
   const w = e.weights || [];
   if (w.length === 5) {
     L.push('<div class="au-sec au-sec-t">'+esc(t('au_weights'))+'</div>');
+    L.push('<div class="dim2" style="margin-bottom:6px">'+esc(t('au_wsrc'))+'</div>');
     const wnames = [t('au_factor_q'), t('au_factor_s'), t('au_factor_c'), t('au_factor_r'), t('au_factor_h')];
     const wcls = ['b','a','g','b','g'];
     wnames.forEach((nm, i) => {
@@ -888,7 +924,7 @@ function renderAutopsy(e){
     });
   }
 
-  // ⑤ 候选评分榜（因子微条 + 乘数徽章 + 最终分）
+  // ⑤ 候选评分榜（紧凑 + 胜者公式实代：把本次真实数值代入公式）
   const sb = e.scoreboard || [];
   if (sb.length) {
     L.push('<div class="au-sec au-sec-t">'+esc(t('au_matrix'))+'</div>');
@@ -905,10 +941,10 @@ function renderAutopsy(e){
       }).join('');
       const mults = [];
       const bv = +(r.bias||1);
-      if (Math.abs(bv-1) > 0.001) mults.push('<span class="m'+(bv>1?' hot':' damp')+'">bias ×'+bv.toFixed(3)+'</span>');
-      if (r.uw && +r.uw !== 1) mults.push('<span class="m">user ×'+(+r.uw).toFixed(2)+'</span>');
+      if (Math.abs(bv-1) > 0.001) mults.push('<span class="m'+(bv>1?' hot':' damp')+'" title="'+esc(t('au_bias_tip'))+'">bias ×'+bv.toFixed(3)+'</span>');
+      if (r.uw && +r.uw !== 1) mults.push('<span class="m" title="你在面板上为该模型设置的用户权重">user ×'+(+r.uw).toFixed(2)+'</span>');
       const qp = +(r.qp||1);
-      if (qp < 0.99) mults.push('<span class="m damp">'+esc(t('au_qp').replace('{q}', qp.toFixed(2)))+'</span>');
+      if (qp < 0.99) mults.push('<span class="m damp" title="订阅方案配额消耗超软阈值——预算压制">'+esc(t('au_qp').replace('{q}', qp.toFixed(2)))+'</span>');
       L.push('<div class="au-cand'+(win?' win':'')+'">' +
         '<div class="top"><span class="nm" title="'+esc(r.model_id)+'">'+esc(shortId(r.model_id))+'</span>' +
         (win ? '<span class="win-tag">★ '+esc(t('au_win'))+'</span>' : '') +
@@ -917,9 +953,18 @@ function renderAutopsy(e){
         (mults.length ? '<div class="au-mult">'+mults.join('')+'</div>' : '') +
         '</div>');
     });
+    // 公式实代：胜者的分数是怎么算出来的（真实数值代入）
+    const winR = sb.find(r => r.model_id === e.chosen);
+    if (winR && w.length === 5) {
+      const terms = [t('au_factor_q'), t('au_factor_s'), t('au_factor_c'), t('au_factor_r'), t('au_factor_h')]
+        .map((nm, i) => Math.round(w[i]*100)+'%×'+Math.round((+winR[['q','s','c','r','h'][i]]||0)*100)).join(' + ');
+      const bv = +(winR.bias||1);
+      L.push('<div class="au-formula" title="'+esc(t('au_bias_tip'))+'">' +
+        '<b>'+Math.round((+winR.score||0)*100)+'</b> = '+terms+' → × bias '+bv.toFixed(3)+'</div>');
+    }
   }
 
-  // ⑥ 决策转折点
+  // ⑥ 决策转折点（无转折时给最小叙事，不留空段）
   L.push('<div class="au-sec au-sec-t">'+esc(t('au_turn'))+'</div>');
   let turned = false;
   if (e.sticky) {
@@ -935,7 +980,7 @@ function renderAutopsy(e){
     L.push('<div class="au-turn">'+esc(t('au_advisor').replace('{c}', (e.judgment.route_recommendation_confidence).toFixed(2)))+' · '+esc(shortId(adv))+'</div>');
     turned = true;
   }
-  if (e.regret != null) {
+  if (e.regret != null && +e.regret > 0) {
     L.push('<div class="au-turn neu">'+esc(t('au_regret').replace('{r}', (+e.regret).toFixed(3)))+'</div>');
     turned = true;
   }
@@ -943,9 +988,9 @@ function renderAutopsy(e){
     L.push('<div class="au-turn" style="border-left-color:var(--red)">'+esc(t('skipped'))+'：'+e.skipped.map(s => esc(s)).join(' → ')+'</div>');
     turned = true;
   }
-  if (!turned) L.push('<div class="au-turn neu">'+esc(t('au_bias_neu').replace('{b}', '—'))+'</div>');
+  if (!turned) L.push('<div class="au-turn neu">'+esc(t('au_normal'))+'</div>');
 
-  // ⑦ 自进化反馈（胜者 bias 相对 1.0 的方向 = 飞轮的奖惩信号）
+  // ⑦ 自进化反馈（bias 方向人话；无 flags 时显示"无异常"）
   const mine = sb.find(r => r.model_id === e.chosen);
   if (mine) {
     const bv = +(mine.bias||1);
@@ -961,16 +1006,20 @@ function renderAutopsy(e){
     }
   }
 
-  // 时序瀑布 + 过滤明细（折叠）
+  // ⑧ 时序瀑布（自行内详情合并而来）
   L.push('<div class="au-sec au-sec-t">'+esc(t('w_total'))+'</div>');
   L.push(waterfallBar(e) || '<div class="dim2">—</div>');
+
+  // ⑨ 过滤明细（review：只展示重点——链上相关 + 前 3 条 + 计数折叠）
   if (e.filtered && e.filtered.length) {
-    const showN = 3, total = e.filtered.length;
-    const shown = e.filtered.slice(0, showN).map(fl =>
+    const total = e.filtered.length;
+    const chainRel = (e.chain||[]).filter(m => e.filtered.some(fl => fl.model === m));
+    const chainBad = chainRel.map(m => e.filtered.find(fl => fl.model === m));
+    const rest = e.filtered.filter(fl => !chainRel.includes(fl.model)).slice(0, Math.max(1, 3-chainBad.length));
+    const shown = chainBad.concat(rest).filter(Boolean).map(fl =>
       '<span title="'+esc(fl.model)+'">'+esc(shortId(fl.model))+'</span>（'+esc(causeLocal(fl.cause))+'）').join('、 ');
-    const more = total > showN ? ' …' + (lang==='zh'?'等共 '+total+' 项':'('+total+' total)') : '';
-    L.push('<details style="margin-top:8px"><summary class="dim2" style="cursor:pointer">'+esc(t('st_filtered_head'))+'（'+total+'）</summary>' +
-      '<div class="dim2" style="margin-top:4px;line-height:1.7">' + shown + more + '</div></details>');
+    L.push('<details style="margin-top:8px"><summary class="dim2" style="cursor:pointer">'+esc(t('st_filtered_head'))+'（'+total+'，'+esc(t('au_filters_n').replace('{n}',''))+'示 '+Math.min(total, chainBad.length+rest.length)+'）</summary>' +
+      '<div class="dim2" style="margin-top:4px;line-height:1.7">' + shown + (total > chainBad.length+rest.length ? ' …' : '') + '</div></details>');
   }
 
   B.innerHTML = L.join('');
