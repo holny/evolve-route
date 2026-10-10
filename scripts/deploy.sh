@@ -1,12 +1,12 @@
 #!/bin/bash
-# EvolveRoute 网关：编译 → 部署 → 重启 一键脚本
+# Turbine 网关：编译 → 部署 → 重启 一键脚本
 # 用法: ./scripts/deploy.sh          # 编译+部署+重启
 #       ./scripts/deploy.sh --no-build   # 只重启（不编译）
 set -euo pipefail
 
-BIN_SRC="target/release/evolveroute"
-BIN_DST="$HOME/.local/bin/evolveroute"
-LABEL="ai.evolveroute.gateway"
+BIN_SRC="target/release/turbine"
+BIN_DST="$HOME/.local/bin/turbine"
+LABEL="ai.turbine.gateway"
 
 if [[ "${1:-}" != "--no-build" ]]; then
     echo "[1/4] cargo build --release ..."
@@ -43,5 +43,5 @@ for _ in $(seq 1 25); do
         exit 0
     fi
 done
-echo "警告: 健康检查未通过（10s 内无 200），查看 ~/.evolveroute/gateway.log" >&2
+echo "警告: 健康检查未通过（10s 内无 200），查看 ~/.turbine/gateway.log" >&2
 exit 1

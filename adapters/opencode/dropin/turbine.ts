@@ -1,29 +1,20 @@
 /**
- * Turbine adapter for opencode.
+ * Turbine adapter for opencode — zero-dependency drop-in.
  *
- * The gateway does all routing; this plugin only enhances it:
- *  - chat.headers: stamp x-ev-session / x-ev-agent so the gateway tracks
- *    sessions precisely (sticky + flywheel keyed by real session id)
- *  - tool.execute.after: report ground-truth tool success/failure to the
- *    gateway (L4 feedback, the highest-precision flywheel signal)
- *  - event: session.error and gateway-side failures are reported back
+ * Install: copy this file to  <project>/.opencode/plugins/turbine.ts
+ * (or ~/.config/opencode/plugins/ for global). opencode loads it at startup.
  *
- * Configuration via environment variables:
- *  MODELROUTE_URL   gateway base url (default http://127.0.0.1:8787)
- *  MODELROUTE_FEEDBACK  set "0" to disable outcome reporting
+ * Env: MODELROUTE_URL (default http://127.0.0.1:8787),
+ *      MODELROUTE_FEEDBACK=0 to disable outcome reporting.
+ *
+ * What it does (the gateway does all routing):
+ *  - stamps x-ev-session on every LLM call → precise session stickiness
+ *  - reports tool success/failure to /api/feedback → flywheel ground truth
  */
-import type { Plugin } from "@opencode-ai/plugin"
-
 const GATEWAY = process.env.MODELROUTE_URL ?? "http://127.0.0.1:8787"
 const FEEDBACK_ENABLED = process.env.MODELROUTE_FEEDBACK !== "0"
 
-interface ToolOutcome {
-  ok: boolean
-  detail?: string
-}
-
-/** Best-effort classification of an opencode tool execution result. */
-function classifyToolOutput(title: string, output: string): ToolOutcome {
+function classifyToolOutput(title, output) {
   const text = `${title}\n${output}`.toLowerCase()
   const errorMarkers = [
     "error:", "failed", "traceback", "exception", "permission denied",
@@ -31,15 +22,12 @@ function classifyToolOutput(title: string, output: string): ToolOutcome {
     "错误", "失败", "权限被拒绝", "不存在",
   ]
   if (errorMarkers.some((m) => text.includes(m))) {
-    return { ok: false, detail: output.slice(0, 500) }
+    return { ok: false, detail: String(output).slice(0, 500) }
   }
-  return { ok: true, detail: title.slice(0, 200) }
+  return { ok: true, detail: String(title ?? "").slice(0, 200) }
 }
 
-async function report(
-  path: string,
-  body: Record<string, unknown>,
-): Promise<void> {
+async function report(path, body) {
   try {
     await fetch(`${GATEWAY}${path}`, {
       method: "POST",
@@ -52,7 +40,7 @@ async function report(
   }
 }
 
-export const ModelroutePlugin: Plugin = async ({ project }) => {
+export const ModelroutePlugin = async ({ project }) => {
   const cwd = project?.worktree ?? project?.path ?? ""
   return {
     "chat.headers": async (input, output) => {
@@ -75,11 +63,10 @@ export const ModelroutePlugin: Plugin = async ({ project }) => {
 
     event: async ({ event }) => {
       if (!FEEDBACK_ENABLED) return
-      const type = (event as { type?: string }).type
-      if (type === "session.error") {
-        const props = (event as { properties?: Record<string, unknown> }).properties ?? {}
+      if (event?.type === "session.error") {
+        const props = event.properties ?? {}
         await report("/api/feedback", {
-          session: (props as { sessionID?: string }).sessionID,
+          session: props.sessionID,
           ok: false,
           detail: `session.error: ${JSON.stringify(props).slice(0, 500)}`,
         })

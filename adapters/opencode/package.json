@@ -1,7 +1,7 @@
 {
-  "name": "opencode-evolveroute",
+  "name": "opencode-turbine",
   "version": "0.2.0",
-  "description": "EvolveRoute adapter for opencode: session stamping, tool outcome feedback, error reporting",
+  "description": "Turbine adapter for opencode: session stamping, tool outcome feedback, error reporting",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
@@ -17,6 +17,6 @@
     "opencode",
     "llm",
     "routing",
-    "evolveroute"
+    "turbine"
   ]
 }

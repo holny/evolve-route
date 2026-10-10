@@ -38,7 +38,7 @@ jobs:
 
       - name: build
         run: >
-          ${{ matrix.cross == true && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }} -p ev-server
+          ${{ matrix.cross == true && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }} -p turbine-server
         # cross builds musl static binaries (ring's C code needs the musl
         # toolchain from the cross container); msvc handles arm64 natively
         # on windows runners via the installed VS ARM64 tools.
@@ -47,11 +47,11 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          STAGE="evolveroute-$VERSION-${{ matrix.target }}"
+          STAGE="turbine-$VERSION-${{ matrix.target }}"
           mkdir "$STAGE"
-          cp "target/${{ matrix.target }}/release/evolveroute" "$STAGE/"
+          cp "target/${{ matrix.target }}/release/turbine" "$STAGE/"
           cp README.md LICENSE THIRD-PARTY-NOTICES.md "$STAGE/" 2>/dev/null || true
-          cp config/evolveroute.default.toml "$STAGE/evolveroute.default.toml" 2>/dev/null || true
+          cp config/turbine.default.toml "$STAGE/turbine.default.toml" 2>/dev/null || true
           tar -czf "$STAGE.tar.gz" "$STAGE"
           shasum -a 256 "$STAGE.tar.gz" > "$STAGE.tar.gz.sha256"
 
@@ -60,11 +60,11 @@ jobs:
         shell: pwsh
         run: |
           $VERSION = "$env:GITHUB_REF_NAME" -replace '^v',''
-          $STAGE = "evolveroute-$VERSION-${{ matrix.target }}"
+          $STAGE = "turbine-$VERSION-${{ matrix.target }}"
           New-Item -ItemType Directory -Force "$STAGE" | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/evolveroute.exe" "$STAGE/"
+          Copy-Item "target/${{ matrix.target }}/release/turbine.exe" "$STAGE/"
           Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md "$STAGE/" -ErrorAction SilentlyContinue
-          Copy-Item config/evolveroute.default.toml "$STAGE/evolveroute.default.toml" -ErrorAction SilentlyContinue
+          Copy-Item config/turbine.default.toml "$STAGE/turbine.default.toml" -ErrorAction SilentlyContinue
           Compress-Archive -Path "$STAGE" -DestinationPath "$STAGE.zip"
           (Get-FileHash "$STAGE.zip" -Algorithm SHA256).Hash + "  $STAGE.zip" | Out-File "$STAGE.zip.sha256"
 
@@ -72,10 +72,10 @@ jobs:
         with:
           name: release-${{ matrix.target }}
           path: |
-            evolveroute-*.tar.gz
-            evolveroute-*.tar.gz.sha256
-            evolveroute-*.zip
-            evolveroute-*.zip.sha256
+            turbine-*.tar.gz
+            turbine-*.tar.gz.sha256
+            turbine-*.zip
+            turbine-*.zip.sha256
 
   release:
     needs: build
@@ -88,8 +88,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            evolveroute-*.tar.gz
-            evolveroute-*.tar.gz.sha256
-            evolveroute-*.zip
-            evolveroute-*.zip.sha256
+            turbine-*.tar.gz
+            turbine-*.tar.gz.sha256
+            turbine-*.zip
+            turbine-*.zip.sha256
           generate_release_notes: true
