@@ -6,7 +6,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub const LABEL: &str = "ai.evolve.gateway";
+pub const LABEL: &str = "ai.evo-router.gateway";
 const DEFAULT_PORT: u16 = 8787;
 
 fn home() -> PathBuf {
@@ -124,7 +124,7 @@ pub fn start(port: u16) -> anyhow::Result<()> {
     let plist = plist_path();
     if !plist.exists() {
         let bin = std::env::current_exe()?;
-        let config = home().join(".evolve/evolve.toml");
+        let config = home().join(".evolve/evo-router.toml");
         write_plist(&bin, &config, port)?;
     }
     if is_loaded() {
@@ -190,14 +190,14 @@ pub fn status(port: u16) -> anyhow::Result<()> {
     } else if !loaded {
         bail!("服务未加载：运行 evolve start 或 evolve install")
     } else {
-        bail!("服务已加载但端口未就绪：查看 ~/.evolve/gateway.log")
+        bail!("服务已加载但端口未就绪：查看 ~/.evo-router/gateway.log")
     }
 }
 
 /// 安装/重写服务定义（KeepAlive 崩溃自拉起 + RunAtLoad 开机自启）
 pub fn install(port: u16) -> anyhow::Result<()> {
     let bin = std::env::current_exe()?;
-    let config = home().join(".evolve/evolve.toml");
+    let config = home().join(".evolve/evo-router.toml");
     if !config.exists() {
         bail!("配置文件不存在: {}（先运行 evolve doctor 检查）", config.display());
     }
@@ -212,6 +212,6 @@ pub fn install(port: u16) -> anyhow::Result<()> {
         println!("服务已安装并启动: http://127.0.0.1:{port}（开机自启已启用）");
         Ok(())
     } else {
-        bail!("安装后启动超时，查看 ~/.evolve/gateway.log")
+        bail!("安装后启动超时，查看 ~/.evo-router/gateway.log")
     }
 }

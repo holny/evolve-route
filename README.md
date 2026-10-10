@@ -82,7 +82,7 @@ cd evolve-route
 cargo build --release
 
 # binary at target/release/evolveroute
-./target/release/evolveroute serve
+./target/release/evo-router serve
 # gateway listening on http://127.0.0.1:8787
 ```
 

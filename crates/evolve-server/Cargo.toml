@@ -9,7 +9,7 @@ name = "evolve_server"
 path = "src/lib.rs"
 
 [[bin]]
-name = "evolve"
+name = "evo-router"
 path = "src/main.rs"
 
 [dependencies]

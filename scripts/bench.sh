@@ -11,7 +11,7 @@ MOCK_PORT=9101
 GW_PORT=8787
 
 pkill -f "evolveroute mock-upstream" 2>/dev/null || true
-pkill -f "evolveroute serve" 2>/dev/null || true
+pkill -f "evo-router serve" 2>/dev/null || true
 sleep 0.2
 
 nohup $BIN mock-upstream --port $MOCK_PORT >/tmp/bench-mock.log 2>&1 &

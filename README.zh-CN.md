@@ -84,7 +84,7 @@ cd evolve-route
 cargo build --release
 
 # 二进制在 target/release/evolveroute
-./target/release/evolveroute serve
+./target/release/evo-router serve
 # 网关监听 http://127.0.0.1:8787
 ```
 

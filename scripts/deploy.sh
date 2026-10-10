@@ -6,7 +6,7 @@ set -euo pipefail
 
 BIN_SRC="target/release/evolve"
 BIN_DST="$HOME/.local/bin/evolve"
-LABEL="ai.evolve.gateway"
+LABEL="ai.evo-router.gateway"
 
 if [[ "${1:-}" != "--no-build" ]]; then
     echo "[1/4] cargo build --release ..."
@@ -43,5 +43,5 @@ for _ in $(seq 1 25); do
         exit 0
     fi
 done
-echo "警告: 健康检查未通过（10s 内无 200），查看 ~/.evolve/gateway.log" >&2
+echo "警告: 健康检查未通过（10s 内无 200），查看 ~/.evo-router/gateway.log" >&2
 exit 1

@@ -273,9 +273,9 @@ impl FileConfig {
 }
 
 pub fn default_config_paths() -> Vec<std::path::PathBuf> {
-    let mut paths = vec![Path::new("evolve.toml").to_path_buf()];
+    let mut paths = vec![Path::new("evo-router.toml").to_path_buf()];
     if let Ok(home) = std::env::var("HOME") {
-        paths.push(Path::new(&home).join(".evolve").join("evolve.toml"));
+        paths.push(Path::new(&home).join(".evolve").join("evo-router.toml"));
     }
     paths
 }

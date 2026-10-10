@@ -5,7 +5,7 @@ use evolve_core::catalog::Catalog;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "evolve", version, about = "Multi-agent LLM smart routing gateway")]
+#[command(name = "evo-router", version, about = "Multi-agent LLM smart routing gateway")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

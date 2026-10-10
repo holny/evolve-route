@@ -1,4 +1,4 @@
-pub const EMBEDDED_DEFAULT_CONFIG: &str = include_str!("../../../config/evolve.default.toml");
+pub const EMBEDDED_DEFAULT_CONFIG: &str = include_str!("../../../config/evo-router.default.toml");
 
 pub fn load_config(explicit: Option<&std::path::Path>) -> anyhow::Result<(evolve_core::config::FileConfig, Option<std::path::PathBuf>)> {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
