@@ -107,17 +107,20 @@ body { background:var(--bg); color:var(--fg); font:13.5px/1.55 -apple-system,"Pi
 /* ③ 真漏斗：梯形堆叠居中递减 */
 .au-funnel-shape { display:flex; flex-direction:column; align-items:center; gap:3px; padding:4px 0; }
 .fu-row { display:grid; grid-template-columns:minmax(0,1fr) 92px; gap:8px; align-items:center; width:100%; }
-.fu-trap { height:22px; display:flex; align-items:center; justify-content:center;
-           clip-path:polygon(0 0, 100% 0, calc(100% - 7px) 100%, 7px 100%);
-           color:var(--wf-text); font-size:11px; font-weight:600; font-variant-numeric:tabular-nums;
-           transition:width .4s ease; min-width:56px; }
+.fu-trap { height:26px; display:flex; align-items:center; justify-content:center;
+           clip-path:polygon(0 0, 100% 0, calc(100% - 6px) 100%, 6px 100%);
+           color:#fff; font-size:11px; font-weight:600; font-variant-numeric:tabular-nums;
+           transition:width .4s ease, filter .12s; min-width:56px; filter:saturate(.92); }
+.fu-row:hover .fu-trap { filter:none; }
 .fu-lb { color:var(--dim); font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.fu-a { background:var(--amber); } .fu-b { background:var(--blue); }
-.fu-c { background:#58a6ff88; } .fu-d { background:var(--green); }
+.fu-a { background:#1f4e8c; } .fu-b { background:#2f6bc4; }
+.fu-c { background:#58a6ff; } .fu-d { background:#7cc0ff; }
 /* ⑤ 公式实代行 */
 .au-formula { margin-top:7px; padding:6px 9px; border-radius:6px; background:var(--feed-detail-bg);
               font-size:11px; color:var(--fg); font-variant-numeric:tabular-nums; line-height:1.6; }
 .au-formula b { color:var(--green); font-size:13px; }
+.au-calc { font-size:11px; color:var(--fg); background:var(--feed-detail-bg); border-radius:6px; padding:6px 9px; line-height:1.8; }
+.au-calc .dim2 { margin-top:2px; }
 /* feed 选中行高亮 */
 .feed-ev.sel .feed-row { background:color-mix(in srgb, var(--blue) 10%, transparent); }
 .feed-ev.sel .feed-row .m { font-weight:600; }
@@ -597,6 +600,21 @@ const T = {
   au_bias_tip:{zh:'飞轮学习偏置：>1 近期表现优于群体被加分，<1 被减分——只会微调，不改判', en:'flywheel learned bias: >1 rewarded (outperforming peers), <1 penalized — fine-tuning only, never overrides', ko:'플라이휠 학습 바이어스: >1 가산, <1 감산—미세 조정만', ja:'フライホイール学習バイアス：>1 加算、<1 減算—微調整のみ', es:'sesgo aprendido: >1 premiado, <1 penalizado — solo ajuste fino', fr:'biais appris : >1 récompensé, <1 pénalisé — ajustement fin uniquement'},
   au_normal:  {zh:'常规决策：公式直选最优，无探索 / 举荐介入', en:'routine decision: formula picked the best directly, no exploration / endorsement', ko:'일반 결정: 공식이 직접 최선을 선택', ja:'通常判定：公式が直接最良を選択', es:'decisión rutinaria: la fórmula eligió directamente', fr:'décision de routine : la formule a choisi directement'},
   au_filters_n:{zh:'另有 {n} 个候选未通过硬性检查', en:'{n} more candidates failed hard filters', ko:'{n}개 추가 후보가 필터 탈락', ja:'{n} 個の候補がフィルター落ち', es:'{n} candidatos más fallaron filtros', fr:'{n} candidats de plus ont échoué'},
+  au_conf_src: {zh:'来源：决策模型的领域判别自报概率，与启发式判官取严（min）融合', en:'from the decision model\'s self-reported domain probability, fused take-conservative (min) with the heuristic judge', ko:'결정 모델의 자기 보고 확률과 휴리스틱 판정의 min 융합', ja:'決定モデルの自己申告確率とヒューリスティック判定の min 融合', es:'probabilidad autoinformada del modelo de decisión, fusionada en min con el juez heurístico', fr:'probabilité auto-déclarée du modèle de décision, fusion min avec le juge heuristique'},
+  au_wcalc:    {zh:'计算过程（代入本次数值）', en:'calculation (this request\'s values substituted)', ko:'계산 과정', ja:'計算過程', es:'cálculo', fr:'calcul'},
+  au_w_base:   {zh:'基准权重（balanced 策略）', en:'base weights (balanced profile)', ko:'기본 가중치', ja:'基本重み', es:'pesos base', fr:'poids de base'},
+  au_w_diff:   {zh:'难度联动', en:'difficulty link', ko:'난이도 연동', ja:'難易度連動', es:'enlace de dificultad', fr:'liaison de difficulté'},
+  au_w_quota:  {zh:'配额感知', en:'quota awareness', ko:'할당량 인식', ja:'quota 認識', es:'conciencia de cuota', fr:'sens quota'},
+  au_w_quota_none:{zh:'本次无配额压力（t 未定义或 0），未调节', en:'no quota pressure this run (t undefined or 0), unadjusted', ko:'할당량 압력 없음, 미조정', ja:'quota 圧力なし、未調整', es:'sin presión de cuota, sin ajuste', fr:'pas de pression de quota, non ajusté'},
+  au_w_norm:   {zh:'归一化（总和 = 100%）', en:'normalize (sums to 100%)', ko:'정규화(합 100%)', ja:'正規化（合計100%）', es:'normalizar (suma 100%)', fr:'normaliser (somme 100%)'},
+  au_w_custom: {zh:'基准为 balanced 策略默认；若你在配置中自定义了 [policy] weights，以你的值为基准', en:'base shown is the balanced profile default; if you customized [policy] weights, yours are the base', ko:'기본은 balanced 프로필', ja:'基本は balanced プロファイル', es:'base por defecto balanced', fr:'base par défaut : balanced'},
+  au_calib:    {zh:'校准', en:'calibration', ko:'보정', ja:'キャリブレーション', es:'calibración', fr:'calibration'},
+  au_gate_head:{zh:'探索门控三条件', en:'exploration gate (3 conditions)', ko:'탐색 게이트 3 조건', ja:'探索ゲート 3 条件', es:'compuerta de exploración (3 condiciones)', fr:'porte d\'exploration (3 conditions)'},
+  au_gate_stakes:{zh:'高风险信号', en:'high-stakes', ko:'고위험 신호', ja:'高リスク信号', es:'alto riesgo', fr:'signal haut risque'},
+  au_gate_diff:{zh:'有效难度', en:'effective difficulty', ko:'유효 난이도', ja:'有効難易度', es:'dificultad efectiva', fr:'difficulté effective'},
+  au_gate_conf:{zh:'判定置信度', en:'judgment confidence', ko:'판정 신뢰도', ja:'判定信頼度', es:'confianza del juicio', fr:'confiance du jugement'},
+  au_gate_open:{zh:'三门全开 → 允许探索；本次 Beta 采样偏移未改写排名（公式序即为最终序）', en:'gate open → exploration allowed; this run\'s Beta sampling offset did not rewrite the ranking', ko:'게이트 개방 → 탐색 허용', ja:'ゲート開放 → 探索許可', es:'puerta abierta → exploración permitida', fr:'porte ouverte → exploration autorisée'},
+  au_gate_closed:{zh:'有条件未通过 → 本次跳过探索（保护高风险/低置信请求）', en:'a condition failed → exploration skipped this run (protects high-stakes / low-confidence requests)', ko:'조건 미충족 → 탐색 생략', ja:'条件未達 → 探索スキップ', es:'condición fallida → exploración omitida', fr:'condition échouée → exploration ignorée'},
 };
 const t = k => (T[k] && (T[k][lang] ?? T[k].zh)) ?? k;
 
@@ -859,6 +877,7 @@ function addRow(e){
 function autopsyBar(pct, cls){
   return '<span class="au-bar"><i class="'+(cls||'b')+'" style="width:'+Math.max(1, Math.min(100, pct))+'%"></i></span>';
 }
+function deffSafe(e){ return +(e.difficulty_eff||0); }
 function renderAutopsy(e){
   const B = document.getElementById('au-body');
   if (!B) return;
@@ -889,6 +908,7 @@ function renderAutopsy(e){
   L.push('<div class="au-kv"><span class="k">'+esc(t('judge_src'))+'</span><span>'+(jl ? esc(t(jl)) : esc(jg.judge_source||'-'))+'</span></div>');
   const conf = Math.round((+jg.domain_confidence||0)*100);
   L.push('<div class="au-kv"><span class="k">'+esc(t('au_conf'))+'</span><span style="display:flex;gap:8px;align-items:center;width:60%">'+autopsyBar(conf,'g')+conf+'%</span></div>');
+  L.push('<div class="dim2" style="margin-top:3px">'+esc(t('au_conf_src'))+'</div>');
   const bym = {'decision_model':'st_by_model', 'decision_model+rules':'st_by_hybrid', 'heuristic':'st_by_heur', 'explicit':'st_by_explicit'}[jg.judge_source];
   if (bym) L.push('<div class="dim2" style="margin-top:3px">'+esc(t(bym))+'</div>');
 
@@ -911,7 +931,7 @@ function renderAutopsy(e){
     L.push('</div>');
   }
 
-  // ④ 动态权重（横条 + 来源说明——回答"怎么来的/为什么是百分比"）
+  // ④ 动态权重（横条 + 完整计算过程：基准 → 难度联动实代 → 配额感知 → 归一化）
   const w = e.weights || [];
   if (w.length === 5) {
     L.push('<div class="au-sec au-sec-t">'+esc(t('au_weights'))+'</div>');
@@ -922,6 +942,18 @@ function renderAutopsy(e){
       const pct = Math.round(w[i]*100);
       L.push('<div class="au-kv"><span class="k">'+esc(nm)+'</span><span style="display:flex;gap:8px;align-items:center;width:62%">'+autopsyBar(pct, wcls[i])+pct+'%</span></div>');
     });
+    // 计算过程（实代本次 d_eff）：基准(balanced) → 难度联动 → 配额感知 → 归一化
+    const deff = +(e.difficulty_eff||0);
+    const d = Math.min(1, deff/3);
+    const costBoost = 2 - 1.6*d, qScale = 0.75 + 0.25*d;
+    L.push('<details style="margin-top:6px"><summary class="dim2" style="cursor:pointer">'+esc(t('au_wcalc'))+'</summary>' +
+      '<div class="au-calc">' +
+      '<div>① '+esc(t('au_w_base'))+'：质量 35 · 速度 15 · 成本 25 · 可靠 15 · 余量 10</div>' +
+      '<div>② '+esc(t('au_w_diff'))+'（d<sub>eff</sub>='+deff.toFixed(2)+'，d='+d.toFixed(2)+'）：成本 ×'+costBoost.toFixed(2)+'、质量 ×'+qScale.toFixed(2)+'</div>' +
+      '<div>③ '+esc(t('au_w_quota'))+'：'+esc(t('au_w_quota_none'))+'</div>' +
+      '<div>④ '+esc(t('au_w_norm'))+' → 上表百分比</div>' +
+      '<div class="dim2" style="margin-top:3px">'+esc(t('au_w_custom'))+'</div>' +
+      '</div></details>');
   }
 
   // ⑤ 候选评分榜（紧凑 + 胜者公式实代：把本次真实数值代入公式）
@@ -988,9 +1020,19 @@ function renderAutopsy(e){
     L.push('<div class="au-turn" style="border-left-color:var(--red)">'+esc(t('skipped'))+'：'+e.skipped.map(s => esc(s)).join(' → ')+'</div>');
     turned = true;
   }
-  if (!turned) L.push('<div class="au-turn neu">'+esc(t('au_normal'))+'</div>');
+  if (!turned) {
+    // review：无转折时展示探索门控三条件实况——门开着但采样未改写排名
+    const g1 = jg.high_stakes < 0.6, g2 = deffSafe(e) < 2.0, g3 = jg.domain_confidence >= (0.35);
+    L.push('<div class="au-calc">' +
+      '<div>'+esc(t('au_gate_head'))+'</div>' +
+      '<div>'+esc(t('au_gate_stakes'))+'：'+(+jg.high_stakes).toFixed(2)+' < 0.6 '+(g1?'✓':'✗')+'</div>' +
+      '<div>'+esc(t('au_gate_diff'))+'：'+deffSafe(e).toFixed(2)+' < 2.0 '+(g2?'✓':'✗')+'</div>' +
+      '<div>'+esc(t('au_gate_conf'))+'：'+(+jg.domain_confidence).toFixed(2)+' ≥ 0.35 '+(g3?'✓':'✗')+'</div>' +
+      '<div class="dim2" style="margin-top:3px">'+(g1&&g2&&g3 ? esc(t('au_gate_open')) : esc(t('au_gate_closed')))+'</div>' +
+      '</div>');
+  }
 
-  // ⑦ 自进化反馈（bias 方向人话；无 flags 时显示"无异常"）
+  // ⑦ 自进化反馈（胜者四维学习态：可靠/速度观测/校准/余量 + bias 方向人话）
   const mine = sb.find(r => r.model_id === e.chosen);
   if (mine) {
     const bv = +(mine.bias||1);
@@ -998,6 +1040,16 @@ function renderAutopsy(e){
       : bv < 0.999 ? t('au_bias_dn').replace('{b}', bv.toFixed(4))
       : t('au_bias_neu').replace('{b}', bv.toFixed(4));
     L.push('<div class="au-sec au-sec-t">'+esc(t('au_evo'))+'</div>');
+    const dims = [
+      [t('m_rel'),      +mine.r, 'g'],
+      [t('m_speed'),    +mine.s, 'a'],
+      [t('au_calib'),   Math.min(1, (+(mine.c===undefined?0.5:mine.c)||0)*2), 'b'],
+      [t('fw_headroom'),+mine.h, 'g'],
+    ].map(([nm, v, cls]) => {
+      const pv = Math.round((+v||0)*100);
+      return '<div class="au-kv"><span class="k">'+esc(nm)+'</span><span style="display:flex;gap:8px;align-items:center;width:55%">'+autopsyBar(pv,cls)+pv+'%</span></div>';
+    }).join('');
+    L.push(dims);
     L.push('<div class="au-evo-note">'+ (bv > 1.001 ? '↑ ' : bv < 0.999 ? '↓ ' : '→ ') + esc(evo) + '</div>');
     if (e.quality) {
       const flags = e.quality.flags || [];
