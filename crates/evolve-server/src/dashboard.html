@@ -203,7 +203,7 @@ table.mx tr.win td { color:var(--green); }
     <div class="sub"><span class="dot" id="sse-dot"></span><span id="sse-status" data-i18n="sse_conn">SSE 连接中…</span></div>
   </div>
   <div class="chips" id="chips"></div>
-  <button class="lang-sel" id="theme-btn" title="Theme" style="padding:5px 12px;display:inline-flex;align-items:center;gap:6px"><span id="theme-ico">☀</span><span data-i18n="theme_lbl">主题</span></button>
+  <button class="lang-sel" id="theme-btn" title="Theme" style="padding:5px 12px"><span id="theme-ico">☀</span></button>
   <select class="lang-sel" id="lang-sel"></select>
 </header>
 <main>
@@ -1603,8 +1603,9 @@ es.onmessage = ev => { try { addRow(JSON.parse(ev.data)); } catch(_){} };
   document.documentElement.dataset.theme = theme;
   const btn = document.getElementById('theme-btn');
   const sync = () => {
-    document.getElementById('theme-ico').textContent = theme === 'light' ? '🌙' : '☀';
-    btn.title = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
+    // 图标表示当前模式：白天 ☀ / 黑夜 🌙；点击切换到另一模式
+    document.getElementById('theme-ico').textContent = theme === 'light' ? '☀' : '🌙';
+    btn.title = theme === 'light' ? '白天模式（点击切换黑夜）' : '黑夜模式（点击切换白天）';
   };
   sync();
   btn.addEventListener('click', () => {
