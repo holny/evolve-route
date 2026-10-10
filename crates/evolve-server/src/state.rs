@@ -74,9 +74,11 @@ pub fn build_state(config: FileConfig) -> AppState {
     let backend = DecisionBackend::build(&config.decision.backend);
     let mut engine = Engine::new(catalog, policy, backend);
 
-    // Jev cookbook intent-routing：TypeSafe 后端时接通 route_advisor——
-    // TypesafeBackend 实现了 RouteAdvisor trait（推荐方法签名匹配 evolve-core trait）
-    if std::env::var("TYPESAFE_API_KEY").ok().filter(|k| !k.is_empty()).is_some() {
+    // Jev cookbook intent-routing：仅 typesafe/auto 后端时接通 route_advisor——
+    // heuristic 后端无需 advisor（测试环境设 backend=heuristic 即可跳过）
+    if (config.decision.backend == "typesafe" || config.decision.backend == "auto")
+        && std::env::var("TYPESAFE_API_KEY").ok().filter(|k| !k.is_empty()).is_some()
+    {
         if let Some(backend) = evolve_decision::typesafe::TypesafeBackend::from_env() {
             engine.set_route_advisor(std::sync::Arc::new(backend));
             tracing::info!("route_advisor: typesafe jev (intent-routing pipeline connected)");
